@@ -36,7 +36,7 @@ public enum ModemSignal
 
 public sealed class AppConfig
 {
-    public string Version { get; set; } = "0.3.0";
+    public string Version { get; set; } = "0.4.0";
     public bool Enabled { get; set; }
     public string ShopName { get; set; } = "BlazePisonet";
     public string PcName { get; set; } = Environment.MachineName;
@@ -94,6 +94,9 @@ public sealed class AppConfig
     public string BlazePwifiControllerId { get; set; } = string.Empty;
     public string BlazePwifiVendoKey { get; set; } = string.Empty;
     public bool MirrorLocalCoinsToBlazePwifi { get; set; }
+    public bool BlazePwifiMemberAuthorityEnabled { get; set; }
+    public bool BlazePwifiAllowCachedMemberLogin { get; set; } = true;
+    public int BlazePwifiMemberSyncSeconds { get; set; } = 15;
 
     public bool BlockTaskManager { get; set; } = true;
     public bool BlockRegistryTools { get; set; } = true;
