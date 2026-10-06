@@ -216,10 +216,7 @@ public static class Passwords
         {
             if (member.PasswordScheme.Equals("sha256i", StringComparison.OrdinalIgnoreCase))
             {
-                var rounds = Math.Clamp(member.PasswordRounds, 1, 20000);
-                var value = HexSha256($"{member.PasswordSalt}|{password}|{member.PasswordSalt}");
-                for (var i = 1; i < rounds; i++)
-                    value = HexSha256($"{value}|{password}|{member.PasswordSalt}");
+                var value = DeriveSha256iVerifier(password, member.PasswordSalt, member.PasswordRounds);
                 var got = Encoding.ASCII.GetBytes(value);
                 var expected = Encoding.ASCII.GetBytes(member.PasswordHash.ToLowerInvariant());
                 return got.Length == expected.Length && CryptographicOperations.FixedTimeEquals(got, expected);
@@ -232,6 +229,15 @@ public static class Passwords
             return CryptographicOperations.FixedTimeEquals(actual, expectedPbkdf);
         }
         catch { return false; }
+    }
+
+    public static string DeriveSha256iVerifier(string password, string salt, int rounds)
+    {
+        rounds = Math.Clamp(rounds, 1, 20000);
+        var value = HexSha256($"{salt}|{password}|{salt}");
+        for (var i = 1; i < rounds; i++)
+            value = HexSha256($"{value}|{password}|{salt}");
+        return value;
     }
 
     private static string HexSha256(string value) =>
