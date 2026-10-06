@@ -21,7 +21,7 @@ This document records the clean-room behavior mapping used for SoftTimer. It is 
 | Startup registration | Clearly named scheduled task |
 | Helper/service + vhost watchdog chain | Clearly named SoftTimer watchdog plus recovery scheduled task |
 | Remaining-time temp text files | Replaced by atomic JSON state replacement + backup |
-| Shared-folder member database | Replaced by local hashed member store; network synchronization is kept separate |
+| Shared-folder member database | Replaced by local hashed standalone members or BlazePwifi-authoritative central members with revisioned metadata sync and idempotent balance events |
 | Member login/logout and banked time | Implemented locally |
 | Member time transfer | Implemented in timer engine and management UI |
 | Warning sound | Implemented with configurable threshold, optional WAV path and fallback Windows warning sound |
