@@ -59,7 +59,19 @@ public sealed class BlazePwifiClient : IDisposable
             var root = doc.RootElement;
             _insertWindow = root.TryGetProperty("insert", out var ins) && (ins.ValueKind == JsonValueKind.True || (ins.ValueKind == JsonValueKind.Number && ins.GetInt32() == 1));
             _targetNonce = root.TryGetProperty("target_nonce", out var tn) ? tn.GetString() ?? string.Empty : string.Empty;
-            StatusChanged?.Invoke(_insertWindow ? "BlazePwifi connected · coin window active" : "BlazePwifi connected");
+
+            var status = _insertWindow ? "BlazePwifi connected · coin window active" : "BlazePwifi connected";
+            if (_config.BlazePwifiMemberAuthorityEnabled
+                && DateTimeOffset.UtcNow - _lastMemberSync >= TimeSpan.FromSeconds(Math.Clamp(_config.BlazePwifiMemberSyncSeconds, 5, 300)))
+            {
+                var snapshot = await SyncMembersCoreAsync();
+                if (snapshot is not null)
+                {
+                    _lastMemberSync = DateTimeOffset.UtcNow;
+                    status += $" · members r{snapshot.Revision}";
+                }
+            }
+            StatusChanged?.Invoke(status);
         }
         catch (Exception ex) { StatusChanged?.Invoke("BlazePwifi error: " + ex.Message); }
         finally { Interlocked.Exchange(ref _busy, 0); }
