@@ -20,6 +20,7 @@ public sealed class AppController : IDisposable
     private bool _shutdownPrompted;
     private bool _warningPlayed;
     private DateTimeOffset _lastQueuePoll = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastMemberRecovery = DateTimeOffset.MinValue;
 
     public AppConfig Config { get; private set; }
     public TimerEngine Timer => _timer;
@@ -66,9 +67,19 @@ public sealed class AppController : IDisposable
     public void Start()
     {
         _security.StartKeyboardHook();
+
+        if (MemberReconciliationPending)
+        {
+            _timer.Pause(true);
+            try { RecoverPendingMemberOperationAsync().GetAwaiter().GetResult(); }
+            catch (Exception ex) { Storage.Log("Pending member recovery at startup failed: " + ex.Message); }
+        }
+
         ConfigureRuntime();
         _maintenanceTimer.Start();
         EvaluateLockState();
+        if (MemberReconciliationPending)
+            SetLockStatus("MEMBER TRANSACTION PENDING · waiting for BlazePwifi reconciliation", false, true);
     }
 
     public void ApplyConfig(AppConfig updated)
@@ -138,6 +149,12 @@ public sealed class AppController : IDisposable
     private async Task HandleCoinPulse()
     {
         if (!Config.Enabled) return;
+        if (MemberReconciliationPending)
+        {
+            HardwareStatus = "Coin ignored · member transaction reconciliation pending";
+            StatusChanged?.Invoke();
+            return;
+        }
         if (Config.CoinTopology == CoinTopologyMode.CentralizedCoordinator)
         {
             if (_centralServer is not null)
@@ -224,7 +241,7 @@ public sealed class AppController : IDisposable
             _security.SetLocked(false);
             return;
         }
-        var shouldLock = !_timer.IsActive || _forcedScheduleLock;
+        var shouldLock = !_timer.IsActive || _forcedScheduleLock || MemberReconciliationPending;
         if (shouldLock)
         {
             HideActiveTimer();
@@ -477,6 +494,13 @@ public sealed class AppController : IDisposable
             if (Config.TimerSource == TimerSourceMode.ExternalTimerBoard) UpdateExternalBoard();
         }
 
+        if (MemberReconciliationPending
+            && DateTimeOffset.UtcNow - _lastMemberRecovery >= TimeSpan.FromSeconds(5))
+        {
+            _lastMemberRecovery = DateTimeOffset.UtcNow;
+            await RecoverPendingMemberOperationAsync();
+        }
+
         EvaluateSchedules();
         if (Config.IdleShutdownEnabled && WindowsSecurity.GetIdleTime() >= TimeSpan.FromMinutes(Math.Max(1, Config.IdleShutdownMinutes)))
             ConfirmOrShutdown("No active user detected.");
@@ -491,6 +515,48 @@ public sealed class AppController : IDisposable
                 else if (state.Position > 0) SetLockStatus($"Waiting for coin slot · queue position {state.Position}", false, true);
             }
         }
+    }
+
+    private bool MemberReconciliationPending =>
+        Config.BlazePwifiMemberAuthorityEnabled && _timer.PendingMemberOperation is not null;
+
+    private async Task<bool> RecoverPendingMemberOperationAsync()
+    {
+        var pending = _timer.PendingMemberOperation;
+        if (pending is null || !Config.BlazePwifiMemberAuthorityEnabled)
+            return true;
+
+        _timer.Pause(true);
+        var result = await _blazePwifi.ReplayMemberOperationAsync(pending);
+        if (result is null)
+        {
+            IntegrationStatus = $"Member reconciliation pending · {pending.Action} · {pending.Username}";
+            SetLockStatus("MEMBER TRANSACTION PENDING · reconnect BlazePwifi or retry with member password", false, true);
+            StatusChanged?.Invoke();
+            EvaluateLockState();
+            return false;
+        }
+
+        if (pending.Action == "member_bank")
+        {
+            _timer.Reset($"reconciled bank to BlazePwifi member {pending.Username}");
+        }
+        else if (pending.Action == "member_restore" && result.ResultSeconds > 0)
+        {
+            _timer.AddSeconds(
+                result.ResultSeconds,
+                $"blazepwifi-member:{pending.EventId}",
+                false,
+                $"Recovered BlazePwifi member restore: {pending.Username}");
+        }
+
+        _timer.ClearPendingMemberOperation(pending.EventId);
+        _timer.Pause(false);
+        await _blazePwifi.SyncMembersAsync();
+        IntegrationStatus = "BlazePwifi member transaction reconciled";
+        StatusChanged?.Invoke();
+        EvaluateLockState();
+        return true;
     }
 
     private void EvaluateSchedules()
