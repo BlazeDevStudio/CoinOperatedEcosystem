@@ -12,14 +12,22 @@ public sealed class RuntimeState
     public long SalesPulseCount { get; set; }
     public HashSet<string> AppliedEventIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, MemberAccount> Members { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, MemberAccount> RemoteMembers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public long RemoteMemberRevision { get; set; }
 }
 
 public sealed class MemberAccount
 {
     public string Username { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+    public string PasswordScheme { get; set; } = "pbkdf2-sha256";
     public string PasswordSalt { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
+    public int PasswordRounds { get; set; } = 120000;
     public long BankedSeconds { get; set; }
+    public long Revision { get; set; }
+    public bool RemoteManaged { get; set; }
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -61,7 +69,7 @@ public static class Storage
                 cfg.CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(cfg.BlazePwifiControllerId))
                 cfg.BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName);
-            cfg.Version = "0.3.0";
+            cfg.Version = "0.4.0";
             EnsureSchedules(cfg);
             return cfg;
         }
@@ -105,6 +113,8 @@ public static class Storage
         try
         {
             var state = JsonSerializer.Deserialize<RuntimeState>(File.ReadAllText(StatePath), JsonOptions) ?? new RuntimeState();
+            state.Members ??= new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
+            state.RemoteMembers ??= new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
             if (state.TimerRunning && state.RemainingSeconds > 0)
             {
                 var elapsed = Math.Max(0, (long)(DateTimeOffset.UtcNow - state.UpdatedUtc).TotalSeconds);
@@ -201,13 +211,29 @@ public static class Passwords
 
     public static bool VerifyMemberPassword(MemberAccount member, string password, int iterations = 120000)
     {
+        if (!member.Enabled) return false;
         try
         {
+            if (member.PasswordScheme.Equals("sha256i", StringComparison.OrdinalIgnoreCase))
+            {
+                var rounds = Math.Clamp(member.PasswordRounds, 1, 20000);
+                var value = HexSha256($"{member.PasswordSalt}|{password}|{member.PasswordSalt}");
+                for (var i = 1; i < rounds; i++)
+                    value = HexSha256($"{value}|{password}|{member.PasswordSalt}");
+                var got = Encoding.ASCII.GetBytes(value);
+                var expected = Encoding.ASCII.GetBytes(member.PasswordHash.ToLowerInvariant());
+                return got.Length == expected.Length && CryptographicOperations.FixedTimeEquals(got, expected);
+            }
+
             var salt = Convert.FromBase64String(member.PasswordSalt);
-            var expected = Convert.FromBase64String(member.PasswordHash);
-            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
-            return CryptographicOperations.FixedTimeEquals(actual, expected);
+            var expectedPbkdf = Convert.FromBase64String(member.PasswordHash);
+            var roundsPbkdf = member.PasswordRounds > 0 ? member.PasswordRounds : iterations;
+            var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, roundsPbkdf, HashAlgorithmName.SHA256, expectedPbkdf.Length);
+            return CryptographicOperations.FixedTimeEquals(actual, expectedPbkdf);
         }
         catch { return false; }
     }
+
+    private static string HexSha256(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 }
