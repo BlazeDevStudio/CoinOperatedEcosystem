@@ -11,6 +11,7 @@ public sealed class AppController : IDisposable
     private readonly BlazePwifiClient _blazePwifi;
     private CentralizedServer? _centralServer;
     private readonly System.Windows.Forms.Timer _maintenanceTimer;
+    private readonly SemaphoreSlim _memberOperationGate = new(1, 1);
     private readonly List<LockForm> _locks = new();
     private readonly HashSet<string> _activeScheduleShutdownWindows = new(StringComparer.OrdinalIgnoreCase);
     private MainForm? _mainForm;
@@ -69,17 +70,17 @@ public sealed class AppController : IDisposable
         _security.StartKeyboardHook();
 
         if (MemberReconciliationPending)
-        {
             _timer.Pause(true);
-            try { RecoverPendingMemberOperationAsync().GetAwaiter().GetResult(); }
-            catch (Exception ex) { Storage.Log("Pending member recovery at startup failed: " + ex.Message); }
-        }
 
         ConfigureRuntime();
         _maintenanceTimer.Start();
         EvaluateLockState();
+
         if (MemberReconciliationPending)
+        {
             SetLockStatus("MEMBER TRANSACTION PENDING · waiting for BlazePwifi reconciliation", false, true);
+            _ = RecoverPendingMemberOperationAsync();
+        }
     }
 
     public void ApplyConfig(AppConfig updated)
@@ -597,12 +598,15 @@ public sealed class AppController : IDisposable
 
     private async Task<bool> RecoverPendingMemberOperationAsync()
     {
-        var pending = _timer.PendingMemberOperation;
-        if (pending is null || !Config.BlazePwifiMemberAuthorityEnabled)
-            return true;
+        await _memberOperationGate.WaitAsync();
+        try
+        {
+            var pending = _timer.PendingMemberOperation;
+            if (pending is null || !Config.BlazePwifiMemberAuthorityEnabled)
+                return true;
 
-        _timer.Pause(true);
-        var result = await _blazePwifi.ReplayMemberOperationAsync(pending);
+            _timer.Pause(true);
+            var result = await _blazePwifi.ReplayMemberOperationAsync(pending);
         if (result is null)
         {
             IntegrationStatus = $"Member reconciliation pending · {pending.Action} · {pending.Username}";
@@ -630,8 +634,13 @@ public sealed class AppController : IDisposable
         await _blazePwifi.SyncMembersAsync();
         IntegrationStatus = "BlazePwifi member transaction reconciled";
         StatusChanged?.Invoke();
-        EvaluateLockState();
-        return true;
+            EvaluateLockState();
+            return true;
+        }
+        finally
+        {
+            _memberOperationGate.Release();
+        }
     }
 
     private void EvaluateSchedules()
@@ -754,6 +763,7 @@ public sealed class AppController : IDisposable
         HideLocks();
         HideActiveTimer();
         WarningSound.Stop();
+        _memberOperationGate.Dispose();
         _centralServer?.Dispose();
         _blazePwifi.Dispose();
         _blazeTimer.Dispose();
