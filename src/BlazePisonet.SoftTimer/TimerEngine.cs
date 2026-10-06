@@ -210,6 +210,51 @@ public sealed class TimerEngine : IDisposable
         get { lock (_gate) return _state.RemoteMemberRevision; }
     }
 
+    public PendingMemberOperation? PendingMemberOperation
+    {
+        get
+        {
+            lock (_gate)
+            {
+                var p = _state.PendingMemberOperation;
+                if (p is null) return null;
+                return new PendingMemberOperation
+                {
+                    Action = p.Action,
+                    Username = p.Username,
+                    MemberToken = p.MemberToken,
+                    EventId = p.EventId,
+                    Seconds = p.Seconds,
+                    MemberRevision = p.MemberRevision,
+                    CreatedUtc = p.CreatedUtc
+                };
+            }
+        }
+    }
+
+    public void SetPendingMemberOperation(PendingMemberOperation pending)
+    {
+        lock (_gate)
+        {
+            _state.PendingMemberOperation = pending;
+            Storage.SaveState(_state);
+        }
+        Audit?.Invoke($"Pending BlazePwifi member operation recorded: {pending.Action}:{pending.Username}:{pending.EventId}");
+    }
+
+    public void ClearPendingMemberOperation(string eventId)
+    {
+        lock (_gate)
+        {
+            if (_state.PendingMemberOperation is null
+                || !_state.PendingMemberOperation.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase))
+                return;
+            _state.PendingMemberOperation = null;
+            Storage.SaveState(_state);
+        }
+        Audit?.Invoke($"Pending BlazePwifi member operation cleared: {eventId}");
+    }
+
     public IReadOnlyList<MemberAccount> RemoteMembersSnapshot()
     {
         lock (_gate)
