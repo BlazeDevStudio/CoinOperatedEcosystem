@@ -54,6 +54,11 @@ public sealed class AppController : IDisposable
         _blazeTimer.RemainingReceived += s => _timer.SetAuthoritativeSeconds(s, "Blaze Pisonet Timer");
         _blazeTimer.StatusChanged += s => { HardwareStatus = s; StatusChanged?.Invoke(); };
         _blazePwifi.StatusChanged += s => { IntegrationStatus = s; StatusChanged?.Invoke(); };
+        _blazePwifi.MembersReceived += snapshot =>
+        {
+            _timer.ApplyRemoteMembers(snapshot.Members, snapshot.Revision);
+            StatusChanged?.Invoke();
+        };
     }
 
     public void AttachMainForm(MainForm form) => _mainForm = form;
@@ -246,7 +251,7 @@ public sealed class AppController : IDisposable
         {
             var form = new LockForm(Config, screens[i], i == 0);
             form.RequestCoin += async () => await RequestCentralCoinAsync();
-            form.MemberLogin += () => OpenMemberLogin();
+            form.MemberLogin += () => _ = OpenMemberLoginAsync();
             form.AdminSequenceArmRequested += () => _security.ArmAdminSecret(TimeSpan.FromSeconds(Math.Max(5, Config.AdminSecretWindowSeconds)));
             form.UpdateRemaining(_timer.RemainingSeconds);
             _locks.Add(form);
@@ -274,7 +279,7 @@ public sealed class AppController : IDisposable
         if (_activeTimer is null || _activeTimer.IsDisposed)
         {
             _activeTimer = new ActiveTimerForm(Config);
-            _activeTimer.BankRequested += OpenMemberBankFromOverlay;
+            _activeTimer.BankRequested += () => _ = OpenMemberBankFromOverlayAsync();
             _activeTimer.UpdateRemaining(_timer.RemainingSeconds);
             _activeTimer.Show();
         }
@@ -292,24 +297,66 @@ public sealed class AppController : IDisposable
         _activeTimer = null;
     }
 
-    private void OpenMemberBankFromOverlay()
+    private async Task OpenMemberBankFromOverlayAsync()
     {
         if (!Config.AllowMemberBankFromOverlay || !_timer.IsActive) return;
         using var bank = new MemberBankForm();
         if (bank.ShowDialog() != DialogResult.OK) return;
 
-        if (_timer.BankCurrentTime(bank.Username, bank.Password))
+        if (!Config.BlazePwifiMemberAuthorityEnabled)
         {
-            SetLockStatus("Time banked to member account", true);
-            EvaluateLockState();
+            if (_timer.BankCurrentTime(bank.Username, bank.Password))
+            {
+                SetLockStatus("Time banked to member account", true);
+                EvaluateLockState();
+            }
+            else
+            {
+                MessageBox.Show(
+                    "Could not bank the remaining time. Check the member username/password.",
+                    "BlazePisonet SoftTimer",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            return;
         }
-        else
+
+        var member = await GetRemoteMemberAsync(bank.Username);
+        if (member is null)
         {
             MessageBox.Show(
-                "Could not bank the remaining time. Check the member username/password.",
+                "This member is not available in the BlazePwifi member list. Manage members from BlazePwifi Admin.",
                 "BlazePisonet SoftTimer",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
+            return;
+        }
+
+        var seconds = _timer.RemainingSeconds;
+        if (seconds <= 0) return;
+
+        _timer.Pause(true);
+        try
+        {
+            var result = await _blazePwifi.BankMemberAsync(member, bank.Password, seconds);
+            if (result is null)
+            {
+                MessageBox.Show(
+                    "BlazePwifi did not confirm the member bank operation. The running time was kept on this PC.",
+                    "BlazePisonet SoftTimer",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            _timer.Reset($"banked to BlazePwifi member {member.Username}");
+            SetLockStatus($"Time banked to {member.Username}", true);
+            await _blazePwifi.SyncMembersAsync();
+            EvaluateLockState();
+        }
+        finally
+        {
+            _timer.Pause(false);
         }
     }
 
@@ -341,19 +388,85 @@ public sealed class AppController : IDisposable
         });
     }
 
-    private void OpenMemberLogin()
+    private async Task OpenMemberLoginAsync()
     {
         using var login = new MemberLoginForm();
         if (login.ShowDialog() != DialogResult.OK) return;
-        if (!_timer.RestoreMemberTime(login.Username, login.Password))
+
+        if (!Config.BlazePwifiMemberAuthorityEnabled)
         {
-            SetLockStatus("Invalid member account or no banked time", false, true);
+            if (!_timer.RestoreMemberTime(login.Username, login.Password))
+            {
+                SetLockStatus("Invalid member account or no banked time", false, true);
+                return;
+            }
+            SetLockStatus("Member time restored", true);
             return;
         }
-        SetLockStatus("Member time restored", true);
+
+        var member = await GetRemoteMemberAsync(login.Username);
+        if (member is null || !member.Enabled)
+        {
+            SetLockStatus("Member unavailable in BlazePwifi", false, true);
+            return;
+        }
+
+        var result = await _blazePwifi.RestoreMemberAsync(member, login.Password);
+        if (result is null)
+        {
+            SetLockStatus("BlazePwifi member login failed or server is offline", false, true);
+            return;
+        }
+
+        if (result.ResultSeconds <= 0)
+        {
+            SetLockStatus("Member authenticated · no banked time", false, true);
+            await _blazePwifi.SyncMembersAsync();
+            return;
+        }
+
+        _timer.AddSeconds(
+            result.ResultSeconds,
+            $"blazepwifi-member:{result.EventId}",
+            false,
+            $"BlazePwifi member time restored: {member.Username}");
+
+        await _blazePwifi.SyncMembersAsync();
+        SetLockStatus($"Member time restored · {member.Username}", true);
     }
 
-    public bool BankTimeToMember(string user, string pass) => _timer.BankCurrentTime(user, pass);
+    private async Task<MemberAccount?> GetRemoteMemberAsync(string username)
+    {
+        var member = _timer.RemoteMember(username);
+        if (member is not null) return member;
+
+        await _blazePwifi.SyncMembersAsync();
+        return _timer.RemoteMember(username);
+    }
+
+    public async Task<bool> BankTimeToMemberAsync(string user, string pass)
+    {
+        if (!Config.BlazePwifiMemberAuthorityEnabled)
+            return _timer.BankCurrentTime(user, pass);
+
+        var member = await GetRemoteMemberAsync(user);
+        if (member is null || !_timer.IsActive) return false;
+
+        var seconds = _timer.RemainingSeconds;
+        _timer.Pause(true);
+        try
+        {
+            var result = await _blazePwifi.BankMemberAsync(member, pass, seconds);
+            if (result is null) return false;
+            _timer.Reset($"banked to BlazePwifi member {member.Username}");
+            await _blazePwifi.SyncMembersAsync();
+            return true;
+        }
+        finally
+        {
+            _timer.Pause(false);
+        }
+    }
 
     private async Task MaintenanceTick()
     {
