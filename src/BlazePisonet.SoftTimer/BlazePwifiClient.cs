@@ -145,6 +145,84 @@ public sealed class BlazePwifiClient : IDisposable
         return snapshot;
     }
 
+    public Task<BlazePwifiMemberMutationResult?> BankMemberAsync(
+        MemberAccount member,
+        string password,
+        long seconds) =>
+        MemberMutationAsync("member_bank", member, password, member.Username, seconds, "banked_seconds");
+
+    public Task<BlazePwifiMemberMutationResult?> RestoreMemberAsync(
+        MemberAccount member,
+        string password) =>
+        MemberMutationAsync("member_restore", member, password, member.Username, 0, "banked_seconds");
+
+    public Task<BlazePwifiMemberMutationResult?> TransferMemberAsync(
+        MemberAccount sourceMember,
+        string password,
+        string toUsername,
+        long seconds) =>
+        MemberMutationAsync("member_transfer", sourceMember, password, $"{sourceMember.Username}>{toUsername}", seconds, "source_banked_seconds");
+
+    private async Task<BlazePwifiMemberMutationResult?> MemberMutationAsync(
+        string action,
+        MemberAccount member,
+        string password,
+        string memberToken,
+        long seconds,
+        string balanceField)
+    {
+        if (!_config.BlazePwifiEnabled
+            || !_config.BlazePwifiMemberAuthorityEnabled
+            || !member.Enabled
+            || !member.PasswordScheme.Equals("sha256i", StringComparison.OrdinalIgnoreCase)
+            || seconds < 0
+            || seconds > 31_536_000)
+            return null;
+
+        var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
+        var eventId = MemberEventId(action, memberToken, member.Revision, seconds);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+            var verifier = Passwords.DeriveSha256iVerifier(password, member.PasswordSalt, member.PasswordRounds);
+            var proof = HexSha256($"{verifier}|{nonce}|{id}|{_config.BlazePwifiVendoKey}");
+            var target = $"{memberToken}:{eventId}:{proof}";
+
+            var call = await CallDetailedWithNonce(action, checked((int)seconds), target, nonce);
+            if (call is null) continue;
+
+            using var doc = JsonDocument.Parse(call.Json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
+                return null;
+
+            var returnedEvent = root.TryGetProperty("event_id", out var eid) ? eid.GetString() ?? string.Empty : string.Empty;
+            if (!returnedEvent.Equals(eventId, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var resultSeconds = root.TryGetProperty("result_seconds", out var result) ? result.GetInt64() : 0;
+            var balanceSeconds = root.TryGetProperty(balanceField, out var balance) ? balance.GetInt64() : 0;
+            var revision = root.TryGetProperty("member_revision", out var rev) ? rev.GetInt64() : 0;
+            var responseSig = root.TryGetProperty("response_sig", out var sig) ? sig.GetString() ?? string.Empty : string.Empty;
+
+            var expectedSig = HexSha256(
+                $"{_config.BlazePwifiVendoKey}|{action}|{id}|{call.Nonce}|{eventId}|{memberToken}|{resultSeconds}|{balanceSeconds}|{revision}|{_config.BlazePwifiVendoKey}");
+            if (!FixedHexEquals(responseSig, expectedSig))
+                return null;
+
+            return new BlazePwifiMemberMutationResult(eventId, resultSeconds, balanceSeconds, revision);
+        }
+
+        return null;
+    }
+
+    private string MemberEventId(string action, string memberToken, long memberRevision, long seconds)
+    {
+        var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
+        return HexSha256($"{action}|{id}|{memberToken}|{memberRevision}|{seconds}")[..32];
+    }
+
     public async Task<bool> PingAsync()
     {
         var json = await Call("ping", 0, string.Empty);
