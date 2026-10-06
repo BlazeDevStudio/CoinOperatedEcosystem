@@ -73,23 +73,38 @@ This is the least invasive almost-wireless integration.
 
 ## 4. BlazePwifi
 
-SoftTimer can use the current Vendo endpoint directly.
+SoftTimer uses the BlazePwifi Vendo/controller channel for heartbeat, optional coin forwarding, and—starting with the v0.5.3-dev.3 integration line—central Pisonet member authority.
 
 Configuration requires:
 
 - BlazePwifi Vendo URL, normally `http://SERVER:4455/cgi-bin/vendo`;
 - controller ID;
-- the current `vendo_key` shared secret.
+- the current `vendo_key` shared secret;
+- optional **Manage Pisonet members centrally in BlazePwifi**.
 
-The signing string matches the current BlazePwifi contract:
+The base controller signing string remains:
 
 `SHA256(secret|action|id|nonce|pulses|target|secret)`
 
-Supported current integration:
+### Central member authority
+
+When enabled:
+
+- create/edit/enable-disable/reset/delete members in **BlazePwifi Admin → Pisonet Members**;
+- BlazePwifi owns the banked-time balance and monotonic member revision;
+- SoftTimer keeps local-only members untouched but does not use them for central member login/balance operations;
+- SoftTimer synchronizes signed member metadata snapshots;
+- snapshots do not contain the stored member password verifier/hash;
+- login/BANK/RESTORE use a nonce- and controller-bound password proof;
+- BANK/RESTORE/TRANSFER mutations carry deterministic event IDs so a retry cannot apply time twice;
+- if BlazePwifi cannot confirm a central member operation, SoftTimer fails closed and preserves local paid time instead of guessing the central balance;
+- offline central member spending is intentionally disabled in this development line.
+
+Standalone deployments can leave central member authority disabled and continue using the existing local member store.
+
+Supported integration also retains:
 
 - signed `ping`/`poll`;
 - controller heartbeat;
 - detection of an active target-bound coin window;
 - optional forwarding of a SoftTimer serial coin pulse as the existing signed/idempotent BlazePwifi `coin` event.
-
-SoftTimer does not require changes to BlazePwifi accounting for this integration.
