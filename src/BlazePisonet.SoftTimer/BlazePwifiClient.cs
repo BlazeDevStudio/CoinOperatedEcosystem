@@ -148,20 +148,23 @@ public sealed class BlazePwifiClient : IDisposable
     public Task<BlazePwifiMemberMutationResult?> BankMemberAsync(
         MemberAccount member,
         string password,
-        long seconds) =>
-        MemberMutationAsync("member_bank", member, password, member.Username, seconds, "banked_seconds");
+        long seconds,
+        string? eventId = null) =>
+        MemberMutationAsync("member_bank", member, password, member.Username, seconds, "banked_seconds", eventId);
 
     public Task<BlazePwifiMemberMutationResult?> RestoreMemberAsync(
         MemberAccount member,
-        string password) =>
-        MemberMutationAsync("member_restore", member, password, member.Username, 0, "banked_seconds");
+        string password,
+        string? eventId = null) =>
+        MemberMutationAsync("member_restore", member, password, member.Username, 0, "banked_seconds", eventId);
 
     public Task<BlazePwifiMemberMutationResult?> TransferMemberAsync(
         MemberAccount sourceMember,
         string password,
         string toUsername,
-        long seconds) =>
-        MemberMutationAsync("member_transfer", sourceMember, password, $"{sourceMember.Username}>{toUsername}", seconds, "source_banked_seconds");
+        long seconds,
+        string? eventId = null) =>
+        MemberMutationAsync("member_transfer", sourceMember, password, $"{sourceMember.Username}>{toUsername}", seconds, "source_banked_seconds", eventId);
 
     private async Task<BlazePwifiMemberMutationResult?> MemberMutationAsync(
         string action,
@@ -169,7 +172,8 @@ public sealed class BlazePwifiClient : IDisposable
         string password,
         string memberToken,
         long seconds,
-        string balanceField)
+        string balanceField,
+        string? eventIdOverride)
     {
         if (!_config.BlazePwifiEnabled
             || !_config.BlazePwifiMemberAuthorityEnabled
