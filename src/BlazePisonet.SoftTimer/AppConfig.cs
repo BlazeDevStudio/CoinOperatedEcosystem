@@ -95,7 +95,7 @@ public sealed class AppConfig
     public string BlazePwifiVendoKey { get; set; } = string.Empty;
     public bool MirrorLocalCoinsToBlazePwifi { get; set; }
     public bool BlazePwifiMemberAuthorityEnabled { get; set; }
-    public bool BlazePwifiAllowCachedMemberLogin { get; set; } = true;
+    public bool BlazePwifiAllowCachedMemberLogin { get; set; } = false;
     public int BlazePwifiMemberSyncSeconds { get; set; } = 15;
 
     public bool BlockTaskManager { get; set; } = true;
