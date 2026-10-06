@@ -127,11 +127,15 @@ public static class Storage
             var state = JsonSerializer.Deserialize<RuntimeState>(File.ReadAllText(StatePath), JsonOptions) ?? new RuntimeState();
             state.Members ??= new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
             state.RemoteMembers ??= new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
-            if (state.TimerRunning && state.RemainingSeconds > 0)
+            if (state.TimerRunning && state.RemainingSeconds > 0 && state.PendingMemberOperation is null)
             {
                 var elapsed = Math.Max(0, (long)(DateTimeOffset.UtcNow - state.UpdatedUtc).TotalSeconds);
                 state.RemainingSeconds = Math.Max(0, state.RemainingSeconds - elapsed);
                 state.TimerRunning = state.RemainingSeconds > 0;
+                state.UpdatedUtc = DateTimeOffset.UtcNow;
+            }
+            else if (state.PendingMemberOperation is not null)
+            {
                 state.UpdatedUtc = DateTimeOffset.UtcNow;
             }
             return state;
