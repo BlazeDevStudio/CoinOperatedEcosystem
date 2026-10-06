@@ -48,6 +48,8 @@ public sealed class MainForm : Form
 
     private readonly CheckBox _pwifiEnabled = new() { Text = "Connect SoftTimer to BlazePwifi" };
     private readonly CheckBox _pwifiMirror = new() { Text = "Mirror local coin pulses to an active BlazePwifi coin window" };
+    private readonly CheckBox _pwifiMembers = new() { Text = "Manage Pisonet members centrally in BlazePwifi" };
+    private readonly NumericUpDown _pwifiMemberSync = NewNumber(5, 300, 15);
     private readonly TextBox _pwifiUrl = NewText();
     private readonly TextBox _pwifiId = NewText();
     private readonly TextBox _pwifiKey = NewText();
@@ -75,6 +77,7 @@ public sealed class MainForm : Form
     private readonly TextBox _memberUser = NewText();
     private readonly TextBox _memberPass = NewText();
     private readonly ListBox _memberList = new() { Height = 220 };
+    private readonly Label _memberModeStatus = new() { AutoSize = true, ForeColor = BlazeTheme.Muted };
     private readonly TextBox _memberTransferFrom = NewText();
     private readonly TextBox _memberTransferPass = NewText();
     private readonly TextBox _memberTransferTo = NewText();
@@ -139,7 +142,7 @@ public sealed class MainForm : Form
             navPanel.Controls.Add(b);
             _nav[name] = b;
         }
-        var footer = new Label { Text = "v0.3.0\nASApp clean-room successor", ForeColor = BlazeTheme.Muted, Dock = DockStyle.Bottom, Height = 48, TextAlign = ContentAlignment.BottomLeft };
+        var footer = new Label { Text = "v0.4.0\nASApp clean-room successor", ForeColor = BlazeTheme.Muted, Dock = DockStyle.Bottom, Height = 48, TextAlign = ContentAlignment.BottomLeft };
         side.Controls.Add(footer);
     }
 
@@ -262,7 +265,7 @@ public sealed class MainForm : Form
 
     private void BuildBlazePwifi()
     {
-        var root = NewPage("BlazePwifi", "Uses the existing BlazePwifi signed Vendo/controller protocol; no BlazePwifi core rewrite is required for heartbeat/polling and optional coin forwarding.");
+        var root = NewPage("BlazePwifi", "Signed BlazePwifi controller integration for coin routing, heartbeat and centralized Pisonet member authority.");
         var card = Card("Server integration", "The Vendo key is the existing BlazePwifi controller secret. Keep it private.");
         card.Controls.Add(_pwifiEnabled);
         card.Controls.Add(Field("Vendo endpoint", _pwifiUrl));
@@ -270,7 +273,29 @@ public sealed class MainForm : Form
         _pwifiKey.UseSystemPasswordChar = true;
         card.Controls.Add(Field("Vendo key", _pwifiKey));
         card.Controls.Add(_pwifiMirror);
-        card.Controls.Add(PrimaryButton("TEST CONNECTION", async (_, _) => { SaveApply(); var ok = await _controller.BlazePwifi.PingAsync(); MessageBox.Show(ok ? "BlazePwifi connection succeeded." : "BlazePwifi connection failed.", "SoftTimer"); }));
+        card.Controls.Add(_pwifiMembers);
+        card.Controls.Add(Field("Central member sync interval (seconds)", _pwifiMemberSync));
+
+        var row = new FlowLayoutPanel { AutoSize = true, Width = 880 };
+        row.Controls.Add(PrimaryButton("TEST CONNECTION", async (_, _) =>
+        {
+            SaveApply();
+            var ok = await _controller.BlazePwifi.PingAsync();
+            if (ok && _controller.Config.BlazePwifiMemberAuthorityEnabled)
+                await _controller.BlazePwifi.SyncMembersAsync();
+            RefreshMembers();
+            MessageBox.Show(ok ? "BlazePwifi connection succeeded." : "BlazePwifi connection failed.", "SoftTimer");
+        }));
+        row.Controls.Add(Button("SYNC MEMBERS", async (_, _) =>
+        {
+            SaveApply();
+            var snapshot = await _controller.BlazePwifi.SyncMembersAsync();
+            RefreshMembers();
+            MessageBox.Show(
+                snapshot is null ? "Member synchronization failed." : $"Member synchronization completed · revision {snapshot.Revision}.",
+                "SoftTimer");
+        }));
+        card.Controls.Add(row);
         card.Controls.Add(_pwifiStatus);
         root.Controls.Add(card);
         _pages["BlazePwifi"] = root;
@@ -278,33 +303,67 @@ public sealed class MainForm : Form
 
     private void BuildMembers()
     {
-        var root = NewPage("Members", "Local member accounts can bank paid time at logout and restore it later. Passwords are PBKDF2-hashed; plaintext passwords are not stored.");
-        var card = Card("Member account", "Create/update an account, then users can restore banked time from the lock screen.");
+        var root = NewPage(
+            "Members",
+            "Standalone mode keeps local member accounts. With BlazePwifi member authority enabled, accounts are created and managed only in BlazePwifi Admin → Pisonet Members.");
+        var card = Card(
+            "Member account",
+            "Local CREATE/UPDATE is available only when BlazePwifi member authority is disabled. Central mode shows the synchronized BlazePwifi cache here.");
+        card.Controls.Add(_memberModeStatus);
         card.Controls.Add(Field("Username", _memberUser));
         _memberPass.UseSystemPasswordChar = true;
         card.Controls.Add(Field("Password", _memberPass));
-        card.Controls.Add(PrimaryButton("CREATE / UPDATE", (_, _) =>
+        card.Controls.Add(PrimaryButton("CREATE / UPDATE LOCAL MEMBER", (_, _) =>
         {
-            if (_controller.Timer.CreateOrUpdateMember(_memberUser.Text, _memberPass.Text)) { _memberPass.Clear(); RefreshMembers(); }
-            else MessageBox.Show("Use a 2-32 character username and a password of at least 4 characters.");
-        }));
-        var memberActions = new FlowLayoutPanel { AutoSize = true, Width = 880 };
-        memberActions.Controls.Add(Button("BANK CURRENT PAID TIME", (_, _) =>
-        {
-            if (_controller.Timer.BankCurrentTime(_memberUser.Text.Trim(), _memberPass.Text))
+            if (_controller.Config.BlazePwifiMemberAuthorityEnabled)
+            {
+                MessageBox.Show(
+                    "Central member authority is enabled. Create/edit members in BlazePwifi Admin → Pisonet Members.",
+                    "BlazePisonet SoftTimer",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_controller.Timer.CreateOrUpdateMember(_memberUser.Text, _memberPass.Text))
             {
                 _memberPass.Clear();
                 RefreshMembers();
-                RefreshStatus();
-                MessageBox.Show("Remaining paid time was banked to the member account.");
             }
-            else MessageBox.Show("Could not bank time. Check the member username/password and make sure paid time is active.");
+            else MessageBox.Show("Use a 2-32 character username and a password of at least 4 characters.");
+        }));
+
+        var memberActions = new FlowLayoutPanel { AutoSize = true, Width = 880 };
+        memberActions.Controls.Add(Button("BANK CURRENT PAID TIME", async (_, _) =>
+        {
+            var ok = await _controller.BankTimeToMemberAsync(_memberUser.Text.Trim(), _memberPass.Text);
+            _memberPass.Clear();
+            RefreshMembers();
+            RefreshStatus();
+            MessageBox.Show(
+                ok ? "Remaining paid time was banked to the member account." :
+                    (_controller.Config.BlazePwifiMemberAuthorityEnabled
+                        ? "Bank failed. BlazePwifi must confirm the member and balance mutation; local paid time was preserved."
+                        : "Could not bank time. Check the member username/password and make sure paid time is active."),
+                "BlazePisonet SoftTimer",
+                MessageBoxButtons.OK,
+                ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }));
+        memberActions.Controls.Add(Button("REFRESH CENTRAL CACHE", async (_, _) =>
+        {
+            if (!_controller.Config.BlazePwifiMemberAuthorityEnabled)
+            {
+                RefreshMembers();
+                return;
+            }
+            await _controller.BlazePwifi.SyncMembersAsync();
+            RefreshMembers();
         }));
         card.Controls.Add(memberActions);
         card.Controls.Add(_memberList);
         root.Controls.Add(card);
 
-        var transfer = Card("Transfer member time", "Move already-banked time from one member account to another without touching the running station timer.");
+        var transfer = Card("Transfer member time", "Standalone mode can transfer locally. Central mode must be managed in BlazePwifi Admin so one server owns the authoritative balance ledger.");
         transfer.Controls.Add(Field("From member", _memberTransferFrom));
         _memberTransferPass.UseSystemPasswordChar = true;
         transfer.Controls.Add(Field("From member password", _memberTransferPass));
@@ -312,6 +371,16 @@ public sealed class MainForm : Form
         transfer.Controls.Add(Field("Minutes to transfer", _memberTransferMinutes));
         transfer.Controls.Add(PrimaryButton("TRANSFER TIME", (_, _) =>
         {
+            if (_controller.Config.BlazePwifiMemberAuthorityEnabled)
+            {
+                MessageBox.Show(
+                    "Transfer centralized member time in BlazePwifi Admin → Pisonet Members.",
+                    "BlazePisonet SoftTimer",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
             var seconds = (long)_memberTransferMinutes.Value * 60L;
             var ok = _controller.Timer.TransferMemberTime(
                 _memberTransferFrom.Text.Trim(),
@@ -432,6 +501,8 @@ public sealed class MainForm : Form
         _coinWindow.Value = Clamp(_coinWindow, c.CentralCoinWindowSeconds);
         _pwifiEnabled.Checked = c.BlazePwifiEnabled;
         _pwifiMirror.Checked = c.MirrorLocalCoinsToBlazePwifi;
+        _pwifiMembers.Checked = c.BlazePwifiMemberAuthorityEnabled;
+        _pwifiMemberSync.Value = Clamp(_pwifiMemberSync, c.BlazePwifiMemberSyncSeconds);
         _pwifiUrl.Text = c.BlazePwifiVendoUrl;
         _pwifiId.Text = c.BlazePwifiControllerId;
         _pwifiKey.Text = c.BlazePwifiVendoKey;
@@ -492,6 +563,8 @@ public sealed class MainForm : Form
         c.CentralCoinWindowSeconds = (int)_coinWindow.Value;
         c.BlazePwifiEnabled = _pwifiEnabled.Checked;
         c.MirrorLocalCoinsToBlazePwifi = _pwifiMirror.Checked;
+        c.BlazePwifiMemberAuthorityEnabled = _pwifiMembers.Checked;
+        c.BlazePwifiMemberSyncSeconds = (int)_pwifiMemberSync.Value;
         c.BlazePwifiVendoUrl = _pwifiUrl.Text.Trim();
         c.BlazePwifiControllerId = Storage.NormalizeId(_pwifiId.Text);
         c.BlazePwifiVendoKey = _pwifiKey.Text.Trim();
@@ -514,6 +587,13 @@ public sealed class MainForm : Form
         c.WallpaperPath = string.IsNullOrWhiteSpace(_wallpaper.Text) ? null : _wallpaper.Text.Trim();
         c.NotificationSchedules = CloneSchedules(_schedules);
         if (validate && c.Enabled && !c.HasAdminPassword) throw new InvalidOperationException("Set an administrator password before enabling SoftTimer.");
+        if (validate && c.BlazePwifiMemberAuthorityEnabled)
+        {
+            if (!c.BlazePwifiEnabled)
+                throw new InvalidOperationException("Enable BlazePwifi integration before enabling central member authority.");
+            if (string.IsNullOrWhiteSpace(c.BlazePwifiVendoUrl) || string.IsNullOrWhiteSpace(c.BlazePwifiVendoKey))
+                throw new InvalidOperationException("Central member authority requires the BlazePwifi Vendo endpoint and Vendo key.");
+        }
         if (validate && c.CoinTopology != CoinTopologyMode.StandardOneToOne && c.CentralSharedKey.Length < 16) throw new InvalidOperationException("Centralized mode requires a shared key of at least 16 characters.");
         return c;
     }
@@ -625,7 +705,29 @@ public sealed class MainForm : Form
     private void RefreshMembers()
     {
         _memberList.Items.Clear();
-        foreach (var m in _controller.Timer.MembersSnapshot()) _memberList.Items.Add($"{m.Username,-24}  {BlazeTheme.FormatTime(m.BankedSeconds)} banked");
+
+        if (_controller.Config.BlazePwifiMemberAuthorityEnabled)
+        {
+            _memberModeStatus.Text =
+                $"CENTRAL · BlazePwifi authoritative · cache revision {_controller.Timer.RemoteMemberRevision} · account edits belong in BlazePwifi Admin";
+            _memberModeStatus.ForeColor = BlazeTheme.Accent2;
+
+            foreach (var m in _controller.Timer.RemoteMembersSnapshot())
+            {
+                var state = m.Enabled ? "ENABLED" : "DISABLED";
+                var label = string.IsNullOrWhiteSpace(m.Label) ? string.Empty : $" · {m.Label}";
+                _memberList.Items.Add($"{m.Username,-24}  {BlazeTheme.FormatTime(m.BankedSeconds)} banked · {state}{label}");
+            }
+
+            if (_memberList.Items.Count == 0)
+                _memberList.Items.Add("No central members cached yet. Use SYNC MEMBERS on the BlazePwifi page.");
+            return;
+        }
+
+        _memberModeStatus.Text = "LOCAL · this PC owns standalone member accounts";
+        _memberModeStatus.ForeColor = BlazeTheme.Muted;
+        foreach (var m in _controller.Timer.MembersSnapshot())
+            _memberList.Items.Add($"{m.Username,-24}  {BlazeTheme.FormatTime(m.BankedSeconds)} banked");
     }
 
     private void RefreshStatus()
