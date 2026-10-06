@@ -157,14 +157,19 @@ public sealed class BlazePwifiClient : IDisposable
         return result?.Json;
     }
 
-    private async Task<CallResult?> CallDetailed(string action, int pulses, string target)
+    private Task<CallResult?> CallDetailed(string action, int pulses, string target) =>
+        CallDetailedWithNonce(action, pulses, target, null);
+
+    private async Task<CallResult?> CallDetailedWithNonce(string action, int pulses, string target, string? nonceOverride)
     {
         if (string.IsNullOrWhiteSpace(_config.BlazePwifiVendoUrl)
             || string.IsNullOrWhiteSpace(_config.BlazePwifiVendoKey))
             return null;
 
         var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
-        var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+        var nonce = string.IsNullOrWhiteSpace(nonceOverride)
+            ? Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant()
+            : nonceOverride;
         var sig = Signature(_config.BlazePwifiVendoKey, action, id, nonce, pulses, target);
         var form = new Dictionary<string, string>
         {
