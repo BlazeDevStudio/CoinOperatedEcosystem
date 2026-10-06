@@ -130,6 +130,9 @@ public sealed class TimerEngine : IDisposable
             _state.Members[username] = new MemberAccount
             {
                 Username = username,
+                Enabled = true,
+                PasswordScheme = "pbkdf2-sha256",
+                PasswordRounds = 120000,
                 PasswordSalt = hp.Salt,
                 PasswordHash = hp.Hash,
                 BankedSeconds = _state.Members.TryGetValue(username, out var old) ? old.BankedSeconds : 0,
@@ -199,13 +202,67 @@ public sealed class TimerEngine : IDisposable
     public IReadOnlyList<MemberAccount> MembersSnapshot()
     {
         lock (_gate)
-            return _state.Members.Values.Select(m => new MemberAccount
-            {
-                Username = m.Username,
-                BankedSeconds = m.BankedSeconds,
-                UpdatedUtc = m.UpdatedUtc
-            }).OrderBy(m => m.Username).ToList();
+            return _state.Members.Values.Select(CloneMember).OrderBy(m => m.Username).ToList();
     }
+
+    public long RemoteMemberRevision
+    {
+        get { lock (_gate) return _state.RemoteMemberRevision; }
+    }
+
+    public IReadOnlyList<MemberAccount> RemoteMembersSnapshot()
+    {
+        lock (_gate)
+            return _state.RemoteMembers.Values.Select(CloneMember).OrderBy(m => m.Username).ToList();
+    }
+
+    public void ApplyRemoteMembers(IEnumerable<MemberAccount> members, long revision)
+    {
+        lock (_gate)
+        {
+            if (revision < _state.RemoteMemberRevision) return;
+            var next = new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
+            foreach (var member in members)
+            {
+                if (string.IsNullOrWhiteSpace(member.Username)) continue;
+                member.RemoteManaged = true;
+                next[member.Username] = CloneMember(member);
+            }
+            _state.RemoteMembers = next;
+            _state.RemoteMemberRevision = revision;
+            Storage.SaveState(_state);
+        }
+        Audit?.Invoke($"BlazePwifi member snapshot applied; revision={revision}; members={members.Count()}");
+    }
+
+    public MemberAccount? RemoteMember(string username)
+    {
+        lock (_gate)
+            return _state.RemoteMembers.TryGetValue(username.Trim(), out var member) ? CloneMember(member) : null;
+    }
+
+    public bool VerifyRemoteMember(string username, string password)
+    {
+        lock (_gate)
+            return _state.RemoteMembers.TryGetValue(username.Trim(), out var member)
+                && member.Enabled
+                && Passwords.VerifyMemberPassword(member, password);
+    }
+
+    private static MemberAccount CloneMember(MemberAccount m) => new()
+    {
+        Username = m.Username,
+        Label = m.Label,
+        Enabled = m.Enabled,
+        PasswordScheme = m.PasswordScheme,
+        PasswordSalt = m.PasswordSalt,
+        PasswordHash = m.PasswordHash,
+        PasswordRounds = m.PasswordRounds,
+        BankedSeconds = m.BankedSeconds,
+        Revision = m.Revision,
+        RemoteManaged = m.RemoteManaged,
+        UpdatedUtc = m.UpdatedUtc
+    };
 
     private void Tick()
     {
