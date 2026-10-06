@@ -61,6 +61,7 @@ public static class Storage
                 cfg.CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(cfg.BlazePwifiControllerId))
                 cfg.BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName);
+            cfg.Version = "0.2.0";
             return cfg;
         }
         catch (Exception ex)

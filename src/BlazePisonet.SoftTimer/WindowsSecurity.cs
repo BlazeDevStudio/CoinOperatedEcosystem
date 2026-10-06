@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Windows.Forms;
 
 namespace BlazePisonet.SoftTimer;
 
@@ -40,7 +41,12 @@ public sealed class WindowsSecurity : IDisposable
         _processTimer = new System.Threading.Timer(_ => ProcessGuardTick(), null, 1000, 1500);
     }
 
-    public void UpdateConfig(AppConfig config) => _config = config;
+    public void UpdateConfig(AppConfig config)
+    {
+        _config = config;
+        if (!_locked) return;
+        if (_config.LockMouseToScreen) ApplyMouseRestriction(); else ReleaseMouseRestriction();
+    }
 
     public void StartKeyboardHook()
     {
@@ -56,7 +62,16 @@ public sealed class WindowsSecurity : IDisposable
         _locked = locked;
         _inputCounter = 0;
         _inputWindowStart = DateTimeOffset.UtcNow;
-        if (locked) ApplyPolicies(); else RestorePolicies();
+        if (locked)
+        {
+            ApplyPolicies();
+            if (_config.LockMouseToScreen) ApplyMouseRestriction();
+        }
+        else
+        {
+            ReleaseMouseRestriction();
+            RestorePolicies();
+        }
     }
 
     public void ArmAdminSecret(TimeSpan duration)
@@ -67,6 +82,24 @@ public sealed class WindowsSecurity : IDisposable
             await Task.Delay(duration);
             _secretArmed = false;
         });
+    }
+
+    private void ApplyMouseRestriction()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            var bounds = Screen.PrimaryScreen?.Bounds ?? SystemInformation.VirtualScreen;
+            var rect = new ClipRect { Left = bounds.Left, Top = bounds.Top, Right = bounds.Right, Bottom = bounds.Bottom };
+            ClipCursor(ref rect);
+        }
+        catch (Exception ex) { Storage.Log("Mouse restriction failed: " + ex.Message); }
+    }
+
+    private static void ReleaseMouseRestriction()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try { ClipCursor(IntPtr.Zero); } catch { }
     }
 
     public void ApplyPolicies()
@@ -243,7 +276,17 @@ public sealed class WindowsSecurity : IDisposable
             UnhookWindowsHookEx(_keyboardHook);
             _keyboardHook = IntPtr.Zero;
         }
+        ReleaseMouseRestriction();
         RestorePolicies();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ClipRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -263,4 +306,8 @@ public sealed class WindowsSecurity : IDisposable
     private static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")]
     private static extern bool GetLastInputInfo(ref LastInputInfo plii);
+    [DllImport("user32.dll")]
+    private static extern bool ClipCursor(ref ClipRect lpRect);
+    [DllImport("user32.dll")]
+    private static extern bool ClipCursor(IntPtr lpRect);
 }

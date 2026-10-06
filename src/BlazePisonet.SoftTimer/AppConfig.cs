@@ -36,7 +36,7 @@ public enum ModemSignal
 
 public sealed class AppConfig
 {
-    public string Version { get; set; } = "0.1.0";
+    public string Version { get; set; } = "0.2.0";
     public bool Enabled { get; set; }
     public string ShopName { get; set; } = "BlazePisonet";
     public string PcName { get; set; } = Environment.MachineName;

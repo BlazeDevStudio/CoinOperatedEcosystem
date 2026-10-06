@@ -1,23 +1,29 @@
-BLAZEPISONET SOFTTIMER INSTALLATION
-==================================
-1. Extract the entire release ZIP.
-2. Right-click Install-BlazePisonetSoftTimer.ps1 -> Run with PowerShell.
-   If Windows blocks script execution, open an Administrator PowerShell in the extracted folder and run:
-     powershell -ExecutionPolicy Bypass -File .\installer\Install-BlazePisonetSoftTimer.ps1
-3. First run: create the administrator password. There is no universal default password.
-4. Configure Hardware -> Timer source / Coin topology.
-5. For USB-RS232, use Rescan then either select the COM port or Bind Exact Device.
-6. Enable SoftTimer only after testing the hardware.
+BLAZEPISONET SOFTTIMER - NATIVE WINDOWS INSTALLER
+================================================
 
-ADMIN SECRET PATH WHILE LOCKED
-------------------------------
-Ctrl+Alt+Delete is owned by Windows and is intentionally not intercepted.
-Return from the Windows secure screen, then press HOME during the short admin window.
-Enter the SoftTimer administrator password.
+Normal installation:
+  Run BlazePisonet-SoftTimer-Setup-v0.2.0.exe as Administrator.
 
-CENTRALIZED MODE
-----------------
-- Coordinator: one PC physically connected to the coinslot/USB-RS232 adapter.
-- Station: client PCs request the central slot over LAN/Wi-Fi.
-- Use the same Centralized shared key on all participating PCs.
-- Default peer port: TCP 8765, private/local subnet only.
+The installer is a native Windows EXE. The operator does not need to run
+PowerShell, BAT, CMD, or a separate setup script.
+
+Installed components:
+  BlazePisonet.SoftTimer.exe
+  BlazePisonet.SoftTimer.Watchdog.exe
+  Windows Start Menu shortcut
+  Optional desktop shortcut
+  Automatic logon startup tasks for SoftTimer and its watchdog
+  Local-subnet firewall rule for the default centralized Pisonet port 8765
+
+Uninstall:
+  Windows Settings -> Apps -> Installed apps -> BlazePisonet SoftTimer
+  or use the normal BlazePisonet SoftTimer uninstaller created by Setup.
+
+SoftTimer preserves ProgramData state by default during uninstall so paid-time
+state, account hashes and hardware pairing data are not silently destroyed.
+Delete that data manually only when intentionally resetting the installation.
+
+Portable package:
+  A portable ZIP is also published for diagnostics and controlled deployments.
+  It contains EXEs directly and no PowerShell installer. For normal Pisonet
+  installation, use the Setup EXE because it creates the startup/recovery entries.

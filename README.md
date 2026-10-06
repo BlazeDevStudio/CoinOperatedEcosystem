@@ -6,7 +6,7 @@ SoftTimer does **not** contain or redistribute the original ASApp binaries, sour
 
 ## Release line
 
-Current: **v0.1.0**
+Current: **v0.2.0**
 
 Primary target: Windows 10/11 x64.
 
@@ -92,6 +92,7 @@ SoftTimer includes a Windows kiosk layer with:
 
 - borderless topmost lock surfaces on all monitors;
 - low-level keyboard filtering while locked;
+- mouse confinement to the primary kiosk screen while locked;
 - blocking of Windows keys, Alt+Tab, Alt+F4, Ctrl+Esc and Ctrl+Shift+Esc;
 - optional Task Manager and Registry Editor policies;
 - optional logoff and Windows power-UI restrictions;
@@ -124,13 +125,16 @@ Unlike the legacy reference software, SoftTimer does not disguise its recovery t
 
 ## First installation
 
-1. Download and extract the release ZIP.
-2. Run `installer/Install-BlazePisonetSoftTimer.ps1` as administrator.
-3. Set an administrator password on first run.
-4. Select the timer source and coin topology.
-5. For serial hardware, rescan and test the real Device Manager port.
-6. Prefer **Bind Exact Device** for USB-RS232 adapters.
-7. Enable SoftTimer only after hardware testing.
+1. Download `BlazePisonet-SoftTimer-Setup-v0.2.0.exe` from the GitHub Release.
+2. Run the Setup EXE as administrator.
+3. Complete the normal Windows installer. No PowerShell/BAT/CMD setup step is required.
+4. Set an administrator password on first run.
+5. Select the timer source and coin topology.
+6. For serial hardware, rescan and test the real Device Manager port.
+7. Prefer **Bind Exact Device** for USB-RS232 adapters.
+8. Enable SoftTimer only after hardware testing.
+
+The release also contains an optional portable EXE-only ZIP. Use the Setup EXE for normal installations because it creates the startup/watchdog integration and Windows uninstall entry.
 
 See [docs/INTEGRATION.md](docs/INTEGRATION.md), [docs/ASAPP-BEHAVIOR-MAP.md](docs/ASAPP-BEHAVIOR-MAP.md), and [docs/SECURITY.md](docs/SECURITY.md).
 

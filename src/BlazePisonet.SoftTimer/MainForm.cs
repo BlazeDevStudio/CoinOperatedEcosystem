@@ -53,6 +53,7 @@ public sealed class MainForm : Form
     private readonly CheckBox _disableLogoff = new() { Text = "Disable Windows logoff while locked" };
     private readonly CheckBox _disablePower = new() { Text = "Disable Windows shutdown/restart UI while locked" };
     private readonly CheckBox _blockWinKeys = new() { Text = "Block Windows/Alt-Tab/Ctrl-Esc escape shortcuts" };
+    private readonly CheckBox _lockMouse = new() { Text = "Confine mouse to the primary kiosk screen while locked" };
     private readonly CheckBox _watchdog = new() { Text = "Use watchdog/recovery task" };
     private readonly CheckBox _idleShutdown = new() { Text = "Shutdown after extended user inactivity" };
     private readonly NumericUpDown _idleMinutes = NewNumber(1, 1440, 30);
@@ -127,7 +128,7 @@ public sealed class MainForm : Form
             navPanel.Controls.Add(b);
             _nav[name] = b;
         }
-        var footer = new Label { Text = "v0.1.0\nASApp clean-room successor", ForeColor = BlazeTheme.Muted, Dock = DockStyle.Bottom, Height = 48, TextAlign = ContentAlignment.BottomLeft };
+        var footer = new Label { Text = "v0.2.0\nASApp clean-room successor", ForeColor = BlazeTheme.Muted, Dock = DockStyle.Bottom, Height = 48, TextAlign = ContentAlignment.BottomLeft };
         side.Controls.Add(footer);
     }
 
@@ -271,7 +272,7 @@ public sealed class MainForm : Form
     {
         var root = NewPage("Security", "Kiosk restrictions apply only while the customer lock screen is active. Ctrl+Alt+Delete remains Windows-controlled; after returning, Home opens the timed administrator login path.");
         var card = Card("Windows protection", "These replace ASApp's brittle all-in-one protection with explicit reversible policies plus the lock-screen keyboard hook.");
-        card.Controls.AddRange([_blockTaskMgr, _blockRegedit, _disableLogoff, _disablePower, _blockWinKeys, _watchdog]);
+        card.Controls.AddRange([_blockTaskMgr, _blockRegedit, _disableLogoff, _disablePower, _blockWinKeys, _lockMouse, _watchdog]);
         card.Controls.Add(_idleShutdown);
         card.Controls.Add(Field("Idle shutdown minutes", _idleMinutes));
         card.Controls.Add(_unusual);
@@ -361,6 +362,7 @@ public sealed class MainForm : Form
         _disableLogoff.Checked = c.DisableLogoff;
         _disablePower.Checked = c.DisablePowerOptions;
         _blockWinKeys.Checked = c.BlockWindowsKeys;
+        _lockMouse.Checked = c.LockMouseToScreen;
         _watchdog.Checked = c.RunWatchdog;
         _idleShutdown.Checked = c.IdleShutdownEnabled;
         _idleMinutes.Value = Clamp(_idleMinutes, c.IdleShutdownMinutes);
@@ -413,6 +415,7 @@ public sealed class MainForm : Form
         c.DisableLogoff = _disableLogoff.Checked;
         c.DisablePowerOptions = _disablePower.Checked;
         c.BlockWindowsKeys = _blockWinKeys.Checked;
+        c.LockMouseToScreen = _lockMouse.Checked;
         c.RunWatchdog = _watchdog.Checked;
         c.IdleShutdownEnabled = _idleShutdown.Checked;
         c.IdleShutdownMinutes = (int)_idleMinutes.Value;
