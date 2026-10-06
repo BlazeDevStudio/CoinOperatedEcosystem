@@ -78,6 +78,61 @@ public sealed class BlazePwifiClient : IDisposable
         catch { return false; }
     }
 
+    public async Task<BlazePwifiMemberSnapshot?> SyncMembersAsync()
+    {
+        if (!_config.BlazePwifiEnabled || !_config.BlazePwifiMemberAuthorityEnabled) return null;
+        var snapshot = await SyncMembersCoreAsync();
+        if (snapshot is not null) _lastMemberSync = DateTimeOffset.UtcNow;
+        return snapshot;
+    }
+
+    private async Task<BlazePwifiMemberSnapshot?> SyncMembersCoreAsync()
+    {
+        var call = await CallDetailed("member_snapshot", 0, string.Empty);
+        if (call is null) return null;
+
+        using var doc = JsonDocument.Parse(call.Json);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True) return null;
+        if (!root.TryGetProperty("members", out var membersElement) || membersElement.ValueKind != JsonValueKind.Array) return null;
+
+        var revision = root.TryGetProperty("member_revision", out var rev) ? rev.GetInt64() : 0;
+        var payloadHash = root.TryGetProperty("payload_sha256", out var ph) ? ph.GetString() ?? string.Empty : string.Empty;
+        var responseSig = root.TryGetProperty("response_sig", out var rs) ? rs.GetString() ?? string.Empty : string.Empty;
+        var membersRaw = membersElement.GetRawText();
+        if (!FixedHexEquals(payloadHash, HexSha256(membersRaw))) return null;
+
+        var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
+        var expectedSig = HexSha256($"{_config.BlazePwifiVendoKey}|member_snapshot|{id}|{call.Nonce}|{revision}|{payloadHash}|{_config.BlazePwifiVendoKey}");
+        if (!FixedHexEquals(responseSig, expectedSig)) return null;
+
+        var members = new List<MemberAccount>();
+        foreach (var item in membersElement.EnumerateArray())
+        {
+            var username = item.TryGetProperty("username", out var u) ? u.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(username)) continue;
+            var updatedUnix = item.TryGetProperty("updated", out var updated) && updated.TryGetInt64(out var unix) ? unix : 0;
+            members.Add(new MemberAccount
+            {
+                Username = username,
+                Label = item.TryGetProperty("label", out var label) ? label.GetString() ?? string.Empty : string.Empty,
+                Enabled = item.TryGetProperty("enabled", out var enabled) && enabled.GetInt32() == 1,
+                PasswordScheme = item.TryGetProperty("scheme", out var scheme) ? scheme.GetString() ?? "sha256i" : "sha256i",
+                PasswordSalt = item.TryGetProperty("salt", out var salt) ? salt.GetString() ?? string.Empty : string.Empty,
+                PasswordHash = string.Empty,
+                PasswordRounds = item.TryGetProperty("rounds", out var rounds) ? rounds.GetInt32() : 4096,
+                BankedSeconds = item.TryGetProperty("banked_seconds", out var banked) ? banked.GetInt64() : 0,
+                Revision = item.TryGetProperty("revision", out var memberRev) ? memberRev.GetInt64() : revision,
+                RemoteManaged = true,
+                UpdatedUtc = updatedUnix > 0 ? DateTimeOffset.FromUnixTimeSeconds(updatedUnix) : DateTimeOffset.UtcNow
+            });
+        }
+
+        var snapshot = new BlazePwifiMemberSnapshot(revision, members);
+        MembersReceived?.Invoke(snapshot);
+        return snapshot;
+    }
+
     public async Task<bool> PingAsync()
     {
         var json = await Call("ping", 0, string.Empty);
