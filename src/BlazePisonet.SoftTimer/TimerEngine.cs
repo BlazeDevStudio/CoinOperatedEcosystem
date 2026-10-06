@@ -17,6 +17,7 @@ public sealed class TimerEngine : IDisposable
     public TimerEngine()
     {
         _state = Storage.LoadState();
+        _paused = _state.PendingMemberOperation is not null;
         _tick = new System.Threading.Timer(_ => Tick(), null, 250, 250);
     }
 
