@@ -14,6 +14,18 @@ public sealed class RuntimeState
     public Dictionary<string, MemberAccount> Members { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, MemberAccount> RemoteMembers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public long RemoteMemberRevision { get; set; }
+    public PendingMemberOperation? PendingMemberOperation { get; set; }
+}
+
+public sealed class PendingMemberOperation
+{
+    public string Action { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string MemberToken { get; set; } = string.Empty;
+    public string EventId { get; set; } = string.Empty;
+    public long Seconds { get; set; }
+    public long MemberRevision { get; set; }
+    public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class MemberAccount
