@@ -184,7 +184,9 @@ public sealed class BlazePwifiClient : IDisposable
             return null;
 
         var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
-        var eventId = MemberEventId(action, memberToken, member.Revision, seconds);
+        var eventId = string.IsNullOrWhiteSpace(eventIdOverride)
+            ? CreateMemberEventId(action, memberToken, member.Revision, seconds)
+            : eventIdOverride;
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -221,7 +223,7 @@ public sealed class BlazePwifiClient : IDisposable
         return null;
     }
 
-    private string MemberEventId(string action, string memberToken, long memberRevision, long seconds)
+    public string CreateMemberEventId(string action, string memberToken, long memberRevision, long seconds)
     {
         var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
         return HexSha256($"{action}|{id}|{memberToken}|{memberRevision}|{seconds}")[..32];
