@@ -4,6 +4,14 @@ using System.Text.Json;
 
 namespace BlazePisonet.SoftTimer;
 
+public sealed record BlazePwifiMemberSnapshot(long Revision, IReadOnlyList<MemberAccount> Members);
+
+public sealed record BlazePwifiMemberMutationResult(
+    string EventId,
+    long ResultSeconds,
+    long BankedSeconds,
+    long Revision);
+
 public sealed class BlazePwifiClient : IDisposable
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(4) };
@@ -12,8 +20,10 @@ public sealed class BlazePwifiClient : IDisposable
     private string _targetNonce = string.Empty;
     private bool _insertWindow;
     private int _busy;
+    private DateTimeOffset _lastMemberSync = DateTimeOffset.MinValue;
 
     public event Action<string>? StatusChanged;
+    public event Action<BlazePwifiMemberSnapshot>? MembersReceived;
     public bool InsertWindow => _insertWindow;
     public string TargetNonce => _targetNonce;
 
