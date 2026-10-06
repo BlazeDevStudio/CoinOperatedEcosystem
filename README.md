@@ -6,7 +6,7 @@ SoftTimer does **not** contain or redistribute the original ASApp binaries, sour
 
 ## Release line
 
-Current: **v0.3.0**
+Current: **v0.4.0**
 
 Primary target: Windows 10/11 x64.
 
@@ -106,7 +106,10 @@ SoftTimer includes a Windows kiosk layer with:
 - floating active-time panel with optional member BANK / LOGOUT;
 - configurable low-time warning threshold and optional WAV warning audio;
 - three editable shop schedule windows with overnight/day selection, lock and shutdown actions;
-- member banked-time transfer.
+- member banked-time transfer;
+- optional BlazePwifi-authoritative Pisonet member accounts with signed metadata sync;
+- nonce-bound member authentication proofs without distributing reusable password hashes;
+- crash-consistent BANK/RESTORE reconciliation with a durable pending-event journal.
 
 `Ctrl+Alt+Delete` is intentionally left to the Windows Secure Attention Sequence. After returning from the secure screen, pressing **Home** during the short secret window opens the timed SoftTimer administrator login.
 
@@ -129,7 +132,7 @@ Unlike the legacy reference software, SoftTimer does not disguise its recovery t
 
 ## First installation
 
-1. Download `BlazePisonet-SoftTimer-Setup-v0.3.0.exe` from the GitHub Release.
+1. Download `BlazePisonet-SoftTimer-Setup-v0.4.0.exe` from the GitHub Release.
 2. Run the Setup EXE as administrator.
 3. Complete the normal Windows installer. No PowerShell/BAT/CMD setup step is required.
 4. Set an administrator password on first run.
