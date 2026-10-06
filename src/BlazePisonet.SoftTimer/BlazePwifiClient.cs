@@ -229,6 +229,63 @@ public sealed class BlazePwifiClient : IDisposable
         return HexSha256($"{action}|{id}|{memberToken}|{memberRevision}|{seconds}")[..32];
     }
 
+    public async Task<BlazePwifiMemberMutationResult?> ReplayMemberOperationAsync(PendingMemberOperation pending)
+    {
+        if (!_config.BlazePwifiEnabled || !_config.BlazePwifiMemberAuthorityEnabled)
+            return null;
+
+        var balanceField = pending.Action == "member_transfer"
+            ? "source_banked_seconds"
+            : "banked_seconds";
+        if (pending.Action is not ("member_bank" or "member_restore" or "member_transfer"))
+            return null;
+
+        var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+        var target = $"{pending.MemberToken}:{pending.EventId}:replay";
+        var call = await CallDetailedWithNonce(
+            pending.Action,
+            checked((int)Math.Clamp(pending.Seconds, 0, 31_536_000)),
+            target,
+            nonce);
+        if (call is null) return null;
+
+        using var doc = JsonDocument.Parse(call.Json);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
+            return null;
+
+        var returnedEvent = root.TryGetProperty("event_id", out var eid)
+            ? eid.GetString() ?? string.Empty
+            : string.Empty;
+        if (!returnedEvent.Equals(pending.EventId, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var resultSeconds = root.TryGetProperty("result_seconds", out var result)
+            ? result.GetInt64()
+            : 0;
+        var balanceSeconds = root.TryGetProperty(balanceField, out var balance)
+            ? balance.GetInt64()
+            : 0;
+        var revision = root.TryGetProperty("member_revision", out var rev)
+            ? rev.GetInt64()
+            : 0;
+        var responseSig = root.TryGetProperty("response_sig", out var sig)
+            ? sig.GetString() ?? string.Empty
+            : string.Empty;
+
+        var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
+        var expectedSig = HexSha256(
+            $"{_config.BlazePwifiVendoKey}|{pending.Action}|{id}|{call.Nonce}|{pending.EventId}|{pending.MemberToken}|{resultSeconds}|{balanceSeconds}|{revision}|{_config.BlazePwifiVendoKey}");
+        if (!FixedHexEquals(responseSig, expectedSig))
+            return null;
+
+        return new BlazePwifiMemberMutationResult(
+            pending.EventId,
+            resultSeconds,
+            balanceSeconds,
+            revision);
+    }
+
     public async Task<bool> PingAsync()
     {
         var json = await Call("ping", 0, string.Empty);
