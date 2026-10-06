@@ -85,6 +85,22 @@ public sealed class AppController : IDisposable
 
     public void ApplyConfig(AppConfig updated)
     {
+        var pending = _timer.PendingMemberOperation;
+        if (pending is not null)
+        {
+            var integrationChanged =
+                !updated.BlazePwifiEnabled
+                || !updated.BlazePwifiMemberAuthorityEnabled
+                || !string.Equals(updated.BlazePwifiVendoUrl, Config.BlazePwifiVendoUrl, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(updated.BlazePwifiVendoKey, Config.BlazePwifiVendoKey, StringComparison.Ordinal)
+                || !Storage.NormalizeId(updated.BlazePwifiControllerId)
+                    .Equals(Storage.NormalizeId(Config.BlazePwifiControllerId), StringComparison.OrdinalIgnoreCase);
+
+            if (integrationChanged)
+                throw new InvalidOperationException(
+                    $"Resolve the pending BlazePwifi member transaction ({pending.Action} · {pending.Username}) before disabling or changing central member integration.");
+        }
+
         Config = updated;
         Storage.SaveConfig(Config);
         _security.UpdateConfig(Config);
