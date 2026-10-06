@@ -2,7 +2,7 @@ BLAZEPISONET SOFTTIMER - NATIVE WINDOWS INSTALLER
 ================================================
 
 Normal installation:
-  Run BlazePisonet-SoftTimer-Setup-v0.2.0.exe as Administrator.
+  Run BlazePisonet-SoftTimer-Setup-v0.3.0.exe as Administrator.
 
 The installer is a native Windows EXE. The operator does not need to run
 PowerShell, BAT, CMD, or a separate setup script.

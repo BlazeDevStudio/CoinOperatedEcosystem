@@ -12,10 +12,13 @@ public sealed class AppController : IDisposable
     private CentralizedServer? _centralServer;
     private readonly System.Windows.Forms.Timer _maintenanceTimer;
     private readonly List<LockForm> _locks = new();
+    private readonly HashSet<string> _activeScheduleShutdownWindows = new(StringComparer.OrdinalIgnoreCase);
     private MainForm? _mainForm;
+    private ActiveTimerForm? _activeTimer;
     private bool _adminMaintenance;
     private bool _forcedScheduleLock;
     private bool _shutdownPrompted;
+    private bool _warningPlayed;
     private DateTimeOffset _lastQueuePoll = DateTimeOffset.MinValue;
 
     public AppConfig Config { get; private set; }
@@ -175,6 +178,7 @@ public sealed class AppController : IDisposable
     {
         _adminMaintenance = true;
         HideLocks();
+        HideActiveTimer();
         _security.SetLocked(false);
     }
 
@@ -211,18 +215,21 @@ public sealed class AppController : IDisposable
         if (!Config.Enabled || _adminMaintenance)
         {
             HideLocks();
+            HideActiveTimer();
             _security.SetLocked(false);
             return;
         }
         var shouldLock = !_timer.IsActive || _forcedScheduleLock;
         if (shouldLock)
         {
+            HideActiveTimer();
             ShowLocks();
             _security.SetLocked(true);
         }
         else
         {
             HideLocks();
+            ShowActiveTimer();
             _security.SetLocked(false);
         }
     }
@@ -256,11 +263,78 @@ public sealed class AppController : IDisposable
         _locks.Clear();
     }
 
+    private void ShowActiveTimer()
+    {
+        if (!Config.ShowActiveTimerOverlay || Config.TimerSource == TimerSourceMode.ExternalTimerBoard)
+        {
+            HideActiveTimer();
+            return;
+        }
+
+        if (_activeTimer is null || _activeTimer.IsDisposed)
+        {
+            _activeTimer = new ActiveTimerForm(Config);
+            _activeTimer.BankRequested += OpenMemberBankFromOverlay;
+            _activeTimer.UpdateRemaining(_timer.RemainingSeconds);
+            _activeTimer.Show();
+        }
+        else
+        {
+            _activeTimer.UpdateRemaining(_timer.RemainingSeconds);
+            if (!_activeTimer.Visible) _activeTimer.Show();
+        }
+    }
+
+    private void HideActiveTimer()
+    {
+        if (_activeTimer is null) return;
+        try { _activeTimer.Close(); _activeTimer.Dispose(); } catch { }
+        _activeTimer = null;
+    }
+
+    private void OpenMemberBankFromOverlay()
+    {
+        if (!Config.AllowMemberBankFromOverlay || !_timer.IsActive) return;
+        using var bank = new MemberBankForm();
+        if (bank.ShowDialog() != DialogResult.OK) return;
+
+        if (_timer.BankCurrentTime(bank.Username, bank.Password))
+        {
+            SetLockStatus("Time banked to member account", true);
+            EvaluateLockState();
+        }
+        else
+        {
+            MessageBox.Show(
+                "Could not bank the remaining time. Check the member username/password.",
+                "BlazePisonet SoftTimer",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+    }
+
+    public void PlayWarningPreview() => WarningSound.Play(Config);
+
     private void OnRemainingChanged(long seconds)
     {
         BeginInvokeUi(() =>
         {
             foreach (var f in _locks) f.UpdateRemaining(seconds);
+            _activeTimer?.UpdateRemaining(seconds);
+
+            if (seconds == 0 || seconds > Math.Max(1, Config.WarningSeconds))
+                _warningPlayed = false;
+            else if (!_warningPlayed
+                && Config.WarningSoundEnabled
+                && Config.TimerSource != TimerSourceMode.ExternalTimerBoard
+                && Config.WarningSeconds > 0)
+            {
+                _warningPlayed = true;
+                WarningSound.Play(Config);
+                _activeTimer?.SetStatus($"LOW TIME · {BlazeTheme.FormatTime(seconds)}", false, true);
+                Storage.Log($"Low-time warning triggered at {seconds}s remaining.");
+            }
+
             StatusChanged?.Invoke();
             if (seconds == 0 && Config.AutoShutdownAtZero && Config.TimerSource == TimerSourceMode.InternalPcTimer)
                 ConfirmOrShutdown("Paid time has ended.");
@@ -309,16 +383,36 @@ public sealed class AppController : IDisposable
     private void EvaluateSchedules()
     {
         var now = DateTime.Now;
+        var t = now.TimeOfDay;
         var forced = false;
-        foreach (var s in Config.NotificationSchedules.Where(s => s.Enabled && s.Days.Contains(now.DayOfWeek)))
+        var liveShutdownWindows = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < Config.NotificationSchedules.Count; i++)
         {
-            var t = now.TimeOfDay;
-            var inWindow = s.Start <= s.End ? t >= s.Start && t < s.End : t >= s.Start || t < s.End;
+            var s = Config.NotificationSchedules[i];
+            if (!s.Enabled) continue;
+
+            var overnight = s.Start > s.End;
+            var inWindow = overnight ? t >= s.Start || t < s.End : t >= s.Start && t < s.End;
             if (!inWindow) continue;
+
+            var anchorDate = overnight && t < s.End ? now.Date.AddDays(-1) : now.Date;
+            if (!s.Days.Contains(anchorDate.DayOfWeek)) continue;
+
             if (s.LockDuringWindow) forced = true;
-            if (s.ShutdownDuringWindow) ConfirmOrShutdown(s.Message);
             if (!string.IsNullOrWhiteSpace(s.Message)) SetLockStatus(s.Message, false, true);
+
+            if (s.ShutdownDuringWindow)
+            {
+                var key = $"{i}:{anchorDate:yyyyMMdd}:{s.Start:c}:{s.End:c}";
+                liveShutdownWindows.Add(key);
+                if (_activeScheduleShutdownWindows.Add(key))
+                    ConfirmOrShutdown(string.IsNullOrWhiteSpace(s.Message) ? "Scheduled closing time." : s.Message, true);
+            }
         }
+
+        _activeScheduleShutdownWindows.RemoveWhere(k => !liveShutdownWindows.Contains(k));
+
         if (forced != _forcedScheduleLock)
         {
             _forcedScheduleLock = forced;
@@ -326,22 +420,58 @@ public sealed class AppController : IDisposable
         }
     }
 
-    private void ConfirmOrShutdown(string reason)
+    private void ConfirmOrShutdown(string reason, bool forcePolicy = false)
     {
-        if (_shutdownPrompted || !Config.AutoShutdownAtZero && !Config.IdleShutdownEnabled && !Config.UnusualInputShutdownEnabled) return;
+        if (_shutdownPrompted || !forcePolicy && !Config.AutoShutdownAtZero && !Config.IdleShutdownEnabled && !Config.UnusualInputShutdownEnabled) return;
         _shutdownPrompted = true;
         Storage.Log("Shutdown policy triggered: " + reason);
-        var result = MessageBox.Show(reason + $"\n\nThe computer will shut down in {Math.Max(15, Config.ShutdownGraceSeconds)} seconds unless cancelled.", "BlazePisonet SoftTimer", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2, MessageBoxOptions.ServiceNotification);
-        if (result == DialogResult.OK)
+        var grace = Math.Max(15, Config.ShutdownGraceSeconds);
+        try
         {
-            try { Process.Start(new ProcessStartInfo("shutdown.exe", $"/s /f /t {Math.Max(15, Config.ShutdownGraceSeconds)}") { UseShellExecute = false, CreateNoWindow = true }); } catch { }
+            Process.Start(new ProcessStartInfo("shutdown.exe", $"/s /f /t {grace}")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Storage.Log("Could not schedule Windows shutdown: " + ex.Message);
+            _shutdownPrompted = false;
+            return;
+        }
+
+        var result = MessageBox.Show(
+            reason + $"\n\nWindows will shut down in {grace} seconds. Press Cancel to abort the shutdown.",
+            "BlazePisonet SoftTimer",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.ServiceNotification);
+
+        if (result == DialogResult.Cancel)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("shutdown.exe", "/a")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                Storage.Log("Scheduled shutdown cancelled by user/admin.");
+            }
+            catch (Exception ex) { Storage.Log("Could not abort scheduled shutdown: " + ex.Message); }
         }
         _shutdownPrompted = false;
     }
 
     private void SetLockStatus(string text, bool good = false, bool warn = false)
     {
-        BeginInvokeUi(() => { foreach (var f in _locks) f.SetStatus(text, good, warn); });
+        BeginInvokeUi(() =>
+        {
+            foreach (var f in _locks) f.SetStatus(text, good, warn);
+            _activeTimer?.SetStatus(text, good, warn);
+        });
     }
 
     private void BeginInvokeUi(Action action)
@@ -368,6 +498,8 @@ public sealed class AppController : IDisposable
     {
         _maintenanceTimer.Stop();
         HideLocks();
+        HideActiveTimer();
+        WarningSound.Stop();
         _centralServer?.Dispose();
         _blazePwifi.Dispose();
         _blazeTimer.Dispose();

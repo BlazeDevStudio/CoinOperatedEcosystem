@@ -23,15 +23,15 @@ This document records the clean-room behavior mapping used for SoftTimer. It is 
 | Remaining-time temp text files | Replaced by atomic JSON state replacement + backup |
 | Shared-folder member database | Replaced by local hashed member store; network synchronization is kept separate |
 | Member login/logout and banked time | Implemented locally |
-| Member time transfer | Timer engine includes transfer support; management UI will expand in later revisions |
-| Warning sound | Warning threshold is in configuration; richer audio selection is scheduled after hardware validation |
+| Member time transfer | Implemented in timer engine and management UI |
+| Warning sound | Implemented with configurable threshold, optional WAV path and fallback Windows warning sound |
 | Promo rate UI | Pricing is currently seconds-per-pulse; promotion/rate engine is planned after the first hardware-stable line |
 | Coin counter | Durable accepted-pulse counter |
 | Lock-screen wallpaper / shop / PC name / banners | Implemented with Blaze-themed UI and optional wallpaper |
 | Auto shutdown at zero | Optional |
 | Idle-user shutdown | Optional |
 | Unusual/repetitive input shutdown | Basic high-volume keyboard trigger included; richer mouse-pattern analysis remains planned |
-| Three scheduled notifications | Schedule model exists in core; richer schedule editor remains planned |
+| Three scheduled notifications | Implemented with three editable windows, selected days, overnight handling, messages, lock and shutdown actions |
 | Hidden/obfuscated registry configuration | Not copied; configuration is explicit and auditable |
 | Universal default admin password | Explicitly rejected; operator sets password |
 | Antivirus exclusion instructions | Not required by design |

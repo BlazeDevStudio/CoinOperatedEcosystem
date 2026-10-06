@@ -19,6 +19,11 @@ public sealed class MainForm : Form
     private readonly ComboBox _timerSource = NewCombo();
     private readonly ComboBox _topology = NewCombo();
     private readonly NumericUpDown _secondsPerCoin = NewNumber(10, 86400, 300);
+    private readonly NumericUpDown _warningSeconds = NewNumber(0, 7200, 60);
+    private readonly CheckBox _warningSoundEnabled = new() { Text = "Play warning when paid time is low" };
+    private readonly TextBox _warningSoundPath = NewText();
+    private readonly CheckBox _showActiveOverlay = new() { Text = "Show floating time panel while customer time is active" };
+    private readonly CheckBox _allowMemberBankOverlay = new() { Text = "Allow member BANK / LOGOUT from floating time panel" };
     private readonly ComboBox _serialMode = NewCombo();
     private readonly ComboBox _serialDevices = NewCombo();
     private readonly ComboBox _coinSignal = NewCombo();
@@ -70,6 +75,12 @@ public sealed class MainForm : Form
     private readonly TextBox _memberUser = NewText();
     private readonly TextBox _memberPass = NewText();
     private readonly ListBox _memberList = new() { Height = 220 };
+    private readonly TextBox _memberTransferFrom = NewText();
+    private readonly TextBox _memberTransferPass = NewText();
+    private readonly TextBox _memberTransferTo = NewText();
+    private readonly NumericUpDown _memberTransferMinutes = NewNumber(1, 10080, 30);
+    private readonly ListBox _scheduleList = new() { Height = 210 };
+    private List<NotificationSchedule> _schedules = new();
     private readonly TextBox _log = NewMultiText();
 
     public MainForm(AppController controller)
@@ -120,7 +131,7 @@ public sealed class MainForm : Form
         var navPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(0, 8, 0, 0) };
         side.Controls.Add(navPanel);
         navPanel.BringToFront();
-        foreach (var name in new[] { "Dashboard", "Hardware", "Centralized", "BlazePwifi", "Members", "Security", "Appearance", "Diagnostics" })
+        foreach (var name in new[] { "Dashboard", "Hardware", "Centralized", "BlazePwifi", "Members", "Schedules", "Security", "Appearance", "Diagnostics" })
         {
             var b = new Button { Text = name, Width = 185, Height = 42, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(2), FlatStyle = FlatStyle.Flat, BackColor = BlazeTheme.Panel2, ForeColor = BlazeTheme.Text };
             b.FlatAppearance.BorderSize = 0;
@@ -128,7 +139,7 @@ public sealed class MainForm : Form
             navPanel.Controls.Add(b);
             _nav[name] = b;
         }
-        var footer = new Label { Text = "v0.2.0\nASApp clean-room successor", ForeColor = BlazeTheme.Muted, Dock = DockStyle.Bottom, Height = 48, TextAlign = ContentAlignment.BottomLeft };
+        var footer = new Label { Text = "v0.3.0\nASApp clean-room successor", ForeColor = BlazeTheme.Muted, Dock = DockStyle.Bottom, Height = 48, TextAlign = ContentAlignment.BottomLeft };
         side.Controls.Add(footer);
     }
 
@@ -139,6 +150,7 @@ public sealed class MainForm : Form
         BuildCentralized();
         BuildBlazePwifi();
         BuildMembers();
+        BuildSchedules();
         BuildSecurity();
         BuildAppearance();
         BuildDiagnostics();
@@ -185,6 +197,19 @@ public sealed class MainForm : Form
         timerCard.Controls.Add(Field("Timer source", _timerSource));
         timerCard.Controls.Add(Field("Coin topology", _topology));
         timerCard.Controls.Add(Field("Seconds added per coin pulse", _secondsPerCoin));
+        timerCard.Controls.Add(Field("Low-time warning threshold (seconds)", _warningSeconds));
+        timerCard.Controls.Add(_warningSoundEnabled);
+        timerCard.Controls.Add(Field("Warning WAV file (optional)", _warningSoundPath));
+        var warningButtons = new FlowLayoutPanel { AutoSize = true, Width = 880 };
+        warningButtons.Controls.Add(Button("BROWSE WARNING WAV", (_, _) =>
+        {
+            using var dialog = new OpenFileDialog { Filter = "Wave audio|*.wav|All files|*.*" };
+            if (dialog.ShowDialog() == DialogResult.OK) _warningSoundPath.Text = dialog.FileName;
+        }));
+        warningButtons.Controls.Add(Button("TEST WARNING", (_, _) => WarningSound.Play(ReadUiIntoConfig(false))));
+        timerCard.Controls.Add(warningButtons);
+        timerCard.Controls.Add(_showActiveOverlay);
+        timerCard.Controls.Add(_allowMemberBankOverlay);
         root.Controls.Add(timerCard);
 
         var serialCard = Card("Serial / USB-RS232", "Device Manager COM ports are enumerated dynamically. Exact-device binding survives COM-number changes when Windows exposes a stable PnP identity.");
@@ -263,9 +288,57 @@ public sealed class MainForm : Form
             if (_controller.Timer.CreateOrUpdateMember(_memberUser.Text, _memberPass.Text)) { _memberPass.Clear(); RefreshMembers(); }
             else MessageBox.Show("Use a 2-32 character username and a password of at least 4 characters.");
         }));
+        var memberActions = new FlowLayoutPanel { AutoSize = true, Width = 880 };
+        memberActions.Controls.Add(Button("BANK CURRENT PAID TIME", (_, _) =>
+        {
+            if (_controller.Timer.BankCurrentTime(_memberUser.Text.Trim(), _memberPass.Text))
+            {
+                _memberPass.Clear();
+                RefreshMembers();
+                RefreshStatus();
+                MessageBox.Show("Remaining paid time was banked to the member account.");
+            }
+            else MessageBox.Show("Could not bank time. Check the member username/password and make sure paid time is active.");
+        }));
+        card.Controls.Add(memberActions);
         card.Controls.Add(_memberList);
         root.Controls.Add(card);
+
+        var transfer = Card("Transfer member time", "Move already-banked time from one member account to another without touching the running station timer.");
+        transfer.Controls.Add(Field("From member", _memberTransferFrom));
+        _memberTransferPass.UseSystemPasswordChar = true;
+        transfer.Controls.Add(Field("From member password", _memberTransferPass));
+        transfer.Controls.Add(Field("To member", _memberTransferTo));
+        transfer.Controls.Add(Field("Minutes to transfer", _memberTransferMinutes));
+        transfer.Controls.Add(PrimaryButton("TRANSFER TIME", (_, _) =>
+        {
+            var seconds = (long)_memberTransferMinutes.Value * 60L;
+            var ok = _controller.Timer.TransferMemberTime(
+                _memberTransferFrom.Text.Trim(),
+                _memberTransferPass.Text,
+                _memberTransferTo.Text.Trim(),
+                seconds);
+            _memberTransferPass.Clear();
+            if (ok)
+            {
+                RefreshMembers();
+                MessageBox.Show("Member time transferred.");
+            }
+            else MessageBox.Show("Transfer failed. Check both accounts, password and available banked time.");
+        }));
+        root.Controls.Add(transfer);
         _pages["Members"] = root;
+    }
+
+    private void BuildSchedules()
+    {
+        var root = NewPage("Schedules", "Three ASApp-style shop schedules with overnight support, customer lock windows and optional shutdown policy.");
+        var card = Card("Scheduled policies", "A schedule can show a message, force the customer lock screen, offer a controlled shutdown, or combine those actions.");
+        _scheduleList.Width = 850;
+        card.Controls.Add(_scheduleList);
+        card.Controls.Add(PrimaryButton("EDIT 3 SCHEDULE WINDOWS", (_, _) => EditSchedules()));
+        root.Controls.Add(card);
+        _pages["Schedules"] = root;
     }
 
     private void BuildSecurity()
@@ -339,6 +412,11 @@ public sealed class MainForm : Form
         FillEnum(_coinSignal, c.CoinInputSignal);
         FillEnum(_timerSignal, c.TimerActiveSignal);
         _secondsPerCoin.Value = Clamp(_secondsPerCoin, c.SecondsPerCoin);
+        _warningSeconds.Value = Clamp(_warningSeconds, c.WarningSeconds);
+        _warningSoundEnabled.Checked = c.WarningSoundEnabled;
+        _warningSoundPath.Text = c.WarningSoundPath;
+        _showActiveOverlay.Checked = c.ShowActiveTimerOverlay;
+        _allowMemberBankOverlay.Checked = c.AllowMemberBankFromOverlay;
         _coinHigh.Checked = c.CoinInputActiveHigh;
         _timerHigh.Checked = c.TimerActiveHigh;
         _debounce.Value = Clamp(_debounce, c.DebounceMs);
@@ -374,6 +452,8 @@ public sealed class MainForm : Form
         _banner1.Text = c.Banner1;
         _banner2.Text = c.Banner2;
         _wallpaper.Text = c.WallpaperPath ?? string.Empty;
+        _schedules = CloneSchedules(c.NotificationSchedules);
+        RefreshSchedules();
         RefreshStatus();
     }
 
@@ -387,6 +467,11 @@ public sealed class MainForm : Form
         c.CoinInputSignal = SelectedEnum(_coinSignal, c.CoinInputSignal);
         c.TimerActiveSignal = SelectedEnum(_timerSignal, c.TimerActiveSignal);
         c.SecondsPerCoin = (int)_secondsPerCoin.Value;
+        c.WarningSeconds = (int)_warningSeconds.Value;
+        c.WarningSoundEnabled = _warningSoundEnabled.Checked;
+        c.WarningSoundPath = _warningSoundPath.Text.Trim();
+        c.ShowActiveTimerOverlay = _showActiveOverlay.Checked;
+        c.AllowMemberBankFromOverlay = _allowMemberBankOverlay.Checked;
         c.CoinInputActiveHigh = _coinHigh.Checked;
         c.TimerActiveHigh = _timerHigh.Checked;
         c.DebounceMs = (int)_debounce.Value;
@@ -427,6 +512,7 @@ public sealed class MainForm : Form
         c.Banner1 = _banner1.Text.Trim();
         c.Banner2 = _banner2.Text.Trim();
         c.WallpaperPath = string.IsNullOrWhiteSpace(_wallpaper.Text) ? null : _wallpaper.Text.Trim();
+        c.NotificationSchedules = CloneSchedules(_schedules);
         if (validate && c.Enabled && !c.HasAdminPassword) throw new InvalidOperationException("Set an administrator password before enabling SoftTimer.");
         if (validate && c.CoinTopology != CoinTopologyMode.StandardOneToOne && c.CentralSharedKey.Length < 16) throw new InvalidOperationException("Centralized mode requires a shared key of at least 16 characters.");
         return c;
@@ -492,6 +578,48 @@ public sealed class MainForm : Form
         if (dialog.ShowDialog() != DialogResult.OK) return;
         _controller.SetAdminPassword(dialog.Password);
         MessageBox.Show("Administrator password saved. There is no universal/default admin password.");
+    }
+
+    private void EditSchedules()
+    {
+        using var dialog = new ScheduleEditorForm(_schedules);
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _schedules = CloneSchedules(dialog.Schedules);
+        RefreshSchedules();
+    }
+
+    private void RefreshSchedules()
+    {
+        _scheduleList.Items.Clear();
+        for (var i = 0; i < _schedules.Count; i++)
+        {
+            var s = _schedules[i];
+            var days = s.Days.Count == 7 ? "Every day" : string.Join(",", s.Days.OrderBy(d => (int)d).Select(d => d.ToString()[..3]));
+            var actions = string.Join(" + ", new[]
+            {
+                s.LockDuringWindow ? "LOCK" : null,
+                s.ShutdownDuringWindow ? "SHUTDOWN" : null
+            }.Where(x => x is not null));
+            if (actions.Length == 0) actions = "MESSAGE";
+            _scheduleList.Items.Add($"{(s.Enabled ? "●" : "○")} {s.Name} · {s.Start:hh\\:mm}-{s.End:hh\\:mm} · {days} · {actions}");
+        }
+    }
+
+    private static List<NotificationSchedule> CloneSchedules(IEnumerable<NotificationSchedule> schedules)
+    {
+        var list = schedules.Take(3).Select(s => new NotificationSchedule
+        {
+            Enabled = s.Enabled,
+            Name = s.Name,
+            Start = s.Start,
+            End = s.End,
+            LockDuringWindow = s.LockDuringWindow,
+            ShutdownDuringWindow = s.ShutdownDuringWindow,
+            Message = s.Message,
+            Days = new HashSet<DayOfWeek>(s.Days)
+        }).ToList();
+        while (list.Count < 3) list.Add(new NotificationSchedule { Name = $"Schedule {list.Count + 1}" });
+        return list;
     }
 
     private void RefreshMembers()

@@ -36,7 +36,7 @@ public enum ModemSignal
 
 public sealed class AppConfig
 {
-    public string Version { get; set; } = "0.2.0";
+    public string Version { get; set; } = "0.3.0";
     public bool Enabled { get; set; }
     public string ShopName { get; set; } = "BlazePisonet";
     public string PcName { get; set; } = Environment.MachineName;
@@ -51,9 +51,13 @@ public sealed class AppConfig
     public CoinTopologyMode CoinTopology { get; set; } = CoinTopologyMode.StandardOneToOne;
     public int SecondsPerCoin { get; set; } = 300;
     public int WarningSeconds { get; set; } = 60;
+    public bool WarningSoundEnabled { get; set; } = true;
+    public string WarningSoundPath { get; set; } = string.Empty;
     public int ShutdownGraceSeconds { get; set; } = 30;
     public bool AutoShutdownAtZero { get; set; }
     public bool AutoMuteWhenLocked { get; set; }
+    public bool ShowActiveTimerOverlay { get; set; } = true;
+    public bool AllowMemberBankFromOverlay { get; set; } = true;
 
     public SerialSelectionMode SerialSelection { get; set; } = SerialSelectionMode.AutoCompatible;
     public string ManualComPort { get; set; } = "COM1";
@@ -117,7 +121,12 @@ public sealed class AppConfig
     };
 
     public List<string> BlockedWebsites { get; set; } = new();
-    public List<NotificationSchedule> NotificationSchedules { get; set; } = new();
+    public List<NotificationSchedule> NotificationSchedules { get; set; } = new()
+    {
+        new() { Name = "Schedule 1" },
+        new() { Name = "Schedule 2" },
+        new() { Name = "Schedule 3" }
+    };
 
     [JsonIgnore]
     public bool HasAdminPassword => !string.IsNullOrWhiteSpace(AdminPasswordHash) && !string.IsNullOrWhiteSpace(AdminPasswordSalt);

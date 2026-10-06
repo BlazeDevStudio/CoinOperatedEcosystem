@@ -61,7 +61,8 @@ public static class Storage
                 cfg.CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(cfg.BlazePwifiControllerId))
                 cfg.BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName);
-            cfg.Version = "0.2.0";
+            cfg.Version = "0.3.0";
+            EnsureSchedules(cfg);
             return cfg;
         }
         catch (Exception ex)
@@ -75,7 +76,27 @@ public static class Storage
         }
     }
 
-    public static void SaveConfig(AppConfig config) => AtomicWrite(ConfigPath, JsonSerializer.Serialize(config, JsonOptions));
+    public static void SaveConfig(AppConfig config)
+    {
+        EnsureSchedules(config);
+        AtomicWrite(ConfigPath, JsonSerializer.Serialize(config, JsonOptions));
+    }
+
+    private static void EnsureSchedules(AppConfig config)
+    {
+        config.NotificationSchedules ??= new List<NotificationSchedule>();
+        while (config.NotificationSchedules.Count < 3)
+            config.NotificationSchedules.Add(new NotificationSchedule { Name = $"Schedule {config.NotificationSchedules.Count + 1}" });
+        if (config.NotificationSchedules.Count > 3)
+            config.NotificationSchedules = config.NotificationSchedules.Take(3).ToList();
+
+        for (var i = 0; i < config.NotificationSchedules.Count; i++)
+        {
+            var schedule = config.NotificationSchedules[i];
+            if (string.IsNullOrWhiteSpace(schedule.Name)) schedule.Name = $"Schedule {i + 1}";
+            schedule.Days ??= Enum.GetValues<DayOfWeek>().ToHashSet();
+        }
+    }
 
     public static RuntimeState LoadState()
     {
