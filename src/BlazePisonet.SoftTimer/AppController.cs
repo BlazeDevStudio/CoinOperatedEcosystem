@@ -513,52 +513,68 @@ public sealed class AppController : IDisposable
 
     private async Task<bool> CommitCentralBankAsync(MemberAccount member, string password, long seconds)
     {
-        var pending = EnsurePendingMemberOperation("member_bank", member, member.Username, seconds);
-        if (pending is null) return false;
-
-        var result = await _blazePwifi.BankMemberAsync(member, password, pending.Seconds, pending.EventId);
-        if (result is null)
+        await _memberOperationGate.WaitAsync();
+        try
         {
-            _timer.Pause(true);
-            EvaluateLockState();
-            return false;
-        }
+            var pending = EnsurePendingMemberOperation("member_bank", member, member.Username, seconds);
+            if (pending is null) return false;
 
-        _timer.Reset($"banked to BlazePwifi member {member.Username}");
-        _timer.ClearPendingMemberOperation(pending.EventId);
-        _timer.Pause(false);
-        await _blazePwifi.SyncMembersAsync();
-        EvaluateLockState();
-        return true;
+            var result = await _blazePwifi.BankMemberAsync(member, password, pending.Seconds, pending.EventId);
+            if (result is null)
+            {
+                _timer.Pause(true);
+                EvaluateLockState();
+                return false;
+            }
+
+            _timer.Reset($"banked to BlazePwifi member {member.Username}");
+            _timer.ClearPendingMemberOperation(pending.EventId);
+            _timer.Pause(false);
+            await _blazePwifi.SyncMembersAsync();
+            EvaluateLockState();
+            return true;
+        }
+        finally
+        {
+            _memberOperationGate.Release();
+        }
     }
 
     private async Task<long?> CommitCentralRestoreAsync(MemberAccount member, string password)
     {
-        var pending = EnsurePendingMemberOperation("member_restore", member, member.Username, 0);
-        if (pending is null) return null;
-
-        var result = await _blazePwifi.RestoreMemberAsync(member, password, pending.EventId);
-        if (result is null)
+        await _memberOperationGate.WaitAsync();
+        try
         {
-            _timer.Pause(true);
+            var pending = EnsurePendingMemberOperation("member_restore", member, member.Username, 0);
+            if (pending is null) return null;
+
+            var result = await _blazePwifi.RestoreMemberAsync(member, password, pending.EventId);
+            if (result is null)
+            {
+                _timer.Pause(true);
+                EvaluateLockState();
+                return null;
+            }
+
+            if (result.ResultSeconds > 0)
+            {
+                _timer.AddSeconds(
+                    result.ResultSeconds,
+                    $"blazepwifi-member:{pending.EventId}",
+                    false,
+                    $"BlazePwifi member time restored: {member.Username}");
+            }
+
+            _timer.ClearPendingMemberOperation(pending.EventId);
+            _timer.Pause(false);
+            await _blazePwifi.SyncMembersAsync();
             EvaluateLockState();
-            return null;
+            return result.ResultSeconds;
         }
-
-        if (result.ResultSeconds > 0)
+        finally
         {
-            _timer.AddSeconds(
-                result.ResultSeconds,
-                $"blazepwifi-member:{pending.EventId}",
-                false,
-                $"BlazePwifi member time restored: {member.Username}");
+            _memberOperationGate.Release();
         }
-
-        _timer.ClearPendingMemberOperation(pending.EventId);
-        _timer.Pause(false);
-        await _blazePwifi.SyncMembersAsync();
-        EvaluateLockState();
-        return result.ResultSeconds;
     }
 
     private async Task MaintenanceTick()
