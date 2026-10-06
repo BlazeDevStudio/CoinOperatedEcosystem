@@ -225,8 +225,11 @@ public sealed class BlazePwifiClient : IDisposable
 
     public string CreateMemberEventId(string action, string memberToken, long memberRevision, long seconds)
     {
-        var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
-        return HexSha256($"{action}|{id}|{memberToken}|{memberRevision}|{seconds}")[..32];
+        _ = action;
+        _ = memberToken;
+        _ = memberRevision;
+        _ = seconds;
+        return Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
     }
 
     public async Task<BlazePwifiMemberMutationResult?> ReplayMemberOperationAsync(PendingMemberOperation pending)
