@@ -86,7 +86,16 @@ public sealed class BlazePwifiClient : IDisposable
 
     private async Task<string?> Call(string action, int pulses, string target)
     {
-        if (string.IsNullOrWhiteSpace(_config.BlazePwifiVendoUrl) || string.IsNullOrWhiteSpace(_config.BlazePwifiVendoKey)) return null;
+        var result = await CallDetailed(action, pulses, target);
+        return result?.Json;
+    }
+
+    private async Task<CallResult?> CallDetailed(string action, int pulses, string target)
+    {
+        if (string.IsNullOrWhiteSpace(_config.BlazePwifiVendoUrl)
+            || string.IsNullOrWhiteSpace(_config.BlazePwifiVendoKey))
+            return null;
+
         var id = Storage.NormalizeId(_config.BlazePwifiControllerId);
         var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
         var sig = Signature(_config.BlazePwifiVendoKey, action, id, nonce, pulses, target);
@@ -106,13 +115,24 @@ public sealed class BlazePwifiClient : IDisposable
             Storage.Log($"BlazePwifi {action} failed {(int)resp.StatusCode}: {text}");
             return null;
         }
-        return text;
+        return new CallResult(text, nonce);
     }
 
     public static string Signature(string secret, string action, string id, string nonce, int pulses, string target)
     {
         var raw = $"{secret}|{action}|{id}|{nonce}|{pulses}|{target}|{secret}";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
+        return HexSha256(raw);
+    }
+
+    private static string HexSha256(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+
+    private static bool FixedHexEquals(string left, string right)
+    {
+        if (left.Length != right.Length || left.Length == 0) return false;
+        return CryptographicOperations.FixedTimeEquals(
+            Encoding.ASCII.GetBytes(left.ToLowerInvariant()),
+            Encoding.ASCII.GetBytes(right.ToLowerInvariant()));
     }
 
     public void Dispose()
@@ -120,4 +140,6 @@ public sealed class BlazePwifiClient : IDisposable
         _timer.Dispose();
         _http.Dispose();
     }
+
+    private sealed record CallResult(string Json, string Nonce);
 }
