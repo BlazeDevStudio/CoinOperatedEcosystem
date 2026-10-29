@@ -1,22 +1,23 @@
 # Phoenix Migration Manifest
 
 **Date:** 2026-10-28  
-**Destination:** `BlazingSystems/CoinOperatedEcosystem`  
+**Destination:** `BlazeDevStudio/CoinOperatedEcosystem`  
 **Original untouched base:** `main@b0b0ebc27fbb8cbe9bb36e1d075a132060a819d0`  
-**Stage:** destination structure only; **NO source files copied**.  
+**Stage:** destination structure plus a provenance-pinned branding reference; **NO application source files copied**.  
 **Status:** STRUCTURE_CREATED; finance and hardware production NO-GO.
 
 ## Candidate paths needing exact source selection
 
 | Old repository path | Proposed destination | SHA and PR verification |
 | --- | --- | --- |
-| `BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/` | `core/` | Pending branch selection and dependency audit |
-| `BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/android/` | `rental/` | Pending signed-lease and Android PR reconciliation |
-| `BlazingSystems-Experiments/experiment/windows/BlazePisonet-SoftTimer/` | `pisonet/` | Pending native serial and signing PR reconciliation |
-| `BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/esp8266/` | `controllers/esp8266/` | Pending protected-freshness and hardware evidence |
-| `BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/esp32/` | `controllers/esp32/` | Pending protected-freshness and hardware evidence |
+| `BlazeDevStudio/BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/` | `core/` | Pending branch selection and dependency audit |
+| `BlazeDevStudio/BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/android/` | `rental/` | Pending signed-lease and Android PR reconciliation |
+| `BlazeDevStudio/BlazingSystems-Experiments/experiment/windows/BlazePisonet-SoftTimer/` | `pisonet/` | Pending native serial and signing PR reconciliation |
+| `BlazeDevStudio/BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/esp8266/` | `controllers/esp8266/` | Pending protected-freshness and hardware evidence |
+| `BlazeDevStudio/BlazingSystems-Experiments/experiment/openwrt/BlazePwifi/esp32/` | `controllers/esp32/` | Pending protected-freshness and hardware evidence |
 | Shared APIs/receipts/protocols | `contracts/` | Identify authoritative revision and consumers |
 | Existing native and integration fixtures | `integration-tests/` | Preserve original source-linked test identity and provenance |
+| `BlazeDevStudio/BlazingSystems@8b08add6:branding/Logo-V2/` | `branding/Logo-V2/` | Exact reference/hash selected; runtime asset integration remains pending |
 
 ## Mandatory import record per batch
 

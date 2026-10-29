@@ -1,0 +1,55 @@
+{
+  "schema": "blaze-logo-v2-anchor-v1",
+  "status": "REFERENCE_PINNED",
+  "recorded_date": "2026-10-30",
+  "brand": "BLAZE SYSTEMS",
+  "authority": {
+    "repository": "BlazeDevStudio/BlazingSystems",
+    "commit": "8b08add6319df58a8c8cd1a41d1dcd6f4caab04c",
+    "path": "branding/Logo-V2/ORIGINAL/113704.png",
+    "git_blob": "5b1bb07fc6a875207ec56600f547a56f0da83f94",
+    "sha256": "56fb15d1ed4faa44af7dafc3defa5e3eb04252966df853bd96f587a7a3d9132d",
+    "media_type": "image/jpeg",
+    "uploaded_filename": "113704.png",
+    "bytes": 234556,
+    "width": 1536,
+    "height": 1024
+  },
+  "exact_source_package": {
+    "path": "branding/Logo-V2/Logo-V2-Branding-Package.zip",
+    "git_blob": "68db81f6ae64ee51baa056496436403b64b4b8a3",
+    "bytes": 7804110,
+    "sha256": "8cd0d32f8023e7d8259a268f9bdbb6c7b3dfdf55d7ba2a205fd39f800bfa22b9"
+  },
+  "reference_crops": {
+    "app_icon": {
+      "archive_path": "Logo-V2/ASSETS/app-icon-from-board.png",
+      "sha256": "92c8354a2dc00eb208f396aff64cc944ffe396b3b5f3ed9ff19b5091bc247c33",
+      "width": 269,
+      "height": 262,
+      "status": "REFERENCE_ONLY"
+    }
+  },
+  "identity": {
+    "motto": "SYSTEMS THAT EMPOWER A BRIGHTER TOMORROW.",
+    "pillars": [
+      "PEOPLE",
+      "TECHNOLOGY",
+      "PROGRESS"
+    ],
+    "typeface": "Montserrat",
+    "colors": {
+      "blaze_blue": "#0066FF",
+      "electric_blue": "#00B0FF",
+      "deep_blue": "#001A3D",
+      "light_blue": "#7DD3FF",
+      "white": "#FFFFFF"
+    }
+  },
+  "constraints": [
+    "Do not redraw, retrace, regenerate, stretch, rotate, bevel, shadow or recolor the mark.",
+    "Do not use reconstructed source-repository vector/sample files as approved masters.",
+    "Keep operational safety colors semantically distinct from brand colors.",
+    "Review platform icon adaptation separately; this anchor changes no runtime artifact."
+  ]
+}

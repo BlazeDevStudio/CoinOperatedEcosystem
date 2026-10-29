@@ -1,0 +1,13 @@
+/*
+ * Blaze Systems Logo V2 tokens.
+ * Values are transcribed from the owner-approved 2026-10-20 board.
+ * The board does not define gradient stops, so this file does not invent them.
+ */
+:root {
+  --blaze-brand-blue: #0066ff;
+  --blaze-brand-electric: #00b0ff;
+  --blaze-brand-deep: #001a3d;
+  --blaze-brand-light: #7dd3ff;
+  --blaze-brand-white: #ffffff;
+  --blaze-brand-font: "Montserrat", "Segoe UI", Arial, sans-serif;
+}
