@@ -41,6 +41,20 @@ Product names such as BlazePwifi, BlazeRental and BlazePisonet sit beside or bel
 - Platform resizing, transparency cleanup or icon-mask adaptation requires a separate reviewed product change and must keep the original mark visually unchanged.
 - The placeholder GitHub URL and QR printed on the board are part of the source image and are not ecosystem distribution links.
 
+## Scanned active integration
+
+The active BlazePwifi development tree at immutable commit `6d4c9b487af4d768c4d7627654d119417fcc6e00` already carries one verified exact package asset:
+
+- `experiment/openwrt/BlazePwifi/tools/BlazeSystems-Logo-V2.png`
+- source member `Logo-V2/ASSETS/logo-on-dark-from-board.png`
+- Git blob `ef0bb8a384c5880936f78624f0c931983c31d6ad`
+- SHA-256 `c4e61f370a1a9541722f4fcee522cec8d20c3c9e2917fc1a32286f4870193690`
+- 278 × 175 pixels, 31,649 bytes
+
+Its provenance note and `tests/test_rental_qr_branding.py` verify byte-for-byte embedding in the two offline BlazeRental QR templates. This is an approved exact crop usage; it does not authorize other files as Logo V2 masters.
+
+The separate Android launcher asset `android/BlazeRentalLauncher/res/drawable-nodpi/blaze_lcm_brand.png` (Git blob `19f1c2f843dca1f9f6e320ea0dbd94580f85e608`) does not match any file in the pinned exact-source package. It remains product-specific LCM artwork, outside this Logo V2 authority. Any replacement or adaptation is a product-scoped visual change requiring screenshots, accessibility evidence, density/adaptive-icon review and exact source hashes.
+
 ## Integration rule
 
 Every UI-branding PR must identify the product surface, the exact source asset/hash used, light/dark treatment, accessibility name `Blaze Systems`, and before/after screenshots. This anchor changes no runtime UI, APK, Windows executable, firmware, payment flow, signing state or release gate.

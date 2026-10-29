@@ -28,8 +28,34 @@
       "width": 269,
       "height": 262,
       "status": "REFERENCE_ONLY"
+    },
+    "logo_on_dark": {
+      "archive_path": "Logo-V2/ASSETS/logo-on-dark-from-board.png",
+      "git_blob": "ef0bb8a384c5880936f78624f0c931983c31d6ad",
+      "sha256": "c4e61f370a1a9541722f4fcee522cec8d20c3c9e2917fc1a32286f4870193690",
+      "bytes": 31649,
+      "width": 278,
+      "height": 175,
+      "status": "EXACT_PACKAGE_CROP"
     }
   },
+  "observed_exact_integrations": [
+    {
+      "repository": "BlazeDevStudio/BlazingSystems-Experiments",
+      "commit": "6d4c9b487af4d768c4d7627654d119417fcc6e00",
+      "asset_path": "experiment/openwrt/BlazePwifi/tools/BlazeSystems-Logo-V2.png",
+      "asset_git_blob": "ef0bb8a384c5880936f78624f0c931983c31d6ad",
+      "asset_sha256": "c4e61f370a1a9541722f4fcee522cec8d20c3c9e2917fc1a32286f4870193690",
+      "source_archive_path": "Logo-V2/ASSETS/logo-on-dark-from-board.png",
+      "provenance_path": "experiment/openwrt/BlazePwifi/tools/BlazeSystems-Logo-V2.md",
+      "verification_path": "experiment/openwrt/BlazePwifi/tests/test_rental_qr_branding.py",
+      "consumers": [
+        "experiment/openwrt/BlazePwifi/tools/BlazeRental-Binding-QR.template.html",
+        "experiment/openwrt/BlazePwifi/tools/BlazeRental-QR-Setup.template.html"
+      ],
+      "status": "EXACT_PACKAGE_BYTES_IN_ACTIVE_SOURCE"
+    }
+  ],
   "identity": {
     "motto": "SYSTEMS THAT EMPOWER A BRIGHTER TOMORROW.",
     "pillars": [
