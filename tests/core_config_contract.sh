@@ -134,6 +134,17 @@ if bp_config_set admin_port 9555; then echo 'FALSE_ROLLBACK_ACK' >&2; exit 1; el
 fi
 rm -f "$T/rollback-commit-fail" "$T/initial-commit-seen"
 [ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
+# This failure has UNKNOWN durability. A pending marker is intentionally
+# retained and a subsequent write MUST be denied until operator review.
+[ -f "$BP_CONFIG_PENDING_FILE" ]
+if bp_config_set admin_port 9555; then echo 'UNCERTAIN_ROLLBACK_WAS_ACCEPTED' >&2; exit 1; else
+    [ "$?" -eq 9 ] || { echo 'UNCERTAIN_ROLLBACK_WRONG_STATUS' >&2; exit 1; }
+fi
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
+# TEST-ONLY operator reconciliation: an independent fixture checks the old
+# value before clearing the simulated journal. Never apply to a real router.
+bp_config_clear_pending
+[ ! -e "$BP_CONFIG_PENDING_FILE" ]
 
 # On failed apply, a key that was initially absent is deleted, not blanked.
 if bp_config_set portal_port 8080; then echo 'FALSE_ABSENCE_ACK' >&2; exit 1; else
