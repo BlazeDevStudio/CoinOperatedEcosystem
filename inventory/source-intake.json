@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "project": "CoinOperatedEcosystem",
+  "production_authorized": false,
+  "entries": [
+    {
+      "module": "core",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 252,
+      "source_commit": "c2a7515f43aff7043b0c2274dcdc097f30d7efbb",
+      "source_path": "experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/member.sh",
+      "source_blob_sha": "69af39052959a1d6a349851b4fbd909a9ad53aeb",
+      "state": "candidate"
+    },
+    {
+      "module": "rental",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 240,
+      "source_commit": "a7d113fb8ae3f0c5e838e64d31cae7a154e37b56",
+      "source_path": "experiment/openwrt/BlazePwifi/android/BlazeRentalLauncher/src/com/blazesystems/blazerental/LeaseClient.java",
+      "source_blob_sha": "079af87cfc274252e6393a611059bb05b737951b",
+      "state": "candidate"
+    },
+    {
+      "module": "pisonet",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 255,
+      "source_commit": "21b065535640a735a1e22bda57718b9e8ad86a1a",
+      "source_path": "experiment/windows/BlazePisonet-SoftTimer/src/BlazePisonet.SoftTimer/SerialHardware.cs",
+      "source_blob_sha": "af15d41c22ab8ed6a507e38fed3ccdfc40f4054f",
+      "state": "candidate"
+    },
+    {
+      "module": "esp8266",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 239,
+      "source_commit": "d83b715b116185107737fef721c2eece8feebf39",
+      "source_path": "experiment/openwrt/BlazePwifi/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino",
+      "source_blob_sha": "02a189ef2e306239444b8749faca46896597db38",
+      "state": "candidate"
+    },
+    {
+      "module": "esp32",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 254,
+      "source_commit": "7a33d8ea9a93b5802b9bd8f933939494e8b959b0",
+      "source_path": "experiment/openwrt/BlazePwifi/esp32/BlazePwifiVendo32/ControllerAuthV1Lab.h",
+      "source_blob_sha": "cde36dc109e41c8701d3dc0e6d96eab71deeb59a",
+      "state": "candidate"
+    }
+  ]
+}
