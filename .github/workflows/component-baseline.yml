@@ -105,7 +105,7 @@ jobs:
 
   staged-capabilities:
     name: CORE staged capability selector host tests
-    needs: intake
+    needs: [intake, refactor-provenance]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -114,3 +114,22 @@ jobs:
           persist-credentials: false
       - name: Execute staged OpenWrt capability tier table without device state
         run: sh tests/capability_tiers.sh
+
+  refactor-provenance:
+    name: Independent upstream exact source identity
+    needs: intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BlazeDevStudio/BlazingSystems-Experiments
+          ref: c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          persist-credentials: false
+      - name: Verify upstream commit plus original blob and SHA-256
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          FILE=experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh
+          test "$(git hash-object "$FILE")" = 3753966f3e52c04ffddbc080f04bb37e12af0e67
+          test "$(sha256sum "$FILE" | cut -d' ' -f1)" = aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305

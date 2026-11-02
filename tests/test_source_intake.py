@@ -20,10 +20,14 @@ class IntakeTests(unittest.TestCase):
         # Reconstruct only the actual checked-in staged files in this disposable
         # test directory. Candidate records must never materialize runtime source.
         for entry in self.doc["entries"]:
-            if entry["state"] == "staged":
+            if entry["state"] in ("staged", "refactored"):
                 path = self.root / entry["destination_path"]
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(Path(entry["destination_path"]).read_bytes())
+                if entry["state"] == "refactored":
+                    note = self.root / entry["review_note"]
+                    note.parent.mkdir(parents=True, exist_ok=True)
+                    note.write_bytes(Path(entry["review_note"]).read_bytes())
         self.save()
 
     def save(self):
@@ -117,7 +121,7 @@ class IntakeTests(unittest.TestCase):
 
     def test_existing_staged_file_mutation_is_denied(self):
         record = next(
-            item for item in self.doc["entries"] if item["state"] == "staged"
+            item for item in self.doc["entries"] if item["state"] in ("staged", "refactored")
         )
         path = self.root / record["destination_path"]
         path.write_bytes(path.read_bytes() + b"#unreviewed modification\n")
@@ -125,9 +129,26 @@ class IntakeTests(unittest.TestCase):
 
     def test_missing_checked_in_staged_file_is_denied(self):
         record = next(
-            item for item in self.doc["entries"] if item["state"] == "staged"
+            item for item in self.doc["entries"] if item["state"] in ("staged", "refactored")
         )
         (self.root / record["destination_path"]).unlink()
+        self.verify_denied()
+
+    def test_refactored_requires_valid_upstream_digest(self):
+        record = next(e for e in self.doc["entries"] if e["state"] == "refactored")
+        record["source_content_sha256"] = "invalid"
+        self.save()
+        self.verify_denied()
+
+    def test_refactored_missing_review_is_denied(self):
+        record = next(e for e in self.doc["entries"] if e["state"] == "refactored")
+        (self.root / record["review_note"]).unlink()
+        self.verify_denied()
+
+    def test_refactored_cannot_erase_original_sha(self):
+        record = next(e for e in self.doc["entries"] if e["state"] == "refactored")
+        del record["source_content_sha256"]
+        self.save()
         self.verify_denied()
 
     def test_path_traversal_denied(self):

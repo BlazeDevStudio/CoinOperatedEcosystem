@@ -31,6 +31,7 @@ BASE_FIELDS = frozenset({
     "source_path", "source_blob_sha", "state",
 })
 STAGED_FIELDS = frozenset({"destination_path", "content_sha256"})
+REFACTORED_FIELDS = frozenset({"source_content_sha256", "review_note"})
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 PORTABLE = re.compile(r"^[A-Za-z0-9_.\/-]+$")
@@ -64,7 +65,7 @@ def hex_sha(value, length):
     return value
 
 
-def stage_file(root, relative, sha256, blob_sha):
+def stage_file(root, relative, sha256, blob_sha=None):
     path = root / relative
     current = root
     for component in relative.split("/"):
@@ -79,7 +80,7 @@ def stage_file(root, relative, sha256, blob_sha):
     git_blob = hashlib.sha1(
         b"blob " + str(len(content)).encode("ascii") + b"\0" + content
     ).hexdigest()
-    if git_blob != blob_sha:
+    if blob_sha is not None and git_blob != blob_sha:
         raise IntakeError("staged source Git blob mismatch")
 
 
@@ -115,11 +116,15 @@ def audit(root, manifest):
         if not isinstance(entry, dict) or not BASE_FIELDS.issubset(entry):
             raise IntakeError("missing intake fields")
         state = entry["state"]
-        if state not in ("candidate", "staged"):
+        if state not in ("candidate", "staged", "refactored"):
             raise IntakeError("unknown or prematurely promoted intake state")
-        expected = BASE_FIELDS | (STAGED_FIELDS if state == "staged" else frozenset())
+        expected = BASE_FIELDS
+        if state in ("staged", "refactored"):
+            expected |= STAGED_FIELDS
+        if state == "refactored":
+            expected |= REFACTORED_FIELDS
         if set(entry) != expected:
-            raise IntakeError("candidate/staged intake fields inconsistent")
+            raise IntakeError("intake fields inconsistent for declared state")
         module = entry["module"]
         if not isinstance(module, str) or module not in ROOTS:
             raise IntakeError("unknown ecosystem module")
@@ -138,12 +143,26 @@ def audit(root, manifest):
             raise IntakeError("duplicate source intake identity")
         seen.add(identity)
         modules.add(module)
-        if state == "staged":
+        if state in ("staged", "refactored"):
             destination = safe_path(entry["destination_path"])
             if not destination.startswith(dest_prefix) or destination in staged:
                 raise IntakeError("duplicate or cross-module destination")
             sha256 = hex_sha(entry["content_sha256"], 64)
-            stage_file(root, destination, sha256, entry["source_blob_sha"])
+            if state == "refactored":
+                original_sha = hex_sha(entry["source_content_sha256"], 64)
+                if original_sha == sha256:
+                    raise IntakeError("refactored content must differ from exact upstream copy")
+                note = safe_path(entry["review_note"])
+                if not note.startswith("docs/decisions/"):
+                    raise IntakeError("review note must live under docs/decisions")
+                review_file = root / note
+                if review_file.is_symlink() or not review_file.is_file():
+                    raise IntakeError("review note is missing or unsafe")
+                # Original blob and SHA are independently rechecked against
+                # pinned GitHub upstream in a separate CI job.
+                stage_file(root, destination, sha256)
+            else:
+                stage_file(root, destination, sha256, entry["source_blob_sha"])
             staged.add(destination)
 
     if modules != MODULES:

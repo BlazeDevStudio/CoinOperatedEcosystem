@@ -55,9 +55,11 @@
       "source_commit": "c2a7515f43aff7043b0c2274dcdc097f30d7efbb",
       "source_path": "experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh",
       "source_blob_sha": "3753966f3e52c04ffddbc080f04bb37e12af0e67",
-      "state": "staged",
+      "state": "refactored",
       "destination_path": "core/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh",
-      "content_sha256": "aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305"
+      "content_sha256": "0c610c67e3fc0ba7c867df9434517b0645d88a146b78ee5cf8cb4f5bc3fd387d",
+      "source_content_sha256": "aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305",
+      "review_note": "docs/decisions/2026-11-02-capability-fallback-cleanup.md"
     }
   ]
 }

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Host-only, read-only regressions for the byte-identical OpenWrt capability tier source.
+# Host-only, read-only regressions for the reviewed and provenance-pinned OpenWrt source.
 # Values are injected as synthetic environment; no router or payment state is used.
 set -eu
 SCRIPT=core/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh
@@ -32,4 +32,24 @@ fi
 if sh "$SCRIPT" --unknown >/dev/null 2>&1; then
     echo "unknown argument was accepted" >&2; exit 1
 fi
-echo "COE CORE CAPABILITY BASELINE PASS: exact first-party source, synthetic tier/threshold tests only"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
+cat > "$TMP/df" <<'MOCK'
+#!/bin/sh
+case "$DF_SCENARIO:$*" in
+ 'missing:-Pk /overlay') exit 1 ;;
+ 'missing:-Pk /') printf 'Filesystem 1024-blocks Used Available Use%% Mounted\n/dev/root 1048576 655360 393216 63%% /\n';;
+ 'low:-Pk /overlay') printf 'Filesystem 1024-blocks Used Available Use%% Mounted\n/dev/overlay 2097152 2080768 16384 99%% /overlay\n';;
+ 'low:-Pk /') printf 'Filesystem 1024-blocks Used Available Use%% Mounted\n/dev/root 2097152 0 2097152 0%% /\n';;
+ 'full:-Pk /overlay') printf 'Filesystem 1024-blocks Used Available Use%% Mounted\n/dev/overlay 2097152 1572864 524288 75%% /overlay\n';;
+ *) exit 1 ;;
+esac
+MOCK
+chmod 700 "$TMP/df"
+# No BP_CAP_OVERLAY_KB override: exercise real df parsing and mount fallback.
+assert_tier standard DF_SCENARIO=missing PATH="$TMP:$PATH" BP_CAP_TIER=auto BP_CAP_ARCH=x86_64 BP_CAP_MEM_KB=1048576
+assert_tier lite DF_SCENARIO=low PATH="$TMP:$PATH" BP_CAP_TIER=auto BP_CAP_ARCH=x86_64 BP_CAP_MEM_KB=1048576
+assert_tier full DF_SCENARIO=full PATH="$TMP:$PATH" BP_CAP_TIER=auto BP_CAP_ARCH=x86_64 BP_CAP_MEM_KB=1048576
+assert_tier lite DF_SCENARIO=absent PATH="$TMP:$PATH" BP_CAP_TIER=auto BP_CAP_ARCH=x86_64 BP_CAP_MEM_KB=1048576
+echo "COE CORE CAPABILITY CLEANUP PASS: actual code handles missing mount and low available space"
