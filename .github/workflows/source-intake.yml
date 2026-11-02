@@ -1,0 +1,41 @@
+name: Coin Operated Ecosystem source intake (nonproduction)
+on:
+  pull_request:
+    paths:
+      - 'tools/source_intake_guard.py'
+      - 'tests/test_source_intake.py'
+      - 'inventory/source-intake.json'
+      - '.github/workflows/source-intake.yml'
+      - 'core/**'
+      - 'rental/**'
+      - 'pisonet/**'
+      - 'controllers/**'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/source_intake_guard.py'
+      - 'tests/test_source_intake.py'
+      - 'inventory/source-intake.json'
+      - '.github/workflows/source-intake.yml'
+      - 'core/**'
+      - 'rental/**'
+      - 'pisonet/**'
+      - 'controllers/**'
+permissions:
+  contents: read
+jobs:
+  intake:
+    name: Fail-closed provenance and import-ownership tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests including malicious and stale source fixtures
+        run: python3 -m unittest discover -s tests -p test_source_intake.py -v
+      - name: Confirm no code was imported without source-blob evidence
+        run: python3 tools/source_intake_guard.py --root . --manifest inventory/source-intake.json
