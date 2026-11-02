@@ -59,14 +59,38 @@ bp_config_get() {
 	uci -q get "blazepwifi.main.$key"
 }
 
+# Guard the entire UCI write, apply and restore window. Busy/unavailable
+# locks refuse the write rather than racing another administrator.
+bp_config_lock() {
+    bp_cfg_lock_file="${BP_CONFIG_LOCK_FILE:-/var/run/blazepwifi-config.lock}"
+    command -v flock >/dev/null 2>&1 || return 8
+    [ ! -L "$bp_cfg_lock_file" ] || return 8
+    (umask 077; : >> "$bp_cfg_lock_file") || return 8
+    exec 8>>"$bp_cfg_lock_file" || return 8
+    if ! flock -n 8; then exec 8>&-; return 8; fi
+}
+bp_config_unlock() {
+    flock -u 8 >/dev/null 2>&1 || true
+    exec 8>&-
+}
+
 bp_config_restore() {
-	key="$1"; had_old="$2"; old="$3"
-	if [ "$had_old" = 1 ]; then
-		uci set "blazepwifi.main.$key=$old" || return 1
-	else
-		uci -q delete "blazepwifi.main.$key" >/dev/null 2>&1 || true
-	fi
-	uci commit blazepwifi
+    key="$1"; had_old="$2"; old="$3"
+    if [ "$had_old" = 1 ]; then
+        uci set "blazepwifi.main.$key=$old" || return 1
+    else
+        uci -q delete "blazepwifi.main.$key" || return 1
+    fi
+    uci commit blazepwifi || return 1
+    if [ "$had_old" = 1 ]; then
+        current="$(uci -q get "blazepwifi.main.$key")" || return 1
+        [ "$current" = "$old" ] || return 1
+    else
+        section="$(uci -q show blazepwifi.main)" || return 1
+        if printf '%s\n' "$section" | awk -F= -v k="blazepwifi.main.$key" '$1==k {found=1} END {exit(found ? 0 : 1)}'; then
+            return 1
+        fi
+    fi
 }
 
 bp_config_apply() {
@@ -84,21 +108,60 @@ bp_config_apply() {
 	return 0
 }
 
+# Error 1: UCI restored; 9: restoration cannot be verified.
+bp_config_abort() {
+    if bp_config_restore "$1" "$2" "$3"; then
+        bp_config_unlock
+        return 1
+    fi
+    bp_config_unlock
+    return 9
+}
+
 bp_config_set() {
-	key="$1"; value="$2"
-	bp_config_validate "$key" "$value" || return 2
-	if old="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then had_old=1; else old=""; had_old=0; fi
-	uci set "blazepwifi.main.$key=$value" || return 1
-	if ! uci commit blazepwifi; then
-		bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1 || true
-		return 1
-	fi
-	if ! bp_config_apply; then
-		bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1 || true
-		return 1
-	fi
-	if command -v bp_auth_audit >/dev/null 2>&1; then
-		bp_auth_audit config_change "${BP_AUTH_USER:-local}" "${REMOTE_ADDR:-local}" "$key"
-	fi
-	return 0
+    key="$1"; value="$2"
+    bp_config_validate "$key" "$value" || return 2
+    bp_config_lock || return 8
+
+    if old="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then
+        had_old=1
+    else
+        # A failed get may be an I/O error, not an absent setting.
+        snapshot="$(uci -q show blazepwifi.main)" || { bp_config_unlock; return 8; }
+        if printf '%s\n' "$snapshot" | awk -F= -v k="blazepwifi.main.$key" '$1==k {found=1} END {exit(found ? 0 : 1)}'; then
+            bp_config_unlock; return 8
+        fi
+        old=""; had_old=0
+    fi
+
+    # UCI set can mutate a staging area even when it reports a failure.
+    if ! uci set "blazepwifi.main.$key=$value"; then
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    fi
+    if ! uci commit blazepwifi; then
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    fi
+    current="$(uci -q get "blazepwifi.main.$key")" || {
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    }
+    if [ "$current" != "$value" ]; then
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    fi
+
+    if ! bp_config_apply; then
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    fi
+    # A successful apply callback alone is not sufficient to ACK a change.
+    current="$(uci -q get "blazepwifi.main.$key")" || {
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    }
+    if [ "$current" != "$value" ]; then
+        bp_config_abort "$key" "$had_old" "$old"; return $?
+    fi
+
+    bp_config_unlock
+    if command -v bp_auth_audit >/dev/null 2>&1; then
+        bp_auth_audit config_change "${BP_AUTH_USER:-local}" "${REMOTE_ADDR:-local}" "$key"
+    fi
+    return 0
 }
