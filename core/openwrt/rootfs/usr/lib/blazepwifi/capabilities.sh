@@ -8,8 +8,18 @@ bp_cap_read_mem_kb() {
 }
 
 bp_cap_read_overlay_kb() {
-	df -Pk /overlay 2>/dev/null | awk 'NR==2 {print $2; exit}' ||
-	df -Pk / 2>/dev/null | awk 'NR==2 {print $2; exit}' || true
+	# df column 4 is AVAILABLE; column 2 is filesystem total, which
+	# dangerously promotes nearly-full storage to a higher capability tier.
+	# awk succeeds even on missing rows, so a pipeline || cannot detect
+	# absent /overlay and must be replaced by an explicit value check.
+	for mount in /overlay /; do
+		free_kb="$(df -Pk "$mount" 2>/dev/null | awk 'NR==2 {print $4; exit}')"
+		case "$free_kb" in
+			''|*[!0-9]*) ;;
+			*) printf '%s\n' "$free_kb"; return 0 ;;
+		esac
+	done
+	return 1
 }
 
 bp_cap_detect() {
