@@ -133,3 +133,36 @@ jobs:
           FILE=experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh
           test "$(git hash-object "$FILE")" = 3753966f3e52c04ffddbc080f04bb37e12af0e67
           test "$(sha256sum "$FILE" | cut -d' ' -f1)" = aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305
+
+staged-config-provenance:
+    name: Confirm exact CORE configuration source blob
+    needs: intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BlazeDevStudio/BlazingSystems-Experiments
+          ref: c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          persist-credentials: false
+      - name: Verify original source commit, Git blob, and SHA-256
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          SOURCE=experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/config.sh
+          test "$(git hash-object "$SOURCE")" = 7bde717f02d6f1d90ca099ab29bff336824ad81f
+          test "$(sha256sum "$SOURCE" | cut -d' ' -f1)" = 4a73c0841614f841dd35df4e42f9bf1eedc3c5f8e89cb0d9a793f7ee692e20a2
+
+  staged-config:
+    name: CORE staged configuration validation and rollback (disposable)
+    needs: [intake, staged-config-provenance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Parse exact migrated config.sh and run isolated UCI fake
+        run: |
+          sh -n core/openwrt/rootfs/usr/lib/blazepwifi/config.sh
+          sh tests/core_config_contract.sh
