@@ -166,3 +166,36 @@ jobs:
         run: |
           sh -n core/openwrt/rootfs/usr/lib/blazepwifi/config.sh
           sh tests/core_config_contract.sh
+
+  startup-init-provenance:
+    name: Verify original OpenWrt startup init source identity
+    needs: intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BlazeDevStudio/BlazingSystems-Experiments
+          ref: c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          persist-credentials: false
+      - name: Verify immutable original service commit, Git blob and SHA-256
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          ORIGINAL=experiment/openwrt/BlazePwifi/openwrt/rootfs/etc/init.d/blazepwifi
+          test "$(git hash-object "$ORIGINAL")" = 4a3d6240e700520c78acff4d3daea5b98d5df5d7
+          test "$(sha256sum "$ORIGINAL" | cut -d' ' -f1)" = ea13be79fac39d0dee6de3aae178e7a4c69e9d998419d62d9e8a81cf55183ba2
+
+  startup-preflight:
+    name: Fail-closed CORE rc.common startup tests (synthetic procd)
+    needs: [intake, startup-init-provenance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test real startup script with disposable path substitutions
+        run: |
+          sh -n core/openwrt/rootfs/etc/init.d/blazepwifi
+          sh tests/core_startup_preflight.sh
