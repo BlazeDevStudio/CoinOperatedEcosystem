@@ -47,6 +47,17 @@
       "source_path": "experiment/openwrt/BlazePwifi/esp32/BlazePwifiVendo32/ControllerAuthV1Lab.h",
       "source_blob_sha": "cde36dc109e41c8701d3dc0e6d96eab71deeb59a",
       "state": "candidate"
+    },
+    {
+      "module": "core",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 252,
+      "source_commit": "c2a7515f43aff7043b0c2274dcdc097f30d7efbb",
+      "source_path": "experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh",
+      "source_blob_sha": "3753966f3e52c04ffddbc080f04bb37e12af0e67",
+      "state": "staged",
+      "destination_path": "core/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh",
+      "content_sha256": "aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305"
     }
   ]
 }

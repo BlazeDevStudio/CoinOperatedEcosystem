@@ -17,6 +17,13 @@ class IntakeTests(unittest.TestCase):
         real = Path("inventory/source-intake.json")
         self.doc = json.loads(real.read_text(encoding="utf-8"))
         self.manifest = self.root / "source-intake.json"
+        # Reconstruct only the actual checked-in staged files in this disposable
+        # test directory. Candidate records must never materialize runtime source.
+        for entry in self.doc["entries"]:
+            if entry["state"] == "staged":
+                path = self.root / entry["destination_path"]
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(Path(entry["destination_path"]).read_bytes())
         self.save()
 
     def save(self):
@@ -28,7 +35,7 @@ class IntakeTests(unittest.TestCase):
 
     def test_real_candidate_manifest(self):
         count, staged = audit(self.root, self.manifest)
-        self.assertEqual((count, staged), (5, 0))
+        self.assertEqual((count, staged), (6, 1))
 
     def test_unauthorized_production_flag(self):
         self.doc["production_authorized"] = True
@@ -87,7 +94,7 @@ class IntakeTests(unittest.TestCase):
             b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
         ).hexdigest()
         self.save()
-        self.assertEqual(audit(self.root, self.manifest), (5, 1))
+        self.assertEqual(audit(self.root, self.manifest), (6, 2))
         path.write_bytes(payload + b"tampered")
         self.verify_denied()
 
@@ -106,6 +113,21 @@ class IntakeTests(unittest.TestCase):
             b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
         ).hexdigest()
         self.save()
+        self.verify_denied()
+
+    def test_existing_staged_file_mutation_is_denied(self):
+        record = next(
+            item for item in self.doc["entries"] if item["state"] == "staged"
+        )
+        path = self.root / record["destination_path"]
+        path.write_bytes(path.read_bytes() + b"#unreviewed modification\n")
+        self.verify_denied()
+
+    def test_missing_checked_in_staged_file_is_denied(self):
+        record = next(
+            item for item in self.doc["entries"] if item["state"] == "staged"
+        )
+        (self.root / record["destination_path"]).unlink()
         self.verify_denied()
 
     def test_path_traversal_denied(self):
