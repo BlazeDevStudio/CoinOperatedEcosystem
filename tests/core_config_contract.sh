@@ -47,7 +47,7 @@ esac
 UCI
 chmod 700 "$T/bin/uci"
 export COE_UCI_DB="$T/uci.db" COE_FAULT_DIR="$T" PATH="$T/bin:$PATH"
-export BP_CONFIG_LOCK_FILE="$T/config.lock"
+export BP_CONFIG_LOCK_FILE="$T/config.lock" BP_CONFIG_PENDING_FILE="$T/config.pending"
 . "$LIB"
 pass() {
     bp_config_validate "$1" "$2" || { echo "VALID_SOURCE_REJECTED: $1=$2" >&2; exit 1; }
@@ -168,3 +168,69 @@ fi
 wait "$locker"
 [ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
 echo 'COE CONFIG TRANSACTION PASS: partial write, commit, uncertain rollback, absent key, unreadable snapshot, lock refusal'
+
+# No cleanly completed transaction may retain a pending marker.
+[ ! -e "$BP_CONFIG_PENDING_FILE" ]
+bp_config_recovery_status
+
+# Model a kill/power cut AFTER the journal marker but BEFORE UCI commit.
+# In a newly sourced process the read-only boot check refuses; the next
+# configuration write also denies before any UCI mutation.
+bp_config_mark_pending admin_port
+[ -f "$BP_CONFIG_PENDING_FILE" ]
+if sh -c '. "$1"; bp_config_recovery_status' sh "$LIB" >/dev/null 2>&1; then
+    echo 'RESTART_WITH_PENDING_ACKED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'WRONG_RESTART_PENDING_STATUS' >&2; exit 1; }
+fi
+old_value="$(uci -q get blazepwifi.main.admin_port)"
+if bp_config_set admin_port 9555; then echo 'PENDING_RESTART_WRITE_ALLOWED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'WRONG_PENDING_WRITE_STATUS' >&2; exit 1; }
+fi
+[ "$(uci -q get blazepwifi.main.admin_port)" = "$old_value" ]
+[ -f "$BP_CONFIG_PENDING_FILE" ]
+
+# Model a cut AFTER UCI has committed but BEFORE final apply acknowledgement.
+# Never silently reset this value; leave the marker for manual reconciliation.
+uci set blazepwifi.main.admin_port=9777
+uci commit blazepwifi
+if sh -c '. "$1"; bp_config_recovery_status' sh "$LIB" >/dev/null 2>&1; then
+    echo 'COMMITTED_UNAPPLIED_STATE_ACKED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'WRONG_COMMITTED_PENDING_STATUS' >&2; exit 1; }
+fi
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9777 ]
+
+# TEST HARNESS ONLY: operator repair and clearing of the latch.
+uci set blazepwifi.main.admin_port=9443
+uci commit blazepwifi
+bp_config_clear_pending
+[ ! -e "$BP_CONFIG_PENDING_FILE" ]
+sh -c '. "$1"; bp_config_recovery_status' sh "$LIB"
+
+# Unusable journal path must fail before UCI mutation.
+BP_CONFIG_PENDING_FILE="$T/nonexistent/pending"; export BP_CONFIG_PENDING_FILE
+if bp_config_set admin_port 9555; then echo 'MISSING_JOURNAL_DIRECTORY_ACKED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'WRONG_JOURNAL_DIRECTORY_STATUS' >&2; exit 1; }
+fi
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
+
+# A symlinked marker is an unresolved state, never followed or overwritten.
+BP_CONFIG_PENDING_FILE="$T/config.pending"; export BP_CONFIG_PENDING_FILE
+ln -s "$T/config.lock" "$BP_CONFIG_PENDING_FILE"
+if bp_config_set admin_port 9555; then echo 'SYMLINK_MARKER_ACKED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'WRONG_SYMLINK_MARKER_STATUS' >&2; exit 1; }
+fi
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
+[ -L "$BP_CONFIG_PENDING_FILE" ]
+rm "$BP_CONFIG_PENDING_FILE"
+
+# No stale marker after a normal fresh transaction.
+export BP_CONFIG_APPLY_HOOK=true
+bp_config_set admin_port 9444
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9444 ]
+[ ! -e "$BP_CONFIG_PENDING_FILE" ]
+echo 'COE CONFIG RESTART PASS: pending before write, committed-before-apply, blocked re-entry, absent marker path, symlink denial'
