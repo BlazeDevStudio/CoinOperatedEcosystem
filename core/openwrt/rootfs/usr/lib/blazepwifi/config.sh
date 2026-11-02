@@ -74,6 +74,47 @@ bp_config_unlock() {
     exec 8>&-
 }
 
+# Pending markers are written before UCI mutations; surviving a restart
+# means administrator reconciliation is REQUIRED, never silent auto-restore.
+bp_config_pending_path() {
+    printf '%s\n' "${BP_CONFIG_PENDING_FILE:-/etc/blazepwifi/.config-transaction.pending}"
+}
+bp_config_recovery_status() {
+    bp_pending="$(bp_config_pending_path)"
+    # File, directory or symlink is an unresolved/unsafe transaction.
+    if [ -e "$bp_pending" ] || [ -L "$bp_pending" ]; then
+        printf '%s\n' 'config transaction pending: operator recovery required' >&2
+        return 9
+    fi
+    return 0
+}
+bp_config_mark_pending() {
+    bp_pending="$(bp_config_pending_path)"
+    bp_dir="${bp_pending%/*}"
+    [ "$bp_dir" != "$bp_pending" ] && [ -d "$bp_dir" ] &&
+        [ ! -L "$bp_dir" ] || return 9
+    bp_config_recovery_status || return 9
+    command -v mktemp >/dev/null 2>&1 || return 9
+    command -v sync >/dev/null 2>&1 || return 9
+    bp_tmp="$(umask 077; mktemp "$bp_pending.tmp.XXXXXXXX")" || return 9
+    if ! printf 'COE_CONFIG_PENDING_V1 %s\n' "$1" > "$bp_tmp" ||
+       ! chmod 600 "$bp_tmp" ||
+       ! mv "$bp_tmp" "$bp_pending"; then
+        rm -f "$bp_tmp" >/dev/null 2>&1 || true
+        return 9
+    fi
+    # An OS sync is not proof of hardware power-loss durability.
+    sync || return 9
+    return 0
+}
+bp_config_clear_pending() {
+    bp_pending="$(bp_config_pending_path)"
+    [ -f "$bp_pending" ] && [ ! -L "$bp_pending" ] || return 9
+    rm "$bp_pending" || return 9
+    sync || return 9
+    return 0
+}
+
 bp_config_restore() {
     key="$1"; had_old="$2"; old="$3"
     if [ "$had_old" = 1 ]; then
@@ -110,10 +151,11 @@ bp_config_apply() {
 
 # Error 1: UCI restored; 9: restoration cannot be verified.
 bp_config_abort() {
-    if bp_config_restore "$1" "$2" "$3"; then
+    if bp_config_restore "$1" "$2" "$3" && bp_config_clear_pending; then
         bp_config_unlock
         return 1
     fi
+    # Failed rollback or marker clear: refuse with uncertain state.
     bp_config_unlock
     return 9
 }
@@ -122,6 +164,7 @@ bp_config_set() {
     key="$1"; value="$2"
     bp_config_validate "$key" "$value" || return 2
     bp_config_lock || return 8
+    bp_config_recovery_status || { bp_config_unlock; return 9; }
 
     if old="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then
         had_old=1
@@ -134,6 +177,8 @@ bp_config_set() {
         old=""; had_old=0
     fi
 
+    # Install + flush pending marker before any UCI write.
+    bp_config_mark_pending "$key" || { bp_config_unlock; return 9; }
     # UCI set can mutate a staging area even when it reports a failure.
     if ! uci set "blazepwifi.main.$key=$value"; then
         bp_config_abort "$key" "$had_old" "$old"; return $?
@@ -159,6 +204,8 @@ bp_config_set() {
         bp_config_abort "$key" "$had_old" "$old"; return $?
     fi
 
+    # Clear only after readback and apply; failure must never ACK.
+    bp_config_clear_pending || { bp_config_unlock; return 9; }
     bp_config_unlock
     if command -v bp_auth_audit >/dev/null 2>&1; then
         bp_auth_audit config_change "${BP_AUTH_USER:-local}" "${REMOTE_ADDR:-local}" "$key"
