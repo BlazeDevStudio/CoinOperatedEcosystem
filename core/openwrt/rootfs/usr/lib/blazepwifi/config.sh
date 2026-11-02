@@ -70,10 +70,14 @@ bp_config_restore() {
 }
 
 bp_config_apply() {
-	if [ -n "${BP_CONFIG_APPLY_HOOK:-}" ]; then
-		sh -c "$BP_CONFIG_APPLY_HOOK"
-		return
-	fi
+	# No arbitrary shell strings in privileged config apply. Fixed test
+	# sentinels preserve previous true/false test outcomes.
+	case "${BP_CONFIG_APPLY_HOOK:-}" in
+		'') ;;
+		true) return 0 ;;
+		false) return 1 ;;
+		*) return 2 ;;
+	esac
 	if [ -x /usr/lib/blazepwifi/apply-config.sh ]; then
 		/usr/lib/blazepwifi/apply-config.sh || return 1
 	fi

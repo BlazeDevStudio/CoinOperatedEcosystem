@@ -68,9 +68,11 @@
       "source_commit": "c2a7515f43aff7043b0c2274dcdc097f30d7efbb",
       "source_path": "experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/config.sh",
       "source_blob_sha": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
-      "state": "staged",
+      "state": "refactored",
       "destination_path": "core/openwrt/rootfs/usr/lib/blazepwifi/config.sh",
-      "content_sha256": "4a73c0841614f841dd35df4e42f9bf1eedc3c5f8e89cb0d9a793f7ee692e20a2"
+      "content_sha256": "93b73d8ab79b550bc4639b06321cb5920fc8fdc68099b5c0a849dddaa62b4ff5",
+      "source_content_sha256": "4a73c0841614f841dd35df4e42f9bf1eedc3c5f8e89cb0d9a793f7ee692e20a2",
+      "review_note": "docs/decisions/2026-11-02-config-hook-safety-cleanup.md"
     }
   ]
 }
