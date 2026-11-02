@@ -70,9 +70,9 @@
       "source_blob_sha": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
       "state": "refactored",
       "destination_path": "core/openwrt/rootfs/usr/lib/blazepwifi/config.sh",
-      "content_sha256": "8720700298dc770aed8008b8eb4c0fa8823409122e80247ef6664e5b57a0dd13",
+      "content_sha256": "1f802c26090eeff2263066b39783b5ce73ffa9fdb241607455fb8be27f6b2def",
       "source_content_sha256": "4a73c0841614f841dd35df4e42f9bf1eedc3c5f8e89cb0d9a793f7ee692e20a2",
-      "review_note": "docs/decisions/2026-11-03-config-transaction-reliability.md"
+      "review_note": "docs/decisions/2026-11-03-config-crash-recovery-gate.md"
     }
   ]
 }
