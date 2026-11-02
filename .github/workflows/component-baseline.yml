@@ -1,0 +1,102 @@
+name: Coin ecosystem pinned component baseline (nonproduction)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/component-baseline.yml'
+      - 'inventory/source-intake.json'
+      - 'tools/source_intake_guard.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  intake:
+    name: Validate first-party immutable source inventory
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inventory gate stays NO-GO and no unrecorded runtime files
+        run: python3 tools/source_intake_guard.py --root . --manifest inventory/source-intake.json
+
+  component:
+    name: ${{ matrix.component }} pinned source baseline (NO production)
+    needs: intake
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: core
+            runner: ubuntu-24.04
+            sha: c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          - component: rental
+            runner: ubuntu-24.04
+            sha: a7d113fb8ae3f0c5e838e64d31cae7a154e37b56
+          - component: pisonet
+            runner: windows-latest
+            sha: 21b065535640a735a1e22bda57718b9e8ad86a1a
+          - component: esp8266
+            runner: ubuntu-24.04
+            sha: d83b715b116185107737fef721c2eece8feebf39
+          - component: esp32
+            runner: ubuntu-24.04
+            sha: 7a33d8ea9a93b5802b9bd8f933939494e8b959b0
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BlazeDevStudio/BlazingSystems-Experiments
+          ref: ${{ matrix.sha }}
+          path: upstream
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify upstream commit identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = '${{ matrix.sha }}'
+      - uses: actions/setup-dotnet@v4
+        if: matrix.component == 'pisonet'
+        with:
+          dotnet-version: '8.0.x'
+      - name: Native mbedTLS library (ESP32 test host only)
+        if: matrix.component == 'esp32'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y libmbedtls-dev
+      - name: Execute source-linked tests only (no state, flash or customer hardware)
+        shell: bash
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          P=upstream/experiment/openwrt/BlazePwifi
+          W=upstream/experiment/windows/BlazePisonet-SoftTimer
+          case "$COMPONENT" in
+            core)
+              sh "$P/tests/v060_coin_false_ack.sh"
+              sh "$P/tests/v060_vendo_coin_replay_lock.sh"
+              python3 "$P/tests/v060_controller_response_auth_v1.py" ;;
+            rental)
+              sh "$P/tests/v04_android_source.sh"
+              sh "$P/tests/v051_android_source.sh"
+              sh "$P/tests/v060_android_trust_panel.sh" ;;
+            pisonet)
+              if dotnet run --project "$W/tests/NativeComInterfaceHandleLab/NativeComInterfaceHandleLab.csproj" -c Release --no-launch-profile -- --invalid-setup; then
+                echo 'Wrong success on deliberately invalid setup' >&2; exit 3
+              else
+                rc=$?
+                test "$rc" -eq 3 || { echo "Wrong invalid-setup sentinel: $rc" >&2; exit 3; }
+              fi
+              dotnet run --project "$W/tests/NativeComInterfaceHandleLab/NativeComInterfaceHandleLab.csproj" -c Release --no-build --no-launch-profile
+              dotnet build "$W/src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj" -c Release -warnaserror ;;
+            esp8266)
+              python3 "$P/tests/v060_esp_poll_intake_guard.py"
+              python3 "$P/tests/v060_esp_relay_reconfig_contract.py" ;;
+            esp32)
+              g++ -std=c++17 -Wall -Wextra -Werror -O2 "$P/tests/v060_controller_auth_header_native.cpp" -o /tmp/coe-esp32-auth -lmbedtls -lmbedcrypto -lmbedx509
+              /tmp/coe-esp32-auth
+              grep -Fq 'static constexpr bool kCoinAdmissionEnabled=false;' "$P/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino" ;;
+            *) echo 'Unknown component' >&2; exit 3 ;;
+          esac
+          echo "$COMPONENT EXACT-PIN HOST BASELINE PASS; production NOT authorized"
