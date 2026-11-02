@@ -39,7 +39,7 @@ class IntakeTests(unittest.TestCase):
 
     def test_real_candidate_manifest(self):
         count, staged = audit(self.root, self.manifest)
-        self.assertEqual((count, staged), (6, 1))
+        self.assertEqual((count, staged), (7, 2))
 
     def test_unauthorized_production_flag(self):
         self.doc["production_authorized"] = True
@@ -98,7 +98,7 @@ class IntakeTests(unittest.TestCase):
             b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
         ).hexdigest()
         self.save()
-        self.assertEqual(audit(self.root, self.manifest), (6, 2))
+        self.assertEqual(audit(self.root, self.manifest), (7, 3))
         path.write_bytes(payload + b"tampered")
         self.verify_denied()
 

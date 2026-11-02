@@ -60,6 +60,17 @@
       "content_sha256": "0c610c67e3fc0ba7c867df9434517b0645d88a146b78ee5cf8cb4f5bc3fd387d",
       "source_content_sha256": "aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305",
       "review_note": "docs/decisions/2026-11-02-capability-fallback-cleanup.md"
+    },
+    {
+      "module": "core",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 252,
+      "source_commit": "c2a7515f43aff7043b0c2274dcdc097f30d7efbb",
+      "source_path": "experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/lib/blazepwifi/config.sh",
+      "source_blob_sha": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
+      "state": "staged",
+      "destination_path": "core/openwrt/rootfs/usr/lib/blazepwifi/config.sh",
+      "content_sha256": "4a73c0841614f841dd35df4e42f9bf1eedc3c5f8e89cb0d9a793f7ee692e20a2"
     }
   ]
 }
