@@ -134,7 +134,7 @@ jobs:
           test "$(git hash-object "$FILE")" = 3753966f3e52c04ffddbc080f04bb37e12af0e67
           test "$(sha256sum "$FILE" | cut -d' ' -f1)" = aabf049182fa0b25fba37be2e99cd75ac6b86c683698aea181348b3ef58c4305
 
-staged-config-provenance:
+  staged-config-provenance:
     name: Confirm exact CORE configuration source blob
     needs: intake
     runs-on: ubuntu-24.04
