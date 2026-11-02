@@ -18,7 +18,7 @@ sed -e 's|/etc/blazepwifi/.config-transaction.pending|__COE_MARKER__|g' \
     -e "s|/etc/blazepwifi|$ETC|g" \
     -e "s|/usr/lib/blazepwifi/config.sh|$LIB|g" \
     -e "s|__COE_MARKER__|$MARKER|g" "$ORIGINAL" > "$T/init-test"
-[ "$(grep -Fc "$LIB" "$T/init-test")" -eq 2 ]
+[ "$(grep -Fc "$LIB" "$T/init-test")" -eq 3 ]
 [ "$(grep -Fc "$MARKER" "$T/init-test")" -eq 1 ]
 sh -n "$T/init-test"
 . "$T/init-test"
