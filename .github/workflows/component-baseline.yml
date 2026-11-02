@@ -5,6 +5,8 @@ on:
       - '.github/workflows/component-baseline.yml'
       - 'inventory/source-intake.json'
       - 'tools/source_intake_guard.py'
+      - 'core/**'
+      - 'tests/capability_tiers.sh'
   workflow_dispatch:
 permissions:
   contents: read
@@ -100,3 +102,15 @@ jobs:
             *) echo 'Unknown component' >&2; exit 3 ;;
           esac
           echo "$COMPONENT EXACT-PIN HOST BASELINE PASS; production NOT authorized"
+
+  staged-capabilities:
+    name: CORE staged capability selector host tests
+    needs: intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Execute staged OpenWrt capability tier table without device state
+        run: sh tests/capability_tiers.sh
