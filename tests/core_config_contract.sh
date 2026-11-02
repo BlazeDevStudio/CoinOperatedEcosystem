@@ -82,4 +82,16 @@ if bp_config_set admin_port 0; then
     echo 'INVALID_PORT_FALSE_ACK' >&2; exit 1
 fi
 [ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
-echo 'COE CONFIG SOURCE CONTRACT PASS: whitelist, URL, VLAN, numeric limits and failed-apply rollback (synthetic only)'
+# Refuse and never execute arbitrary environment-provided shell commands.
+export BP_CONFIG_APPLY_HOOK="touch $T/unsafe-side-effect"
+if bp_config_set admin_port 9555; then
+    echo UNSAFE_DYNAMIC_HOOK_ACCEPTED >&2; exit 1
+fi
+[ ! -e "$T/unsafe-side-effect" ] || { echo HOOK_EXECUTED >&2; exit 1; }
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
+export BP_CONFIG_APPLY_HOOK='true; touch /tmp/coe-should-not-execute'
+if bp_config_set admin_port 9555; then
+    echo COMPOUND_HOOK_ACCEPTED >&2; exit 1
+fi
+[ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
+echo 'COE CONFIG SOURCE CONTRACT PASS: safe validation, rollback and non-executable developer hook'
