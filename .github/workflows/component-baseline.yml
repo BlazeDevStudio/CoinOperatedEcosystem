@@ -199,3 +199,37 @@ jobs:
         run: |
           sh -n core/openwrt/rootfs/etc/init.d/blazepwifi
           sh tests/core_startup_preflight.sh
+
+  core-exec-provenance:
+    name: Independently pin original CORE daemon source
+    needs: intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BlazeDevStudio/BlazingSystems-Experiments
+          ref: c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          persist-credentials: false
+      - name: Verify first-party daemon source commit, blob and SHA-256
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          SOURCE=experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/sbin/blazepwifi-core
+          test "$(git hash-object "$SOURCE")" = 94c6bfa462b509587e0ea5416c0481de0cb641f0
+          test "$(sha256sum "$SOURCE" | cut -d' ' -f1)" = f789066018389fb014e56c50718376bdbbc1611d173a6b004a10aa090a3b818a
+
+  core-exec-regression:
+    name: Reject direct CORE launches and runtime bypasses (mocked nft)
+    needs: [intake, core-exec-provenance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Source-level daemon parse and disposable direct-execution regressions
+        run: |
+          set -eu
+          sh -n core/openwrt/rootfs/usr/sbin/blazepwifi-core
+          sh tests/core_direct_exec_recovery.sh
