@@ -18,7 +18,7 @@ sed -e 's|/etc/blazepwifi/.config-transaction.pending|__COE_MARKER__|g' \
     -e "s|/etc/blazepwifi|$DIR|g" \
     -e "s|/usr/lib/blazepwifi/config.sh|$LIB|g" \
     -e "s|__COE_MARKER__|$PENDING|g" "$SOURCE" > "$T/core-under-test"
-[ "$(grep -Fc "$LIB" "$T/core-under-test")" -eq 2 ]
+[ "$(grep -Fc "$LIB" "$T/core-under-test")" -eq 3 ]
 [ "$(grep -Fc "$PENDING" "$T/core-under-test")" -eq 1 ]
 sh -n "$T/core-under-test"
 
