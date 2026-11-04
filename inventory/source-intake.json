@@ -86,6 +86,19 @@
       "content_sha256": "72594c9490868943aa35659e04455b8031dba225b45df0034ffe4ce8d91738c8",
       "source_content_sha256": "ea13be79fac39d0dee6de3aae178e7a4c69e9d998419d62d9e8a81cf55183ba2",
       "review_note": "docs/decisions/2026-11-03-core-startup-preflight.md"
+    },
+    {
+      "module": "core",
+      "source_repo": "BlazeDevStudio/BlazingSystems-Experiments",
+      "source_pr": 252,
+      "source_commit": "c2a7515f43aff7043b0c2274dcdc097f30d7efbb",
+      "source_path": "experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/sbin/blazepwifi-core",
+      "source_blob_sha": "94c6bfa462b509587e0ea5416c0481de0cb641f0",
+      "state": "refactored",
+      "destination_path": "core/openwrt/rootfs/usr/sbin/blazepwifi-core",
+      "content_sha256": "5169f96f0284a59f92d0dca3b6de6fd5c4933692ec91a075072a68b03be403ec",
+      "source_content_sha256": "f789066018389fb014e56c50718376bdbbc1611d173a6b004a10aa090a3b818a",
+      "review_note": "docs/decisions/2026-11-04-core-direct-exec-recovery.md"
     }
   ]
 }
