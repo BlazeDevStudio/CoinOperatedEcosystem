@@ -49,6 +49,40 @@ table inet blazepwifi {
 NFT
 }
 
+# Config updates and MAC grants must share the same transaction lock.
+# Failure is never converted to an authorization success. This coordinates
+# only well-behaved local writers; external nft or marker writes remain out
+# of scope until physical/system integration proves containment.
+bp_core_stop_grants() {
+	nft flush set inet blazepwifi auth_macs 2>/dev/null || true
+	printf '%s\n' 'blazepwifi-core stopped: configuration grant barrier uncertain' >&2
+	exit 9
+}
+
+bp_core_authorize_if_stable() {
+	bp_core_auth_mac="$1"
+	# Ignore inherited overrides: use the same production path as UCI setters.
+	BP_CONFIG_LOCK_FILE=/var/run/blazepwifi-config.lock
+	export BP_CONFIG_LOCK_FILE
+	command -v bp_config_lock >/dev/null 2>&1 || bp_core_stop_grants
+	command -v bp_config_unlock >/dev/null 2>&1 || bp_core_stop_grants
+	bp_config_lock || bp_core_stop_grants
+	# The recovery marker can appear after the loop-wide check, but the
+	# cooperating UCI writer cannot create it while this lock is held.
+	if ! bp_core_recovery_gate; then
+		bp_config_unlock
+		bp_core_stop_grants
+	fi
+	bp_authorize_mac "$bp_core_auth_mac"
+	# Even if an external writer ignores the lock, detect a new marker at
+	# this immediate boundary; flushing is best effort, not hardware proof.
+	if ! bp_core_recovery_gate; then
+		bp_config_unlock
+		bp_core_stop_grants
+	fi
+	bp_config_unlock
+}
+
 sync_accounts() {
 	now="$(bp_now)"
 	if ! bp_time_sane "$now"; then
@@ -62,7 +96,7 @@ sync_accounts() {
 			continue
 		fi
 		if [ -n "$expiry" ] && [ "$expiry" -gt "$now" ] 2>/dev/null; then
-			bp_authorize_mac "$mac"
+			bp_core_authorize_if_stable "$mac"
 		else
 			bp_deauthorize_mac "$mac"
 		fi
