@@ -176,7 +176,12 @@ def audit(root, manifest):
         for path in directory.rglob("*"):
             if path.is_symlink():
                 raise IntakeError("unexpected symlink in a component directory")
-            if not path.is_file() or path.suffix.lower() not in SOURCE_SUFFIXES:
+            if not path.is_file():
+                continue
+            # Runtime entrypoints can be extensionless (e.g. /usr/sbin/*).
+            # A +x file with an unknown suffix is still executable source.
+            if (path.suffix.lower() not in SOURCE_SUFFIXES and
+                    not (path.stat().st_mode & 0o111)):
                 continue
             relative = path.relative_to(root).as_posix()
             if relative not in staged:
