@@ -39,7 +39,7 @@ class IntakeTests(unittest.TestCase):
 
     def test_real_candidate_manifest(self):
         count, staged = audit(self.root, self.manifest)
-        self.assertEqual((count, staged), (8, 3))
+        self.assertEqual((count, staged), (9, 4))
 
     def test_unauthorized_production_flag(self):
         self.doc["production_authorized"] = True
@@ -85,6 +85,21 @@ class IntakeTests(unittest.TestCase):
         path.write_text("echo unsafe\n", encoding="utf-8")
         self.verify_denied()
 
+    def test_unrecorded_extensionless_executable_is_denied(self):
+        path = self.root / "core" / "openwrt" / "rootfs" / "usr" / "sbin" / "hidden-core"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\\necho unsafe\\n", encoding="utf-8")
+        path.chmod(0o755)
+        self.verify_denied()
+
+    def test_unrecorded_extensionless_nonexecutable_in_runtime_dir_is_denied(self):
+        path = self.root / "core" / "openwrt" / "rootfs" / "usr" / "sbin" / "hidden-core"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\\n# inactive data fixture\\n", encoding="utf-8")
+        path.chmod(0o644)
+        # Even chmod 0644 scripts under /usr/sbin are source: sh can run them.
+        self.verify_denied()
+
     def test_staged_file_must_match_both_hashes(self):
         record = self.doc["entries"][0]
         payload = b"dummy first-party source fixture; not production code\n"
@@ -98,7 +113,7 @@ class IntakeTests(unittest.TestCase):
             b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
         ).hexdigest()
         self.save()
-        self.assertEqual(audit(self.root, self.manifest), (8, 4))
+        self.assertEqual(audit(self.root, self.manifest), (9, 5))
         path.write_bytes(payload + b"tampered")
         self.verify_denied()
 

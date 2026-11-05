@@ -176,9 +176,19 @@ def audit(root, manifest):
         for path in directory.rglob("*"):
             if path.is_symlink():
                 raise IntakeError("unexpected symlink in a component directory")
-            if not path.is_file() or path.suffix.lower() not in SOURCE_SUFFIXES:
+            if not path.is_file():
                 continue
             relative = path.relative_to(root).as_posix()
+            # Extensionless scripts remain runnable by a shell even without
+            # an executable bit. Runtime command/init directories must never
+            # permit unregistered files of any suffix or POSIX mode.
+            runtime = any(
+                f"/{name}/" in f"/{relative}"
+                for name in ("usr/sbin", "usr/bin", "etc/init.d")
+            )
+            if (path.suffix.lower() not in SOURCE_SUFFIXES and
+                    not (path.stat().st_mode & 0o111) and not runtime):
+                continue
             if relative not in staged:
                 raise IntakeError("unrecorded runtime source: " + relative)
     return len(entries), len(staged)
