@@ -92,14 +92,13 @@ class IntakeTests(unittest.TestCase):
         path.chmod(0o755)
         self.verify_denied()
 
-    def test_unrecorded_extensionless_nonexecutable_not_accepted_as_source(self):
+    def test_unrecorded_extensionless_nonexecutable_in_runtime_dir_is_denied(self):
         path = self.root / "core" / "openwrt" / "rootfs" / "usr" / "sbin" / "hidden-core"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("#!/bin/sh\\n# inactive data fixture\\n", encoding="utf-8")
         path.chmod(0o644)
-        # A nonexecutable extensionless file is not considered runtime source.
-        # The production deployment model must reject other unowned assets.
-        self.assertEqual(audit(self.root, self.manifest), (9, 4))
+        # Even chmod 0644 scripts under /usr/sbin are source: sh can run them.
+        self.verify_denied()
 
     def test_staged_file_must_match_both_hashes(self):
         record = self.doc["entries"][0]
