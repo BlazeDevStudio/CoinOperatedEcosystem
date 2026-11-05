@@ -96,9 +96,9 @@
       "source_blob_sha": "94c6bfa462b509587e0ea5416c0481de0cb641f0",
       "state": "refactored",
       "destination_path": "core/openwrt/rootfs/usr/sbin/blazepwifi-core",
-      "content_sha256": "5169f96f0284a59f92d0dca3b6de6fd5c4933692ec91a075072a68b03be403ec",
+      "content_sha256": "655fdbcab8bdfe6f0de3b5cab34c7c0a0586a6c2272a2e8f5c1c85282d08d4b2",
       "source_content_sha256": "f789066018389fb014e56c50718376bdbbc1611d173a6b004a10aa090a3b818a",
-      "review_note": "docs/decisions/2026-11-04-core-direct-exec-recovery.md"
+      "review_note": "docs/decisions/2026-11-06-core-authorization-barrier.md"
     }
   ]
 }
