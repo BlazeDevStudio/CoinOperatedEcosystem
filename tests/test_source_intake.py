@@ -85,6 +85,21 @@ class IntakeTests(unittest.TestCase):
         path.write_text("echo unsafe\n", encoding="utf-8")
         self.verify_denied()
 
+    def test_unrecorded_extensionless_executable_is_denied(self):
+        path = self.root / "core" / "openwrt" / "rootfs" / "usr" / "sbin" / "hidden-core"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\\necho unsafe\\n", encoding="utf-8")
+        path.chmod(0o755)
+        self.verify_denied()
+
+    def test_unrecorded_extensionless_nonexecutable_in_runtime_dir_is_denied(self):
+        path = self.root / "core" / "openwrt" / "rootfs" / "usr" / "sbin" / "hidden-core"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\\n# inactive data fixture\\n", encoding="utf-8")
+        path.chmod(0o644)
+        # Even chmod 0644 scripts under /usr/sbin are source: sh can run them.
+        self.verify_denied()
+
     def test_staged_file_must_match_both_hashes(self):
         record = self.doc["entries"][0]
         payload = b"dummy first-party source fixture; not production code\n"
