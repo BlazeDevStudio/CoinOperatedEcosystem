@@ -17,9 +17,11 @@ cp "$CONFIG" "$LIB"
 sed -e 's|/etc/blazepwifi/.config-transaction.pending|__COE_MARKER__|g' \
     -e "s|/etc/blazepwifi|$DIR|g" \
     -e "s|/usr/lib/blazepwifi/config.sh|$LIB|g" \
-    -e "s|__COE_MARKER__|$PENDING|g" "$SOURCE" > "$T/core-under-test"
+    -e "s|__COE_MARKER__|$PENDING|g" \
+    -e "s|/var/run/blazepwifi-config.lock|$T/config.lock|g" "$SOURCE" > "$T/core-under-test"
 [ "$(grep -Fc "$LIB" "$T/core-under-test")" -eq 3 ]
 [ "$(grep -Fc "$PENDING" "$T/core-under-test")" -eq 1 ]
+[ "$(grep -Fc "$T/config.lock" "$T/core-under-test")" -eq 1 ]
 sh -n "$T/core-under-test"
 
 cat > "$T/common.sh" <<'COMMON'
@@ -29,7 +31,12 @@ BP_ACCOUNTS="$COE_ACCOUNTS"
 BP_TARGET_DIR="$COE_TARGETS"
 bp_init_dirs() { : > "$COE_INIT_CALLED"; }
 bp_now() { printf '%s\n' 2000000000; }
-bp_time_sane() { [ "$1" -ge 1700000000 ]; }
+bp_time_sane() {
+    if [ "$COE_GRANT_FAULT" = 'before-grant' ]; then
+        printf 'COE_CONFIG_PENDING_V1 admin_port\n' > "$COE_MARKER"
+    fi
+    [ "$1" -ge 1700000000 ]
+}
 bp_cfg() {
     case "$1" in
         lan_if) printf 'br-lan\n' ;;
@@ -38,7 +45,12 @@ bp_cfg() {
         *) : ;;
     esac
 }
-bp_authorize_mac() { printf 'authorize %s\n' "$1" >> "$COE_AUTH_LOG"; }
+bp_authorize_mac() {
+    printf 'authorize %s\n' "$1" >> "$COE_AUTH_LOG"
+    if [ "$COE_GRANT_FAULT" = 'during-grant' ]; then
+        printf 'COE_CONFIG_PENDING_V1 admin_port\n' > "$COE_MARKER"
+    fi
+}
 bp_deauthorize_mac() { printf 'deauthorize %s\n' "$1" >> "$COE_AUTH_LOG"; }
 COMMON
 
@@ -71,6 +83,8 @@ export COE_AUTH_LOG="$T/authorization.log"
 export COE_NFT_LOG="$T/nft.log"
 export COE_MARKER="$PENDING"
 export COE_CONFIG_LIB="$LIB"
+export COE_GRANT_FAULT=none
+export COE_LOCK_READY="$T/lock-ready"
 
 run_direct_denied() {
     rm -f "$COE_COMMON_SOURCED" "$COE_INIT_CALLED" "$COE_AUTH_LOG" "$COE_NFT_LOG"
@@ -153,4 +167,59 @@ fi
 grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
 grep -Fq 'core stopped' "$T/stderr"
 [ "$(grep -Fc 'authorize ' "$COE_AUTH_LOG")" -eq 1 ]
-echo 'COE CORE EXEC GUARD PASS: direct launch blocked, environment/symlink/missing guard denied, runtime pending/lost library stopped'
+# Restore the fixture library consumed by the preceding missing-library test.
+mv "$LIB.hidden" "$LIB"
+
+# Inject pending AFTER the loop preflight, but BEFORE the first account grant.
+# Previously the loop-wide check would permit an authorization in this gap.
+COE_GRANT_FAULT=before-grant; COE_SLEEP_ACTION=pending
+export COE_GRANT_FAULT COE_SLEEP_ACTION
+rm -f "$COE_AUTH_LOG" "$COE_NFT_LOG" "$T/stdout" "$T/stderr"
+if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+    echo 'PREGRANT_PENDING_WAS_GRANTED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'PREGRANT_WRONG_RETURN' >&2; cat "$T/stderr" >&2; exit 1; }
+fi
+[ ! -s "$COE_AUTH_LOG" ] || { echo 'PREGRANT_ACCOUNT_AUTHORIZED' >&2; exit 1; }
+grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
+[ -f "$PENDING" ]
+rm "$PENDING"
+
+# External/noncooperating writers can race even a shared lock. If a marker
+# appears INSIDE an authorization call, detect it immediately afterwards,
+# attempt revocation and exit 9; no hardware fail-closed proof is claimed.
+COE_GRANT_FAULT=during-grant; export COE_GRANT_FAULT
+rm -f "$COE_AUTH_LOG" "$COE_NFT_LOG"
+if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+    echo 'DURING_GRANT_PENDING_WAS_IGNORED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'DURING_GRANT_WRONG_RETURN' >&2; exit 1; }
+fi
+[ "$(grep -Fc 'authorize ' "$COE_AUTH_LOG")" -eq 1 ]
+grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
+[ -f "$PENDING" ]
+rm "$PENDING"
+
+# A config transaction holder prevents an independent grant from claiming
+# success; a competing reader never authorizes while the lock is held.
+COE_GRANT_FAULT=none; export COE_GRANT_FAULT
+rm -f "$COE_AUTH_LOG" "$COE_NFT_LOG" "$COE_LOCK_READY"
+flock "$T/config.lock" sh -c 'printf locked > "$COE_LOCK_READY"; /bin/sleep 2' &
+locker=$!
+attempt=0
+while [ ! -f "$COE_LOCK_READY" ]; do
+    attempt=$((attempt+1))
+    [ "$attempt" -lt 100 ] || { echo 'LOCK_FIXTURE_NOT_READY' >&2; exit 1; }
+    /bin/sleep 0.02
+done
+if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+    echo 'CONTENDED_GRANT_WAS_ACCEPTED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'CONTENDED_GRANT_WRONG_RETURN' >&2; exit 1; }
+fi
+wait "$locker"
+[ ! -s "$COE_AUTH_LOG" ] || { echo 'CONTENDED_ACCOUNT_AUTHORIZED' >&2; exit 1; }
+grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
+[ ! -e "$PENDING" ]
+
+echo 'COE CORE GRANT BARRIER PASS: before/during-grant pending, shared-lock contention, no unverified grant'
