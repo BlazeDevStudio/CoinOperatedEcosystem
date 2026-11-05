@@ -199,3 +199,42 @@ jobs:
         run: |
           sh -n core/openwrt/rootfs/etc/init.d/blazepwifi
           sh tests/core_startup_preflight.sh
+
+  core-entry-provenance:
+    name: Verify exact upstream blazepwifi-core source
+    needs: intake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: BlazeDevStudio/BlazingSystems-Experiments
+          ref: c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          persist-credentials: false
+      - name: Assert original source commit/blob/content identity
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = c2a7515f43aff7043b0c2274dcdc097f30d7efbb
+          FILE=experiment/openwrt/BlazePwifi/openwrt/rootfs/usr/sbin/blazepwifi-core
+          test "$(git hash-object "$FILE")" = 94c6bfa462b509587e0ea5416c0481de0cb641f0
+          test "$(sha256sum "$FILE" | cut -d' ' -f1)" = f789066018389fb014e56c50718376bdbbc1611d173a6b004a10aa090a3b818a
+          test -x "$FILE"
+
+  core-direct-entry:
+    name: Guard direct core daemon before common and nft (synthetic)
+    needs: [intake, core-entry-provenance, startup-init-provenance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preserve original executable modes and run direct entrypoint tests
+        run: |
+          set -eu
+          test -x core/openwrt/rootfs/usr/sbin/blazepwifi-core
+          test -x core/openwrt/rootfs/etc/init.d/blazepwifi
+          test -x core/openwrt/rootfs/usr/lib/blazepwifi/config.sh
+          test -x core/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh
+          sh -n core/openwrt/rootfs/usr/sbin/blazepwifi-core
+          sh tests/core_direct_entry_recovery.sh
