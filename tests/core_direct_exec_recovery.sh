@@ -47,6 +47,8 @@ bp_cfg() {
 }
 bp_authorize_mac() {
     printf 'authorize %s\n' "$1" >> "$COE_AUTH_LOG"
+    # Faithfully model upstream common.sh's nft error-suppressing wrapper.
+    nft add element inet blazepwifi auth_macs "{ $1 }" >/dev/null 2>&1 || true
     if [ "$COE_GRANT_FAULT" = 'during-grant' ]; then
         printf 'COE_CONFIG_PENDING_V1 admin_port\n' > "$COE_MARKER"
     fi
@@ -57,6 +59,17 @@ COMMON
 cat > "$T/bin/nft" <<'NFT'
 #!/bin/sh
 printf '%s\n' "$*" >> "$COE_NFT_LOG"
+case "${1:-} ${2:-}" in
+    'add element')
+        [ "$COE_NFT_FAULT" != 'add-denied' ] || exit 7
+        printf 'present\n' > "$COE_ELEMENT_PRESENT" ;;
+    'get element')
+        [ "$COE_NFT_FAULT" != 'readback-denied' ] || exit 8
+        [ -f "$COE_ELEMENT_PRESENT" ] || exit 9 ;;
+    'flush set')
+        [ "$COE_NFT_FAULT" != 'flush-denied' ] || exit 10
+        rm -f "$COE_ELEMENT_PRESENT" ;;
+esac
 exit 0
 NFT
 cat > "$T/bin/sleep" <<'SLEEP'
@@ -85,6 +98,7 @@ export COE_MARKER="$PENDING"
 export COE_CONFIG_LIB="$LIB"
 export COE_GRANT_FAULT=none
 export COE_LOCK_READY="$T/lock-ready"
+export COE_NFT_FAULT=none COE_ELEMENT_PRESENT="$T/element-present"
 
 run_direct_denied() {
     rm -f "$COE_COMMON_SOURCED" "$COE_INIT_CALLED" "$COE_AUTH_LOG" "$COE_NFT_LOG"
@@ -223,3 +237,60 @@ grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
 [ ! -e "$PENDING" ]
 
 echo 'COE CORE GRANT BARRIER PASS: before/during-grant pending, shared-lock contention, no unverified grant'
+
+# The real common.sh ignores nft add's non-zero return. An attempted
+# authorization must not be ACKed until 'nft get element' confirms membership.
+# The synthetic nft add intentionally fails while the helper returns success.
+for fault in add-denied readback-denied; do
+    COE_NFT_FAULT="$fault"; export COE_NFT_FAULT
+    COE_GRANT_FAULT=none; export COE_GRANT_FAULT
+    COE_SLEEP_ACTION=pending; export COE_SLEEP_ACTION
+    rm -f "$COE_ELEMENT_PRESENT" "$COE_AUTH_LOG" "$COE_NFT_LOG" "$PENDING"
+    if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+        echo "NFT_UNVERIFIED_GRANT_ACKED_$fault" >&2; exit 1
+    else
+        [ "$?" -eq 9 ] || { echo "NFT_UNVERIFIED_GRANT_WRONG_EXIT_$fault" >&2; cat "$T/stderr" >&2; exit 1; }
+    fi
+    [ "$(grep -Fc 'authorize ' "$COE_AUTH_LOG")" -eq 1 ]
+    grep -Fq 'get element inet blazepwifi auth_macs' "$COE_NFT_LOG"
+    grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
+    grep -Fq 'grant barrier uncertain' "$T/stderr"
+    [ ! -e "$PENDING" ] || { echo "UNEXPECTED_PENDING_$fault" >&2; exit 1; }
+done
+
+# A successful synthetic add and readback must preserve the positive path:
+# only the existing fixture's sleep-triggered marker terminates the loop.
+COE_NFT_FAULT=none; export COE_NFT_FAULT
+rm -f "$COE_ELEMENT_PRESENT" "$COE_AUTH_LOG" "$COE_NFT_LOG" "$PENDING"
+if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+    echo 'HEALTHY_GRANT_DID_NOT_RECHECK_RUNTIME_RECOVERY' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'HEALTHY_GRANT_WRONG_EXIT' >&2; exit 1; }
+fi
+grep -Fq 'get element inet blazepwifi auth_macs' "$COE_NFT_LOG"
+grep -Fq 'authorize aa:bb:cc:dd:ee:ff' "$COE_AUTH_LOG"
+[ -f "$PENDING" ]
+rm "$PENDING"
+
+# A flush failure must emit an explicit emergency message. The service
+# still denies, but no test claims the firewall is actually deauthorized.
+COE_NFT_FAULT=flush-denied; export COE_NFT_FAULT
+printf 'COE_CONFIG_PENDING_V1 admin_port\n' > "$PENDING"
+if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+    echo 'FAILED_FLUSH_WAS_TREATED_AS_SUCCESS' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'FAILED_FLUSH_WRONG_EXIT' >&2; exit 1; }
+fi
+# Startup preflight denies before the runtime flush; to exercise the
+# runtime flush failure, force marker creation in the account grant path.
+rm "$PENDING"
+COE_GRANT_FAULT=before-grant; export COE_GRANT_FAULT
+if timeout 6 sh "$T/core-under-test" >"$T/stdout" 2>"$T/stderr"; then
+    echo 'FAILED_RUNTIME_FLUSH_ACKED' >&2; exit 1
+else
+    [ "$?" -eq 9 ] || { echo 'FAILED_RUNTIME_FLUSH_WRONG_EXIT' >&2; exit 1; }
+fi
+grep -Fq 'CRITICAL: nft authorization revocation unverified' "$T/stderr"
+grep -Fq 'flush set inet blazepwifi auth_macs' "$COE_NFT_LOG"
+[ -f "$PENDING" ]
+echo 'COE NFT VERIFICATION PASS: suppressed add failure denied, unreadable membership denied, verified add, flush failure surfaced'
