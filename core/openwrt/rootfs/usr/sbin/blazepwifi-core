@@ -54,7 +54,10 @@ NFT
 # only well-behaved local writers; external nft or marker writes remain out
 # of scope until physical/system integration proves containment.
 bp_core_stop_grants() {
-	nft flush set inet blazepwifi auth_macs 2>/dev/null || true
+	# Failure to flush cannot be reported as successful containment.
+	if ! nft flush set inet blazepwifi auth_macs >/dev/null 2>&1; then
+		printf '%s\n' 'CRITICAL: nft authorization revocation unverified' >&2
+	fi
 	printf '%s\n' 'blazepwifi-core stopped: configuration grant barrier uncertain' >&2
 	exit 9
 }
@@ -74,6 +77,14 @@ bp_core_authorize_if_stable() {
 		bp_core_stop_grants
 	fi
 	bp_authorize_mac "$bp_core_auth_mac"
+	# The original common.sh helper masks nft add errors with '|| true'.
+	# Membership readback, not the helper's return status, is the minimum
+	# observable proof that the requested MAC is in the authorization set.
+	# Readback errors (including unsupported nft get syntax) deny the grant.
+	if ! nft get element inet blazepwifi auth_macs "{ $bp_core_auth_mac }" >/dev/null 2>&1; then
+		bp_config_unlock
+		bp_core_stop_grants
+	fi
 	# Even if an external writer ignores the lock, detect a new marker at
 	# this immediate boundary; flushing is best effort, not hardware proof.
 	if ! bp_core_recovery_gate; then
