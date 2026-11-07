@@ -12,7 +12,13 @@ cat > "$T/bin/uci" <<'UCI'
 cmd="$1"; shift
 key="${1:-}"
 case "$cmd" in
+  show)
+    [ ! -f "$TEST_DIR/fail_show" ] || exit 46
+    [ "$key" = blazepwifi.main ] || exit 47
+    [ ! -f "$TEST_DIR/fail_show_section" ] && printf '%s\n' 'blazepwifi.main=core'
+    cat "$TEST_DIR/uci.db" ;;
   get)
+    [ ! -f "$TEST_DIR/fail_get" ] || exit 48
     record="$(grep -F "${key}=" "$TEST_DIR/uci.db" | tail -n 1)"
     [ -n "$record" ] || exit 1
     printf '%s\n' "${record#*=}" ;;
@@ -61,10 +67,40 @@ run_set 9443
 [ "$rc" -eq 0 ] && [ "$(get_port)" = 9443 ] && [ "$(wc -l < "$T/audit")" -eq 1 ]
 printf 'PASS normal config commit and audit\n'
 reset
+touch "$T/fail_show"
+run_set 9443
+[ "$rc" -eq 8 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
+grep -q 'CRITICAL: cannot snapshot UCI section' "$T/stderr"
+printf 'PASS section snapshot I/O failure refuses mutation\n'
+reset
+touch "$T/fail_show_section"
+run_set 9443
+[ "$rc" -eq 8 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
+grep -q 'CRITICAL: UCI section missing' "$T/stderr"
+printf 'PASS missing section refuses mutation\n'
+reset
+touch "$T/fail_get"
+run_set 9443
+[ "$rc" -eq 8 ] && [ ! -s "$T/audit" ]
+[ "$(cat "$T/uci.db")" = 'blazepwifi.main.admin_port=8443' ]
+grep -q 'CRITICAL: UCI option exists but its value cannot be read' "$T/stderr"
+printf 'PASS read error for existing option refuses mutation\n'
+reset
+: > "$T/uci.db"
+run_set 9443
+[ "$rc" -eq 0 ] && [ "$(get_port)" = 9443 ]
+printf 'PASS truly absent option can be configured\n'
+reset
 BP_CONFIG_APPLY_HOOK=false; export BP_CONFIG_APPLY_HOOK
 run_set 9443
 [ "$rc" -eq 1 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
 printf 'PASS apply failure restores old value without auditing\n'
+reset
+: > "$T/uci.db"
+BP_CONFIG_APPLY_HOOK=false; export BP_CONFIG_APPLY_HOOK
+run_set 9443
+[ "$rc" -eq 1 ] && [ -z "$(cat "$T/uci.db")" ] && [ ! -s "$T/audit" ]
+printf 'PASS absent option restored by delete on failed apply\n'
 reset
 touch "$T/fail_commit_once"
 run_set 9443
@@ -106,4 +142,4 @@ run_set 9443
 [ "$rc" -eq 8 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
 grep -q 'CRITICAL: UCI rollback failed' "$T/stderr"
 printf 'PASS persistent commit failure reported as uncertain\n'
-printf 'ALL PASS — source-linked UCI fault injection (9 cases)\n'
+printf 'ALL PASS — source-linked UCI fault injection (14 cases)\n'

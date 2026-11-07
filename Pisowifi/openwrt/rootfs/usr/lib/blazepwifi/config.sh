@@ -90,7 +90,26 @@ bp_config_apply() {
 bp_config_set() {
 	key="$1"; value="$2"
 	bp_config_validate "$key" "$value" || return 2
-	if old="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then had_old=1; else old=""; had_old=0; fi
+	# A failed UCI get is ambiguous: the option may exist but its read failed.
+	# Check a readable section snapshot first, and never treat an unreadable
+	# existing option (or unreadable section) as an absent option to delete.
+	section_snapshot="$(uci -q show blazepwifi.main 2>/dev/null)" || {
+		echo "CRITICAL: cannot snapshot UCI section before config change: $key" >&2
+		return 8
+	}
+	printf '%s\n' "$section_snapshot" | grep -q '^blazepwifi\.main=' || {
+		echo "CRITICAL: UCI section missing or malformed before config change: $key" >&2
+		return 8
+	}
+	if old="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then
+		had_old=1
+	else
+		if printf '%s\n' "$section_snapshot" | grep -Fq "blazepwifi.main.$key="; then
+			echo "CRITICAL: UCI option exists but its value cannot be read: $key" >&2
+			return 8
+		fi
+		old=""; had_old=0
+	fi
 	uci set "blazepwifi.main.$key=$value" || return 1
 	if ! uci commit blazepwifi; then
 		if ! bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1; then
