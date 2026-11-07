@@ -61,3 +61,48 @@ jobs:
           path: Pisonet/SoftTimer/lab-output/
           if-no-files-found: error
           retention-days: 7
+
+  installer-lab:
+    needs: windows-lab
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: Pisonet/SoftTimer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish isolated self-contained app and watchdog payloads
+        run: |
+          dotnet publish ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./out/bundle
+          if ($LASTEXITCODE -ne 0) { throw 'App publish failed' }
+          dotnet publish ./src/BlazePisonet.SoftTimer.Watchdog/BlazePisonet.SoftTimer.Watchdog.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./out/bundle
+          if ($LASTEXITCODE -ne 0) { throw 'Watchdog publish failed' }
+          foreach ($file in @('BlazePisonet.SoftTimer.exe', 'BlazePisonet.SoftTimer.Watchdog.exe')) {
+            if (-not (Test-Path "./out/bundle/$file")) { throw "Missing payload: $file" }
+          }
+      - name: Compile NSIS unsigned lab-only installer (do NOT install)
+        run: |
+          $tool = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          $exe = if ($tool) { $tool.Source } else { Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe' }
+          if (-not (Test-Path $exe)) {
+            choco install nsis --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'NSIS tooling installation failed' }
+          }
+          if (-not (Test-Path $exe)) { throw 'makensis.exe missing' }
+          Push-Location ./installer
+          & $exe /V2 'BlazePisonet-SoftTimer.nsi'
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) { throw "NSIS compilation failed: $rc" }
+          if (-not (Test-Path ./out/BlazePisonet-SoftTimer-Setup-v0.4.0-LAB.exe)) { throw 'LAB installer missing' }
+      - name: Upload unsigned LAB installer — NOT customer ready
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazePisonet-SoftTimer-Setup-win-x64-UNSIGNED-LAB
+          path: Pisonet/SoftTimer/out/BlazePisonet-SoftTimer-Setup-v0.4.0-LAB.exe
+          if-no-files-found: error
+          retention-days: 7

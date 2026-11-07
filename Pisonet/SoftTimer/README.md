@@ -33,3 +33,7 @@ CI also publishes an **unsigned lab diagnostic artifact** only if all synthetic 
 - Physical coinslot/accounting tests and operator acceptance.
 
 Never attach an unconditioned 12V coin pulse directly to PC serial pins. See `MIGRATION_PROVENANCE.md` for source boundaries.
+
+## Installer compilation
+
+A separate dependent CI job compiles an **unsigned NSIS LAB installer** after all source-linked tests pass. The installer has not been run or uninstalled on Windows, and its artifact is **not customer-ready**. See `installer/README-LAB.md`.

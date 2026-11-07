@@ -15,3 +15,7 @@ Do not treat import/compilation/CI as production or physical-payment readiness. 
 ## Follow-up safety revision
 
 This draft branch subsequently changes `src/BlazePisonet.SoftTimer/Storage.cs` to **fail closed** on missing/corrupt paid state rather than silently replacing it with an empty instance. Its Git blob SHA therefore intentionally differs from the pinned initial import. `tests/StateRecoveryGuard` is a new source-linked disposable-file test; `.github/workflows/pisonet-softtimer-windows.yml` is destination-only CI. No upstream Experiments file was modified. The old source and initial import commits retain exact provenance.
+
+## NSIS lab packaging
+
+`installer/BlazePisonet-SoftTimer.nsi` is an adapted, deliberately lab-namespaced derivative of historical Windows-only NSIS source blob `cb0c777d5272d53638f884b19eef23f82a7ea102`. `build-local.ps1` is copied byte-identically from blob `7070695dfbd67d44e8dca6f98dbf0c33784e1ab5`. Only the Windows Pisonet subsystem is involved; the LAB installer is neither installed nor commercially released by CI.
