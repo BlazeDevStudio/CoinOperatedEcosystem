@@ -47,7 +47,7 @@ esac
 bp_lock || bp_fail "accounting busy"
 if ! bp_bind_device "$device" "$mac" "$ipaddr" "$create_account"; then
   bp_unlock
-  bp_fail "account binding storage failed; no payment accepted"
+  bp_fail "account binding or network state unverified; refresh status before retrying paid operations"
 fi
 bp_unlock
 
@@ -214,7 +214,10 @@ case "$action" in
     fi
     bp_unlock
 
-    [ "$paused" = 1 ] || bp_authorize_mac "$mac"
+    if [ "$paused" != 1 ] && ! bp_authorize_mac "$mac"; then
+      bp_nft_emergency_deny || :
+      bp_fail "network access unverified; account may already be charged; refresh status before retry"
+    fi
     bp_json "{\"ok\":true,\"credit_cents\":$newcredit,\"expiry\":$newexpiry,\"paused\":$([ "$paused" = 1 ] && echo 1 || echo 0)}"
     ;;
 
@@ -236,7 +239,10 @@ case "$action" in
     if [ -n "$expiry" ] && [ "$expiry" -gt "$now" ] 2>/dev/null; then remaining=$((expiry-now)); else remaining=0; fi
     bp_account_paid_write_or_fail "$device" "$credit" 0 "$remaining" 1 "$now" "$mac" "$ipaddr" "$events"
     bp_unlock
-    bp_deauthorize_mac "$mac"
+    if ! bp_deauthorize_mac "$mac"; then
+      bp_nft_emergency_deny || :
+      bp_fail "pause recorded but network revocation unverified; contact operator"
+    fi
     bp_json "{\"ok\":true,\"paused\":1,\"remaining_seconds\":$remaining}"
     ;;
 
@@ -258,7 +264,10 @@ case "$action" in
     now="$(bp_now)"; expiry=$((now+remaining))
     bp_account_paid_write_or_fail "$device" "$credit" "$expiry" 0 0 0 "$mac" "$ipaddr" "$events"
     bp_unlock
-    bp_authorize_mac "$mac"
+    if ! bp_authorize_mac "$mac"; then
+      bp_nft_emergency_deny || :
+      bp_fail "resume recorded but access unverified; refresh status"
+    fi
     bp_json "{\"ok\":true,\"paused\":0,\"expiry\":$expiry,\"remaining_seconds\":$remaining}"
     ;;
 
@@ -269,7 +278,10 @@ case "$action" in
     events="$(printf '%s' "$line" | cut -f9)"
     bp_account_paid_write_or_fail "$device" "$credit" 0 0 0 0 "$mac" "$ipaddr" "$events"
     bp_unlock
-    bp_deauthorize_mac "$mac"
+    if ! bp_deauthorize_mac "$mac"; then
+      bp_nft_emergency_deny || :
+      bp_fail "disconnect recorded but revocation unverified; contact operator"
+    fi
     bp_json '{"ok":true}'
     ;;
 

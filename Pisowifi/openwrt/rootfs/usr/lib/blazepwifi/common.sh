@@ -306,6 +306,18 @@ bp_deauthorize_mac() (
     fi
 )
 
+
+# Emergency containment: refuse a successful operation acknowledgment when
+# the live authorization state cannot be established. Kernel flush failure is
+# explicitly unverified, never reported as successful revocation.
+bp_nft_emergency_deny() {
+    echo "CRITICAL: nft authorization state uncertain; attempting global MAC revocation" >&2
+    if ! nft flush set inet blazepwifi auth_macs >/dev/null 2>&1; then
+        echo "CRITICAL: nft authorization revocation unverified" >&2
+    fi
+    return 8
+}
+
 bp_pause_limit_expired() {
 	d="$1"; paused="$(bp_account_field "$d" 5)"; ps="$(bp_account_field "$d" 6)"
 	[ "$paused" = 1 ] || return 1
@@ -341,7 +353,12 @@ bp_bind_device() {
 			bp_paid_abort; return 8
 		fi
 		bp_paid_commit || return 8
-		[ "$expiry" -gt "$(bp_now)" ] 2>/dev/null && bp_authorize_mac "$mac"
+		if [ "$expiry" -gt "$(bp_now)" ] 2>/dev/null; then
+			if ! bp_authorize_mac "$mac"; then
+				bp_nft_emergency_deny || :
+				return 8
+			fi
+		fi
 		return 0
 	fi
 
@@ -350,7 +367,10 @@ bp_bind_device() {
 		credit="$(printf '%s' "$line" | cut -f2)"
 		events="$(printf '%s' "$line" | cut -f9)"
 		bp_account_write "$d" "$credit" 0 0 0 0 "$mac" "$ipaddr" "$events" || return 8
-		bp_deauthorize_mac "$oldmac"
+		if ! bp_deauthorize_mac "$oldmac"; then
+			bp_nft_emergency_deny || :
+			return 8
+		fi
 		return 0
 	fi
 
@@ -362,8 +382,16 @@ bp_bind_device() {
 		ps="$(printf '%s' "$line" | cut -f6)"
 		events="$(printf '%s' "$line" | cut -f9)"
 		bp_account_write "$d" "$credit" "$expiry" "$remaining" "$paused" "$ps" "$mac" "$ipaddr" "$events" || return 8
-		bp_deauthorize_mac "$oldmac"
-		if [ "$paused" != 1 ] && [ "$expiry" -gt "$(bp_now)" ] 2>/dev/null; then bp_authorize_mac "$mac"; fi
+		if ! bp_deauthorize_mac "$oldmac"; then
+			bp_nft_emergency_deny || :
+			return 8
+		fi
+		if [ "$paused" != 1 ] && [ "$expiry" -gt "$(bp_now)" ] 2>/dev/null; then
+			if ! bp_authorize_mac "$mac"; then
+				bp_nft_emergency_deny || :
+				return 8
+			fi
+		fi
 	fi
 }
 
