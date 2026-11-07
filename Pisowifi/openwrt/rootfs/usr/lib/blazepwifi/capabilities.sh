@@ -7,9 +7,16 @@ bp_cap_read_mem_kb() {
 	awk '/MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || true
 }
 
+bp_cap_available_kb() {
+	target="$1"
+	output="$(df -Pk "$target" 2>/dev/null)" || return 1
+	available="$(printf '%s\n' "$output" | awk 'NR==2 {print $4; exit}')"
+	case "$available" in ''|*[!0-9]*) return 1;; esac
+	printf '%s\n' "$available"
+}
+
 bp_cap_read_overlay_kb() {
-	df -Pk /overlay 2>/dev/null | awk 'NR==2 {print $2; exit}' ||
-	df -Pk / 2>/dev/null | awk 'NR==2 {print $2; exit}' || true
+	bp_cap_available_kb /overlay || bp_cap_available_kb /
 }
 
 bp_cap_detect() {
