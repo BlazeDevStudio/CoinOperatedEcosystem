@@ -225,7 +225,14 @@ public sealed class AppController : IDisposable
             _timer.SetAuthoritativeSeconds(0, "serial disconnected");
             return;
         }
-        var raw = _serial.GetSignal(Config.TimerActiveSignal);
+        if (!_serial.TryGetSignal(Config.TimerActiveSignal, out var raw))
+        {
+            // Never invert a modem status read failure into active-low unlock.
+            _timer.SetAuthoritativeSeconds(0, "external timer board unreadable");
+            HardwareStatus = "External timer signal unavailable · access locked";
+            StatusChanged?.Invoke();
+            return;
+        }
         var active = Config.TimerActiveHigh ? raw : !raw;
         _timer.SetAuthoritativeSeconds(active ? 1 : 0, "external timer board");
         HardwareStatus = active ? $"External timer active · {_serial.ConnectedDevice?.Display}" : $"External timer idle · {_serial.ConnectedDevice?.Display}";

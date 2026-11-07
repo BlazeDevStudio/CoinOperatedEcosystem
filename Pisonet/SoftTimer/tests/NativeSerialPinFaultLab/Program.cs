@@ -519,6 +519,35 @@ if (manualDiagnosticPulses != 1)
     throw new Exception("ManualPort diagnostic pulse positive control broken");
 SerialPort.PhysicalPnpAtOpen = null;
 
+// Source-linked external board status contract. A failed CTS read must be
+// UNKNOWN, not a LOW value that an active-low timer would invert to unlocked.
+SerialPort.InitialCtsLevel = true;
+using (var board = new SerialHardware())
+{
+    var cfg = new AppConfig {
+        SerialSelection = SerialSelectionMode.ManualPort,
+        ManualComPort = "COM9", CoinInputSignal = ModemSignal.Cts,
+        CoinInputActiveHigh = false
+    };
+    if (!board.Connect(cfg)) throw new Exception("Board positive control did not connect");
+    var opened = SerialPort.LastCreated ?? throw new Exception("Missing board COM");
+    if (!board.TryGetSignal(ModemSignal.Cts, out var normalHigh) || !normalHigh)
+        throw new Exception("Known CTS high should be a readable idle sample");
+    opened.ThrowOnCtsRead = true;
+    if (board.TryGetSignal(ModemSignal.Cts, out var unknown) || unknown)
+        throw new Exception("Failed CTS read must be unknown, never active-low asserted");
+    opened.ThrowOnCtsRead = false;
+    opened.CtsLevel = false;
+    if (!board.TryGetSignal(ModemSignal.Cts, out var normalLow) || normalLow)
+        throw new Exception("Known CTS low must remain a valid measured low");
+    if (board.TryGetSignal(ModemSignal.RingIndicator, out _))
+        throw new Exception("Unmeasured RI must never count as board level");
+    opened.Close();
+    if (board.TryGetSignal(ModemSignal.Cts, out _))
+        throw new Exception("Detached serial board cannot supply an authoritative level");
+}
+Console.WriteLine("EXTERNAL_BOARD_SIGNAL_UNKNOWN_DENIED_PASS: high/low/error/RI/disconnect");
+
 var cases = new (string Name, int Actual, int Expected)[] {
     ("exact_stable_opened_handle_positive_coin", stableExactOpenedHandleCoins, 1),
     ("manual_com_without_opened_handle_proof_denies_paid_claim", manualUnverifiedPaidClaims, 0),

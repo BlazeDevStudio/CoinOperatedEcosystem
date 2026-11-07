@@ -309,25 +309,36 @@ public sealed class SerialHardware : IDisposable
         return Connect(config);
     }
 
-    public bool GetSignal(ModemSignal signal)
+    // External-board lock enforcement must distinguish a verified LOW from
+    // an unknown/faulted sample. A false bool returned on error looks like
+    // ACTIVE to an active-low board and must never authorize Windows unlock.
+    public bool TryGetSignal(ModemSignal signal, out bool level)
     {
         lock (_gate)
         {
+            level = false;
             if (_port?.IsOpen != true) return false;
             try
             {
-                return signal switch
+                switch (signal)
                 {
-                    ModemSignal.Dsr => _port.DsrHolding,
-                    ModemSignal.Cts => _port.CtsHolding,
-                    ModemSignal.CarrierDetect => _port.CDHolding,
-                    ModemSignal.RingIndicator => false,
-                    _ => false
-                };
+                    case ModemSignal.Dsr: level = _port.DsrHolding; return true;
+                    case ModemSignal.Cts: level = _port.CtsHolding; return true;
+                    case ModemSignal.CarrierDetect: level = _port.CDHolding; return true;
+                    default: return false; // Ring is not a measurable level.
+                }
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                Storage.Log("External board modem sample invalid: " + ex.Message);
+                return false;
+            }
         }
     }
+
+    // Historical UI-only helper. Do not use for access-control decisions.
+    public bool GetSignal(ModemSignal signal) =>
+        TryGetSignal(signal, out var level) && level;
 
     public void SetDtr(bool enabled)
     {

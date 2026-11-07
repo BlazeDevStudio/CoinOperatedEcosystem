@@ -27,3 +27,7 @@ The destination `Storage.cs` decoder now rejects an unresolved `.tmp` even with 
 ## Crash-safe write-path cleanup (2026-11-08)
 
 `Storage.AtomicWrite` now creates its `.tmp` using `FileMode.CreateNew`, performs a flush-to-disk request, and uses Windows `File.Replace` without a non-atomic copy/overwrite fallback. Existing `.tmp` evidence blocks writes until reconciliation. The production method is exercised from the disposable `StateRecoveryGuard` test (initial commit, replace/backup, pending write preservation). Storage guarantees remain limited by underlying filesystem and power-loss behavior; no physical power-fault acceptance is claimed.
+
+## External-board active-low safety (2026-11-08)
+
+The destination `SerialHardware.TryGetSignal` exposes whether a modem-control level is actually readable. `AppController.UpdateExternalBoard` now locks on unreadable/unsupported signals rather than inverting a default false value into an active-low unlock. The original `SerialHardware.cs` is compiled into the synthetic `NativeSerialPinFaultLab`; the new test executes true/false/throw/RI/disconnect cases. These tests do not attest physical device identity, and the exact-device paid coin gate stays disabled pending real native handle proof.
