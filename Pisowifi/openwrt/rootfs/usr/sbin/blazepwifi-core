@@ -4,8 +4,21 @@
 setup_nft() {
 	lan_if="$(bp_cfg lan_if)"; [ -n "$lan_if" ] || lan_if=br-lan
 	portal="$(bp_cfg portal_port)"; [ -n "$portal" ] || portal=8080
-	nft delete table inet blazepwifi 2>/dev/null || true
+	# These values are interpolated into nft source; reject malformed UCI input.
+	case "$lan_if" in ''|*[!A-Za-z0-9_.:-]*) return 2;; esac
+	[ "${#lan_if}" -le 32 ] || return 2
+	case "$portal" in ''|*[!0-9]*) return 2;; esac
+	[ "$portal" -ge 1 ] 2>/dev/null && [ "$portal" -le 65535 ] 2>/dev/null || return 2
+	# A separate delete leaves an open firewall window if subsequent nft -f fails.
+	# Replace the *owned* table in one nft transaction; never flush other tables.
+	# On a concurrent table change the batch may fail, preserving prior state.
+	if nft list table inet blazepwifi >/dev/null 2>&1; then
+		replace_table='delete table inet blazepwifi'
+	else
+		replace_table=''
+	fi
 	nft -f - <<NFT
+$replace_table
 table inet blazepwifi {
   set auth_macs { type ether_addr; }
   set walled_v4 { type ipv4_addr; flags interval; }
