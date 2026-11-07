@@ -188,6 +188,9 @@ public sealed class AppController : IDisposable
                     HardwareStatus = _timer.CreditPersistenceFaulted
                         ? "COIN STORAGE FAULT · further credits suspended"
                         : "Coin processing fault · operator review required";
+                    // A customer cannot continue an indefinite free session
+                    // after the countdown is frozen by a storage failure.
+                    EvaluateLockState();
                     StatusChanged?.Invoke();
                 });
             }
@@ -308,7 +311,8 @@ public sealed class AppController : IDisposable
             _security.SetLocked(false);
             return;
         }
-        var shouldLock = !_timer.IsActive || _forcedScheduleLock || MemberReconciliationPending;
+        var shouldLock = !_timer.IsActive || _timer.CreditPersistenceFaulted ||
+            _forcedScheduleLock || MemberReconciliationPending;
         if (shouldLock)
         {
             HideActiveTimer();

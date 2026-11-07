@@ -46,6 +46,22 @@ using (var engine = new TimerEngine(initial, candidate =>
     MustThrow(() => engine.AddSeconds(300, "coin:COM9", true, "retry"),
         "retry after uncertain save");
     Require(failingWrites == 1, "an ambiguous credit must not be retried");
+    // Real production periodic callback must not continue debiting or
+    // persist again from a ThreadPool thread after a storage write fault.
+    var lastTick = typeof(TimerEngine).GetField("_lastTickStamp",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new Exception("Timer source tick clock not found");
+    lastTick.SetValue(engine,
+        System.Diagnostics.Stopwatch.GetTimestamp() -
+        10L * System.Diagnostics.Stopwatch.Frequency);
+    var tick = typeof(TimerEngine).GetMethod("Tick",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        ?? throw new Exception("Actual timer Tick source not found");
+    tick.Invoke(engine, null);
+    Require(engine.RemainingSeconds == 120 && failingWrites == 1,
+        "credit disk fault must freeze countdown without new saves");
+    Console.WriteLine("COIN_FAULT_FREEZES_TIMER_TICK_PASS");
+
 }
 Console.WriteLine("COIN_FAILED_PERSISTENCE_DENIED_PASS");
 

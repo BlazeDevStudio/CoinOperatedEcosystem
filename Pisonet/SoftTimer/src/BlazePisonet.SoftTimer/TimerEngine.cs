@@ -418,6 +418,13 @@ public sealed class TimerEngine : IDisposable
             long stamp = Stopwatch.GetTimestamp();
             double elapsed = ElapsedSince(stamp, _lastTickStamp);
             _lastTickStamp = stamp;
+            // A credit write failure can leave an unresolved state.json.tmp.
+            // Never mutate or persist paid time again until reconciliation.
+            if (_creditPersistenceFaulted)
+            {
+                _fractionalSeconds = 0;
+                return;
+            }
             if (_externalAuthority || _paused || _state.RemainingSeconds <= 0)
             {
                 _fractionalSeconds = 0;
