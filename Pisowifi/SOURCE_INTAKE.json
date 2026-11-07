@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "description": "Blaze PisoWiFi-only first-party public MIT source recovery; no commercial production authorization.",
   "source": {
     "repository": "BlazeDevStudio/BlazingSystems-Experiments",
@@ -11,14 +11,14 @@
   "destination": {
     "repository": "BlazeDevStudio/CoinOperatedEcosystem",
     "branch": "feature/pisowifi-cleanup-stabilization",
-    "verified_source_head_before_manifest": "18d109a13118a6112378b9c84185410ca21d2c16",
+    "verified_source_head_before_manifest": "a5e43575547591d1f432793d59c60bca10e89808",
     "root": "Pisowifi/"
   },
   "summary": {
     "original_rootfs_file_count": 61,
     "recovered_rootfs_file_count": 38,
-    "recovered_byte_identical_count": 33,
-    "locally_derived_files": 5,
+    "recovered_byte_identical_count": 32,
+    "locally_derived_files": 6,
     "unrecovered_rootfs_file_count": 23,
     "unchanged_original_test_count": 4
   },
@@ -82,9 +82,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/config.sh",
       "source_git_blob": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
-      "destination_git_blob": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
+      "destination_git_blob": "10aff0703073dba8f02ed0eb036b9acf16e1f0c6",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/controller.sh",
@@ -458,7 +458,14 @@
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/config_faults.sh",
+      "git_blob": "7dc8a42addde12b1caf7dbc6cc1cb50dbfb87c74",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
     }
   ],
-  "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted."
+  "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router."
 }
