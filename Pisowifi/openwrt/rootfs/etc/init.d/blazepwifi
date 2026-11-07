@@ -15,5 +15,12 @@ start_service() {
 	procd_close_instance
 }
 
-stop_service() { nft delete table inet blazepwifi 2>/dev/null || true; }
+# Leave the captive deny gate installed, but clear paid MAC membership.
+# Removing the entire table would allow traffic until the next service start.
+stop_service() {
+    if ! nft flush set inet blazepwifi auth_macs 2>/dev/null; then
+        echo "CRITICAL: nft client revocation unverified during service stop" >&2
+        return 9
+    fi
+}
 service_triggers() { procd_add_reload_trigger blazepwifi network firewall; }
