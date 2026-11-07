@@ -64,7 +64,7 @@ Section "BlazePisonet SoftTimer" SEC_MAIN
 
   Delete "$APPDATA\BlazeSystems\BlazePisonetSoftTimer\maintenance.until"
 
-  CreateDirectory "$SMPROGRAMS\BlazePisonet SoftTimer"
+  CreateDirectory "$SMPROGRAMS\BlazePisonet SoftTimer LAB"
   CreateShortcut "$SMPROGRAMS\BlazePisonet SoftTimer LAB\BlazePisonet SoftTimer LAB.lnk" "$INSTDIR\BlazePisonet.SoftTimer.exe"
   CreateShortcut "$SMPROGRAMS\BlazePisonet SoftTimer LAB\Uninstall BlazePisonet SoftTimer LAB.lnk" "$INSTDIR\Uninstall.exe"
 
@@ -115,7 +115,7 @@ Section "Uninstall"
   Delete "$DESKTOP\BlazePisonet SoftTimer LAB.lnk"
   Delete "$SMPROGRAMS\BlazePisonet SoftTimer LAB\BlazePisonet SoftTimer LAB.lnk"
   Delete "$SMPROGRAMS\BlazePisonet SoftTimer LAB\Uninstall BlazePisonet SoftTimer LAB.lnk"
-  RMDir "$SMPROGRAMS\BlazePisonet SoftTimer"
+  RMDir "$SMPROGRAMS\BlazePisonet SoftTimer LAB"
 
   Delete "$INSTDIR\BlazePisonet.SoftTimer.exe"
   Delete "$INSTDIR\BlazePisonet.SoftTimer.Watchdog.exe"
