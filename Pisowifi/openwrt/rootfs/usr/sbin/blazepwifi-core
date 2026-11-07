@@ -43,24 +43,39 @@ table inet blazepwifi {
 NFT
 }
 
+bp_core_auth_fault() {
+    echo "CRITICAL: nft authorization sync failed; refusing to continue" >&2
+    if ! nft flush set inet blazepwifi auth_macs >/dev/null 2>&1; then
+        echo "CRITICAL: nft authorization revocation unverified" >&2
+    fi
+    return 9
+}
+
 sync_accounts() {
-	now="$(bp_now)"
-	if ! bp_time_sane "$now"; then
-		nft flush set inet blazepwifi auth_macs 2>/dev/null || true
-		return 0
-	fi
-	while IFS="$(printf '\t')" read -r device credit expiry remaining paused pause_started mac ipaddr events; do
-		[ -n "$device" ] || continue
-		if [ "$paused" = 1 ]; then
-			bp_deauthorize_mac "$mac"
-			continue
-		fi
-		if [ -n "$expiry" ] && [ "$expiry" -gt "$now" ] 2>/dev/null; then
-			bp_authorize_mac "$mac"
-		else
-			bp_deauthorize_mac "$mac"
-		fi
-	done < "$BP_ACCOUNTS"
+    now="$(bp_now)"
+    if ! bp_time_sane "$now"; then
+        if ! nft flush set inet blazepwifi auth_macs >/dev/null 2>&1; then
+            bp_core_auth_fault
+            return 9
+        fi
+        return 0
+    fi
+    [ -f "$BP_ACCOUNTS" ] && [ -r "$BP_ACCOUNTS" ] && [ ! -L "$BP_ACCOUNTS" ] || {
+        bp_core_auth_fault
+        return 9
+    }
+    while IFS="$(printf '\t')" read -r device credit expiry remaining paused pause_started mac ipaddr events; do
+        [ -n "$device" ] || continue
+        if [ "$paused" = 1 ]; then
+            bp_deauthorize_mac "$mac" || { bp_core_auth_fault; return 9; }
+            continue
+        fi
+        if [ -n "$expiry" ] && [ "$expiry" -gt "$now" ] 2>/dev/null; then
+            bp_authorize_mac "$mac" || { bp_core_auth_fault; return 9; }
+        else
+            bp_deauthorize_mac "$mac" || { bp_core_auth_fault; return 9; }
+        fi
+    done < "$BP_ACCOUNTS"
 }
 
 add_walled_ip() {
@@ -107,7 +122,7 @@ trap 'if nft flush set inet blazepwifi auth_macs 2>/dev/null; then exit 0; else 
 last_walled=0
 last_target_cleanup=0
 while :; do
-	sync_accounts
+	sync_accounts || exit 9
 	now="$(bp_now)"
 	if [ $((now-last_target_cleanup)) -ge 30 ]; then
 		cleanup_targets

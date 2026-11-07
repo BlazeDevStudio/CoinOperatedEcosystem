@@ -276,8 +276,35 @@ bp_remove_legacy_mac() {
   return 0
 }
 
-bp_authorize_mac() { [ -n "$1" ] && nft add element inet blazepwifi auth_macs "{ $1 }" 2>/dev/null || true; }
-bp_deauthorize_mac() { [ -n "$1" ] && nft delete element inet blazepwifi auth_macs "{ $1 }" 2>/dev/null || true; }
+# Return 0 only for an observable, well-formed authorization-set state.
+# Return 1 for a confirmed absent MAC, or 2 if the set is unreadable.
+bp_nft_auth_mac_state() (
+    bp_nft_mac="$(bp_mac_norm "${1:-}")" || return 2
+    bp_nft_snapshot="$(nft list set inet blazepwifi auth_macs 2>/dev/null)" || return 2
+    printf '%s\n' "$bp_nft_snapshot" | grep -Eq '^[[:space:]]*set[[:space:]]+auth_macs[[:space:]]*\{' || return 2
+    printf '%s\n' "$bp_nft_snapshot" | tr ',{}' '   ' |
+        awk -v needle="$bp_nft_mac" '{for (i=1;i<=NF;i++) if (tolower($i)==needle) found=1} END {exit found?0:1}'
+)
+
+# Safe repeated add: a duplicate element is OK only after kernel readback.
+bp_authorize_mac() (
+    bp_nft_mac="$(bp_mac_norm "${1:-}")" || return 8
+    nft add element inet blazepwifi auth_macs "{ $bp_nft_mac }" >/dev/null 2>&1 || :
+    nft get element inet blazepwifi auth_macs "{ $bp_nft_mac }" >/dev/null 2>&1 || return 8
+)
+
+# Removal is idempotent if a readable set confirms absence.
+# Never treat a kernel/list error as successful revocation.
+bp_deauthorize_mac() (
+    [ -n "${1:-}" ] || return 0
+    bp_nft_mac="$(bp_mac_norm "$1")" || return 8
+    nft delete element inet blazepwifi auth_macs "{ $bp_nft_mac }" >/dev/null 2>&1 || :
+    if bp_nft_auth_mac_state "$bp_nft_mac"; then
+        return 8
+    else
+        [ "$?" -eq 1 ] || return 8
+    fi
+)
 
 bp_pause_limit_expired() {
 	d="$1"; paused="$(bp_account_field "$d" 5)"; ps="$(bp_account_field "$d" 6)"
