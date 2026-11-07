@@ -59,20 +59,27 @@ bp_config_get() {
 	uci -q get "blazepwifi.main.$key"
 }
 
-bp_config_restore() {
+# Restore must be fully committed or its caller reports uncertain state.
+# A subshell keeps UCI helper variables from clobbering the caller's key.
+bp_config_restore() (
 	key="$1"; had_old="$2"; old="$3"
 	if [ "$had_old" = 1 ]; then
-		uci set "blazepwifi.main.$key=$old" || return 1
+		uci set "blazepwifi.main.$key=$old" || return 8
 	else
-		uci -q delete "blazepwifi.main.$key" >/dev/null 2>&1 || true
+		uci -q delete "blazepwifi.main.$key" >/dev/null 2>&1 || return 8
 	fi
-	uci commit blazepwifi
-}
+	uci commit blazepwifi || return 8
+)
 
 bp_config_apply() {
 	if [ -n "${BP_CONFIG_APPLY_HOOK:-}" ]; then
-		sh -c "$BP_CONFIG_APPLY_HOOK"
-		return
+		# Development hook is ONE executable, not a shell program to eval.
+		# The production path below remains a fixed, absolute script path.
+		case "$BP_CONFIG_APPLY_HOOK" in
+			*[!A-Za-z0-9_./-]*|-*) return 1 ;;
+		esac
+		"$BP_CONFIG_APPLY_HOOK" || return 1
+		return 0
 	fi
 	if [ -x /usr/lib/blazepwifi/apply-config.sh ]; then
 		/usr/lib/blazepwifi/apply-config.sh || return 1
@@ -86,11 +93,17 @@ bp_config_set() {
 	if old="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then had_old=1; else old=""; had_old=0; fi
 	uci set "blazepwifi.main.$key=$value" || return 1
 	if ! uci commit blazepwifi; then
-		bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1 || true
+		if ! bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1; then
+			echo "CRITICAL: UCI rollback failed after config commit rejection: $key" >&2
+			return 8
+		fi
 		return 1
 	fi
 	if ! bp_config_apply; then
-		bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1 || true
+		if ! bp_config_restore "$key" "$had_old" "$old" >/dev/null 2>&1; then
+			echo "CRITICAL: UCI rollback failed after config apply rejection: $key" >&2
+			return 8
+		fi
 		return 1
 	fi
 	if command -v bp_auth_audit >/dev/null 2>&1; then
