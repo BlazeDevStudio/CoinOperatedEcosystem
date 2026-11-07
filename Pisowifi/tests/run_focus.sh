@@ -8,7 +8,8 @@ for test_file in \
   nft_shutdown_guard.sh \
   nft_membership_failclosed.sh \
   nft_account_binding_guard.sh \
-  config_faults.sh
+  config_faults.sh \
+  config_fixture_smoke.sh
 do
   printf 'RUN %s\n' "$test_file"
   sh "$ROOT/tests/$test_file"

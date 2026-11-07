@@ -32,9 +32,16 @@ DB="${TEST_UCI_DB:?}"
 [ "$1" = "-q" ] && shift
 cmd="$1"; shift
 case "$cmd" in
+ show)
+   # Simulate the existing UCI core section and all its option entries.
+   [ "$1" = blazepwifi.main ] || exit 1
+   printf '%s\n' 'blazepwifi.main=core'
+   grep '^blazepwifi[.]main[.]' "$DB" || true
+   ;;
  get)
+   # Missing values must return nonzero, matching real UCI semantics.
    key="$1"
-   sed -n "s#^$key=##p" "$DB" | tail -n1
+   awk -F= -v k="$key" '$1==k {sub(/^[^=]*=/, ""); print;found=1;exit} END {if(!found) exit 1}' "$DB"
    ;;
  set)
    kv="$1"; key="${kv%%=*}"; val="${kv#*=}"
