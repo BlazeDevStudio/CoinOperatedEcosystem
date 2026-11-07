@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "description": "Blaze PisoWiFi-only first-party public MIT source recovery; no commercial production authorization.",
   "source": {
     "repository": "BlazeDevStudio/BlazingSystems-Experiments",
@@ -11,15 +11,15 @@
   "destination": {
     "repository": "BlazeDevStudio/CoinOperatedEcosystem",
     "branch": "feature/pisowifi-cleanup-stabilization",
-    "verified_source_head_before_manifest": "a5e43575547591d1f432793d59c60bca10e89808",
+    "verified_source_head_before_manifest": "0a5ad08eab37356289a1078872db962df06724d2",
     "root": "Pisowifi/"
   },
   "summary": {
     "original_rootfs_file_count": 61,
-    "recovered_rootfs_file_count": 38,
-    "recovered_byte_identical_count": 32,
+    "recovered_rootfs_file_count": 42,
+    "recovered_byte_identical_count": 36,
     "locally_derived_files": 6,
-    "unrecovered_rootfs_file_count": 23,
+    "unrecovered_rootfs_file_count": 19,
     "unchanged_original_test_count": 4
   },
   "runtime": [
@@ -82,15 +82,29 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/config.sh",
       "source_git_blob": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
-      "destination_git_blob": "10aff0703073dba8f02ed0eb036b9acf16e1f0c6",
+      "destination_git_blob": "da6319d5136f02f3b1d474460a91ccfef62dc449",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
+    },
+    {
+      "path": "openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh",
+      "source_git_blob": "92a44fa1c7f69a81b750acf6bac4acc98c637a3b",
+      "destination_git_blob": "92a44fa1c7f69a81b750acf6bac4acc98c637a3b",
+      "git_mode": "100644",
+      "status": "byte_identical"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/controller.sh",
       "source_git_blob": "54bdc59949884bd3e734f8c07ddeb1d7c2cf9848",
       "destination_git_blob": "54bdc59949884bd3e734f8c07ddeb1d7c2cf9848",
       "git_mode": "100755",
+      "status": "byte_identical"
+    },
+    {
+      "path": "openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh",
+      "source_git_blob": "058891bf2b13b59333b4247743fcccc8741bf9b4",
+      "destination_git_blob": "058891bf2b13b59333b4247743fcccc8741bf9b4",
+      "git_mode": "100644",
       "status": "byte_identical"
     },
     {
@@ -105,6 +119,20 @@
       "source_git_blob": "702bb344d2531eb046c189adebfb193ba7ca4e6e",
       "destination_git_blob": "702bb344d2531eb046c189adebfb193ba7ca4e6e",
       "git_mode": "100755",
+      "status": "byte_identical"
+    },
+    {
+      "path": "openwrt/rootfs/usr/lib/blazepwifi/v2_maintenance_freeze.sh",
+      "source_git_blob": "07b8c98b70a77a90bda3a85f57fabe540aabfb2c",
+      "destination_git_blob": "07b8c98b70a77a90bda3a85f57fabe540aabfb2c",
+      "git_mode": "100644",
+      "status": "byte_identical"
+    },
+    {
+      "path": "openwrt/rootfs/usr/lib/blazepwifi/v2_shadow.sh",
+      "source_git_blob": "cd6f2421dfb4c0abad86e37547db863ac5f38768",
+      "destination_git_blob": "cd6f2421dfb4c0abad86e37547db863ac5f38768",
+      "git_mode": "100644",
       "status": "byte_identical"
     },
     {
@@ -338,14 +366,6 @@
       "git_blob": "c2b81cc7c1283611645e0d1148a91045c4d89d17"
     },
     {
-      "path": "openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh",
-      "git_blob": "92a44fa1c7f69a81b750acf6bac4acc98c637a3b"
-    },
-    {
-      "path": "openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh",
-      "git_blob": "058891bf2b13b59333b4247743fcccc8741bf9b4"
-    },
-    {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/remote_apply.sh",
       "git_blob": "ef85698211f79108e6e152c6f4ea1165d6c5f44c"
     },
@@ -374,20 +394,12 @@
       "git_blob": "229085fcb3f7457a14b51a378acf4be78a6e970e"
     },
     {
-      "path": "openwrt/rootfs/usr/lib/blazepwifi/v2_maintenance_freeze.sh",
-      "git_blob": "07b8c98b70a77a90bda3a85f57fabe540aabfb2c"
-    },
-    {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/v2_migration_preflight.sh",
       "git_blob": "a1feb66e19580859bffca17ac3b4f4382a02ffc0"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/v2_migration_stage.sh",
       "git_blob": "cdcff8a0918dc623327b498fe655e71b322aa6dc"
-    },
-    {
-      "path": "openwrt/rootfs/usr/lib/blazepwifi/v2_shadow.sh",
-      "git_blob": "cd6f2421dfb4c0abad86e37547db863ac5f38768"
     },
     {
       "path": "openwrt/rootfs/usr/sbin/blazepwifi-remote-admin-run",
@@ -461,11 +473,12 @@
     },
     {
       "path": "tests/config_faults.sh",
-      "git_blob": "7dc8a42addde12b1caf7dbc6cc1cb50dbfb87c74",
+      "git_blob": "9c6ca0f1a10d3faa1043ded143807915cc191eb9",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
     }
   ],
-  "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router."
+  "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
+  "notes_pass05": "Pass 05: old config.sh exact Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6 reproduced RED for ambiguous UCI get failure; fixed config.sh exact blob da6319d5136f02f3b1d474460a91ccfef62dc449; config_faults.sh exact blob 9c6ca0f1a10d3faa1043ded143807915cc191eb9. Local /bin/sh and BusyBox ash 14/14 PASS from reconstituted exact Git blobs, no full checkout/CI. Four dormant already-public first-party support files restored byte-identically at 0a5ad08eab37356289a1078872db962df06724d2; not activated."
 }
