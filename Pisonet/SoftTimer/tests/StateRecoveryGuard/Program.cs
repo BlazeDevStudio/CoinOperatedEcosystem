@@ -89,6 +89,25 @@ try
     Console.WriteLine("STATE_RECOVERY_REQUIRED_FIELDS_AND_CLOCK_PASS");
     Console.WriteLine("STATE_RECOVERY_CASE_INSENSITIVE_DEDUP_PASS");
 
+    var writePath = Path.Combine(root, "atomic.json");
+    Storage.AtomicWrite(writePath, "first");
+    Require(File.ReadAllText(writePath) == "first" &&
+        !File.Exists(writePath + ".tmp"),
+        "first write must leave a committed primary without temporary data");
+    Storage.AtomicWrite(writePath, "second");
+    Require(File.ReadAllText(writePath) == "second" &&
+        File.ReadAllText(writePath + ".bak") == "first" &&
+        !File.Exists(writePath + ".tmp"),
+        "replacement must retain previous backup and not leave a temporary file");
+    File.WriteAllText(writePath + ".tmp", "unresolved-third-credit");
+    MustReject(() => Storage.AtomicWrite(writePath, "third"),
+        "existing pending state must not be overwritten by a new credit");
+    Require(File.ReadAllText(writePath) == "second" &&
+        File.ReadAllText(writePath + ".bak") == "first" &&
+        File.ReadAllText(writePath + ".tmp") == "unresolved-third-credit",
+        "a rejected write must preserve primary, backup and pending evidence");
+    Console.WriteLine("STATE_ATOMIC_WRITE_GUARD_PASS: replace, backup and unresolved temporary preservation");
+
     var defaults = new AppConfig();
     Require(!defaults.Enabled && !defaults.DtrEnabled && !defaults.RtsEnabled,
         "new installations must disable coin acceptance and DTR/RTS outputs");

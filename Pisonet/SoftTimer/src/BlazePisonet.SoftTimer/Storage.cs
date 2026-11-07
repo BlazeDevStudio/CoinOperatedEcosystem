@@ -220,18 +220,32 @@ public static class Storage
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var temp = path + ".tmp";
         var backup = path + ".bak";
-        File.WriteAllText(temp, content, new UTF8Encoding(false));
-        using (var fs = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read)) fs.Flush(true);
+
+        // A leftover temporary file may represent a credit that reached disk
+        // before an interrupted replace. Never destroy that evidence.
+        if (File.Exists(temp))
+            throw new InvalidDataException("Unresolved paid-state write: " + temp);
+
+        // CreateNew (rather than truncating an existing .tmp) also prevents
+        // accidental concurrent writers from discarding a pending journal.
+        using (var fs = new FileStream(temp, FileMode.CreateNew, FileAccess.Write,
+                   FileShare.None, 4096, FileOptions.WriteThrough))
+        {
+            var bytes = new UTF8Encoding(false).GetBytes(content);
+            fs.Write(bytes);
+            fs.Flush(flushToDisk: true);
+        }
+
         if (File.Exists(path))
         {
-            try { File.Replace(temp, path, backup, true); }
-            catch
-            {
-                File.Copy(path, backup, true);
-                File.Move(temp, path, true);
-            }
+            // If replace fails, leave the previous committed state and
+            // temporary file intact. A copy+overwrite fallback is not atomic.
+            File.Replace(temp, path, backup, ignoreMetadataErrors: true);
         }
-        else File.Move(temp, path, true);
+        else
+        {
+            File.Move(temp, path);
+        }
     }
 
     public static void Log(string line)
