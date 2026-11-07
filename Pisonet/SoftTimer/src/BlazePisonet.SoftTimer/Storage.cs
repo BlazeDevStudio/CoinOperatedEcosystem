@@ -148,12 +148,47 @@ public static class Storage
             return new RuntimeState(); // actual first installation only
         }
 
-        var state = JsonSerializer.Deserialize<RuntimeState>(
-            File.ReadAllText(path), JsonOptions)
+        // A leftover .tmp may contain a credit or deduplication update not
+        // represented in the primary. Even a parseable primary is ambiguous.
+        // Preserve both files for supervised recovery; never guess which wins.
+        if (File.Exists(path + ".tmp"))
+            throw new InvalidDataException("Paid state has an unresolved pending write.");
+
+        var json = File.ReadAllText(path);
+        using (var doc = JsonDocument.Parse(json))
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("Paid state must be a JSON object.");
+            // JSON deserialization otherwise fills omitted financial fields
+            // with empty defaults, silently losing deduplication/member data.
+            var required = new[] { "RemainingSeconds", "TimerRunning",
+                "UpdatedUtc", "SalesPulseCount", "AppliedEventIds", "Members",
+                "RemoteMembers", "RemoteMemberRevision", "PendingMemberOperation" };
+            foreach (var key in required)
+            {
+                if (!doc.RootElement.EnumerateObject().Any(p =>
+                        string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidDataException("Paid state missing required field: " + key);
+            }
+        }
+
+        var state = JsonSerializer.Deserialize<RuntimeState>(json, JsonOptions)
             ?? throw new InvalidDataException("Paid state JSON is null.");
         if (state.AppliedEventIds is null ||
-            state.Members is null || state.RemoteMembers is null)
-            throw new InvalidDataException("Paid state has null required collections.");
+            state.Members is null || state.RemoteMembers is null ||
+            state.RemainingSeconds < 0 || state.SalesPulseCount < 0 ||
+            state.RemoteMemberRevision < 0 ||
+            state.AppliedEventIds.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("Paid state has invalid accounting fields.");
+        // Preserve case-insensitive event and member identity after JSON
+        // round-trip. Ambiguous mixed-case member duplicates must fail closed.
+        state.AppliedEventIds = state.AppliedEventIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        state.Members = state.Members.ToDictionary(
+            entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        state.RemoteMembers = state.RemoteMembers.ToDictionary(
+            entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        if (state.UpdatedUtc == default || state.UpdatedUtc > now.AddMinutes(2))
+            throw new InvalidDataException("Paid state clock is invalid or in the future.");
 
         if (state.TimerRunning && state.RemainingSeconds > 0 &&
             state.PendingMemberOperation is null)

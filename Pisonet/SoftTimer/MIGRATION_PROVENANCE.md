@@ -19,3 +19,7 @@ This draft branch subsequently changes `src/BlazePisonet.SoftTimer/Storage.cs` t
 ## NSIS lab packaging
 
 `installer/BlazePisonet-SoftTimer.nsi` is an adapted, deliberately lab-namespaced derivative of historical Windows-only NSIS source blob `cb0c777d5272d53638f884b19eef23f82a7ea102`. `build-local.ps1` is copied byte-identically from blob `7070695dfbd67d44e8dca6f98dbf0c33784e1ab5`. Only the Windows Pisonet subsystem is involved; the LAB installer is neither installed nor commercially released by CI.
+
+## Paid-state restart integrity hardening (2026-11-08)
+
+The destination `Storage.cs` decoder now rejects an unresolved `.tmp` even with an existing primary, omitted required accounting fields, negative accounting counters and a significant future clock timestamp. It restores case-insensitive event/member lookup after JSON deserialization. `tests/StateRecoveryGuard/Program.cs` exercises those actual decoder paths using disposable files, while permitting a valid primary with a conventional old `.bak`. This is destination-only code; the pinned upstream historical source remains untouched. A synthetic pass does not certify physical payment behavior.
