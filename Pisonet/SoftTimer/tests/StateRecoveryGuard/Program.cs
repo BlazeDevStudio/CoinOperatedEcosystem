@@ -1,0 +1,121 @@
+// Source-linked paid-session recovery regression. Uses disposable temp files only.
+using System.Text.Json;
+using BlazePisonet.SoftTimer;
+
+static void Require(bool good, string message)
+{
+    if (!good) throw new InvalidOperationException(message);
+}
+static void MustReject(Action action, string scenario)
+{
+    try { action(); }
+    catch (JsonException) { Console.WriteLine("REJECTED " + scenario); return; }
+    catch (InvalidDataException) { Console.WriteLine("REJECTED " + scenario); return; }
+    throw new InvalidOperationException("Unsafe silent recovery: " + scenario);
+}
+
+var now = new DateTimeOffset(2026, 11, 7, 12, 0, 0, TimeSpan.Zero);
+var root = Path.Combine(Path.GetTempPath(), "blazepisonet-recovery-" + Guid.NewGuid().ToString("N"));
+var path = Path.Combine(root, "state.json");
+Directory.CreateDirectory(root);
+try
+{
+    Require(Storage.LoadStateFromPath(path, now).RemainingSeconds == 0,
+        "actual first-run should initialize zero");
+    File.WriteAllText(path, "{");
+    MustReject(() => Storage.LoadStateFromPath(path, now), "truncated state");
+    File.WriteAllText(path, "null");
+    MustReject(() => Storage.LoadStateFromPath(path, now), "null state");
+    File.WriteAllText(path, "{\"RemainingSeconds\":2500,\"AppliedEventIds\":null}");
+    MustReject(() => Storage.LoadStateFromPath(path, now), "missing paid event identity");
+    File.Delete(path);
+    File.WriteAllText(path + ".bak", "{\"RemainingSeconds\":1500}");
+    MustReject(() => Storage.LoadStateFromPath(path, now), "missing primary with backup");
+    File.Delete(path + ".bak");
+    File.WriteAllText(path + ".tmp", "{\"RemainingSeconds\":1500}");
+    MustReject(() => Storage.LoadStateFromPath(path, now), "missing primary with pending temporary state");
+    File.Delete(path + ".tmp");
+
+    var paid = new RuntimeState {
+        RemainingSeconds = 3600,
+        TimerRunning = true,
+        UpdatedUtc = now.AddMinutes(-10),
+        AppliedEventIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "coin:source:sequence-1" }
+    };
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    var recovered = Storage.LoadStateFromPath(path, now);
+    Require(recovered.RemainingSeconds == 3000 && recovered.TimerRunning,
+        "valid resume must debit elapsed offline time exactly");
+    Require(recovered.AppliedEventIds.Contains("coin:source:sequence-1"),
+        "coin dedupe IDs must survive recovery");
+    // A crashed transaction cannot be discarded merely because the last
+    // committed primary remains parseable.
+    File.WriteAllText(path + ".tmp", "{\"RemainingSeconds\":999999}");
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "valid primary with unresolved pending credit");
+    File.Delete(path + ".tmp");
+
+    // A normal File.Replace leaves .bak behind: do NOT reject healthy
+    // current state simply because an older backup exists.
+    File.WriteAllText(path + ".bak", "{\"legacy\":true}");
+    Require(Storage.LoadStateFromPath(path, now).RemainingSeconds == 3000,
+        "valid committed primary with backup must remain usable");
+    File.Delete(path + ".bak");
+
+    File.WriteAllText(path, "{\"RemainingSeconds\":2500}");
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "parseable incomplete JSON must not invent empty deduplication history");
+    paid.UpdatedUtc = now.AddMinutes(10);
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "future paid-state clock cannot extend free time");
+    paid.UpdatedUtc = now.AddMinutes(-10);
+    paid.RemainingSeconds = -5;
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "negative remaining time");
+    paid.RemainingSeconds = 3600;
+    paid.SalesPulseCount = -1;
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "negative historical sales count");
+    paid.SalesPulseCount = 1;
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    var restored = Storage.LoadStateFromPath(path, now);
+    Require(restored.RemainingSeconds == 3000 &&
+        restored.AppliedEventIds.Contains("COIN:SOURCE:SEQUENCE-1"),
+        "valid paid credit and case-insensitive event deduplication must survive restart");
+    Console.WriteLine("STATE_RECOVERY_INTERRUPTED_WRITE_PASS");
+    Console.WriteLine("STATE_RECOVERY_REQUIRED_FIELDS_AND_CLOCK_PASS");
+    Console.WriteLine("STATE_RECOVERY_CASE_INSENSITIVE_DEDUP_PASS");
+
+    var writePath = Path.Combine(root, "atomic.json");
+    Storage.AtomicWrite(writePath, "first");
+    Require(File.ReadAllText(writePath) == "first" &&
+        !File.Exists(writePath + ".tmp"),
+        "first write must leave a committed primary without temporary data");
+    Storage.AtomicWrite(writePath, "second");
+    Require(File.ReadAllText(writePath) == "second" &&
+        File.ReadAllText(writePath + ".bak") == "first" &&
+        !File.Exists(writePath + ".tmp"),
+        "replacement must retain previous backup and not leave a temporary file");
+    File.WriteAllText(writePath + ".tmp", "unresolved-third-credit");
+    MustReject(() => Storage.AtomicWrite(writePath, "third"),
+        "existing pending state must not be overwritten by a new credit");
+    Require(File.ReadAllText(writePath) == "second" &&
+        File.ReadAllText(writePath + ".bak") == "first" &&
+        File.ReadAllText(writePath + ".tmp") == "unresolved-third-credit",
+        "a rejected write must preserve primary, backup and pending evidence");
+    Console.WriteLine("STATE_ATOMIC_WRITE_GUARD_PASS: replace, backup and unresolved temporary preservation");
+
+    var defaults = new AppConfig();
+    Require(!defaults.Enabled && !defaults.DtrEnabled && !defaults.RtsEnabled,
+        "new installations must disable coin acceptance and DTR/RTS outputs");
+    Console.WriteLine("SERIAL_OUTPUT_DEFAULTS_SAFE_PASS: coin acceptance, DTR and RTS disabled");
+    Console.WriteLine("STATE_RECOVERY_GUARD_PASS: startup, interrupted write, required fields, clock, accounting and dedupe source-linked checks");
+    return 0;
+}
+finally
+{
+    Directory.Delete(root, recursive: true);
+}
