@@ -48,6 +48,10 @@ try
         "valid resume must debit elapsed offline time exactly");
     Require(recovered.AppliedEventIds.Contains("coin:source:sequence-1"),
         "coin dedupe IDs must survive recovery");
+    var defaults = new AppConfig();
+    Require(!defaults.Enabled && !defaults.DtrEnabled && !defaults.RtsEnabled,
+        "new installations must disable coin acceptance and DTR/RTS outputs");
+    Console.WriteLine("SERIAL_OUTPUT_DEFAULTS_SAFE_PASS: coin acceptance, DTR and RTS disabled");
     Console.WriteLine("STATE_RECOVERY_GUARD_PASS: 5 fail-closed and 2 positive assertions on production decoder");
     return 0;
 }

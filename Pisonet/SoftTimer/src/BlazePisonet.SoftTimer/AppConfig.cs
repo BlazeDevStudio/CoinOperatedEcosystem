@@ -71,8 +71,8 @@ public sealed class AppConfig
     public bool CoinInputActiveHigh { get; set; } = true;
     public ModemSignal TimerActiveSignal { get; set; } = ModemSignal.Dsr;
     public bool TimerActiveHigh { get; set; } = true;
-    public bool DtrEnabled { get; set; } = true;
-    public bool RtsEnabled { get; set; } = true;
+    public bool DtrEnabled { get; set; } = false; // never drive output before explicit operator choice
+    public bool RtsEnabled { get; set; } = false; // never drive output before explicit operator choice
     public int DebounceMs { get; set; } = 80;
     public int MinimumPulseMs { get; set; } = 20;
     public int MaximumPulseMs { get; set; } = 1000;
