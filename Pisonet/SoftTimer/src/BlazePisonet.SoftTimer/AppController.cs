@@ -175,9 +175,24 @@ public sealed class AppController : IDisposable
             return;
         }
 
-        // The original immutable event is carried throughout the operation,
-        // not reconstructed from mutable _serial.ConnectedDevice after awaits.
-        _ = HandleCoinPulse(accepted);
+        // Observe asynchronous faults: an I/O error must not silently lose a
+        // physical coin while the operator sees an apparently normal timer.
+        _ = HandleCoinPulse(accepted).ContinueWith(task =>
+        {
+            Storage.Log("CRITICAL coin processing fault: " + task.Exception?.GetBaseException());
+            if (_timer.CreditPersistenceFaulted) _serial.Disconnect();
+            try
+            {
+                BeginInvokeUi(() =>
+                {
+                    HardwareStatus = _timer.CreditPersistenceFaulted
+                        ? "COIN STORAGE FAULT · further credits suspended"
+                        : "Coin processing fault · operator review required";
+                    StatusChanged?.Invoke();
+                });
+            }
+            catch (Exception ex) { Storage.Log("Coin fault status UI unavailable: " + ex.Message); }
+        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
     private async Task HandleCoinPulse(SerialCoinAcceptance accepted)
@@ -633,7 +648,10 @@ public sealed class AppController : IDisposable
         if (!Config.Enabled) return;
         if (Config.TimerSource is TimerSourceMode.InternalPcTimer or TimerSourceMode.ExternalTimerBoard && Config.CoinTopology != CoinTopologyMode.CentralizedStation)
         {
-            if (!_serial.IsConnected) _serial.TryReconnect(Config);
+            // Keep the coin input disconnected after an uncertain credit save.
+            // Do not auto-rearm an acceptor until manual reconciliation/restart.
+            if (!_timer.CreditPersistenceFaulted && !_serial.IsConnected)
+                _serial.TryReconnect(Config);
             if (Config.TimerSource == TimerSourceMode.ExternalTimerBoard) UpdateExternalBoard();
         }
 

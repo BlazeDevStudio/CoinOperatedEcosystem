@@ -7,6 +7,8 @@ public sealed class TimerEngine : IDisposable
     private readonly object _gate = new();
     private readonly System.Threading.Timer _tick;
     private RuntimeState _state;
+    private readonly Action<RuntimeState> _persistState;
+    private bool _creditPersistenceFaulted;
     // Monotonic clock: wall-clock edits must not multiply or erase paid time.
     private long _lastTickStamp = Stopwatch.GetTimestamp();
     private long _lastPersistStamp;
@@ -18,11 +20,17 @@ public sealed class TimerEngine : IDisposable
     public event Action<bool>? ActiveChanged;
     public event Action<string>? Audit;
 
-    public TimerEngine()
+    public TimerEngine() : this(Storage.LoadState(), Storage.SaveState, true) { }
+
+    // Same real timer engine under test: only storage I/O and ticker are
+    // substituted, never the production financial logic.
+    internal TimerEngine(RuntimeState initialState, Action<RuntimeState> persistState, bool startTicker)
     {
-        _state = Storage.LoadState();
+        _state = initialState ?? throw new ArgumentNullException(nameof(initialState));
+        _persistState = persistState ?? throw new ArgumentNullException(nameof(persistState));
         _paused = _state.PendingMemberOperation is not null;
-        _tick = new System.Threading.Timer(_ => Tick(), null, 250, 250);
+        int interval = startTicker ? 250 : Timeout.Infinite;
+        _tick = new System.Threading.Timer(_ => Tick(), null, interval, interval);
     }
 
     public long RemainingSeconds
@@ -33,6 +41,7 @@ public sealed class TimerEngine : IDisposable
     public bool IsActive => RemainingSeconds > 0;
     public bool IsPaused { get { lock (_gate) return _paused; } }
     public long SalesPulseCount { get { lock (_gate) return _state.SalesPulseCount; } }
+    public bool CreditPersistenceFaulted { get { lock (_gate) return _creditPersistenceFaulted; } }
 
     public void SetExternalAuthority(bool external)
     {
@@ -49,6 +58,37 @@ public sealed class TimerEngine : IDisposable
         AddSeconds(secondsPerCoin, $"coin:{source}:{Guid.NewGuid():N}", true, $"Coin accepted from {source}");
     }
 
+    // Purely stages a new state and invokes persistence BEFORE handing
+    // ownership to the caller. A failed/ambiguous write never mutates
+    // currently published paid time, sales totals, or deduplication IDs.
+    internal static bool TryPersistCredit(RuntimeState original, long seconds,
+        string eventId, bool countSale, Action<RuntimeState> persist,
+        out RuntimeState committed)
+    {
+        committed = original;
+        if (seconds <= 0 || string.IsNullOrWhiteSpace(eventId)) return false;
+        if (original.AppliedEventIds.Contains(eventId)) return false;
+        if (original.RemainingSeconds < 0 || original.SalesPulseCount < 0)
+            throw new InvalidDataException("Negative financial state");
+        var next = new RuntimeState
+        {
+            RemainingSeconds = checked(original.RemainingSeconds + seconds),
+            SalesPulseCount = checked(original.SalesPulseCount + (countSale ? 1L : 0L)),
+            TimerRunning = true,
+            UpdatedUtc = DateTimeOffset.UtcNow,
+            AppliedEventIds = new HashSet<string>(original.AppliedEventIds,
+                StringComparer.OrdinalIgnoreCase),
+            Members = original.Members,
+            RemoteMembers = original.RemoteMembers,
+            RemoteMemberRevision = original.RemoteMemberRevision,
+            PendingMemberOperation = original.PendingMemberOperation
+        };
+        next.AppliedEventIds.Add(eventId);
+        persist(next);
+        committed = next;
+        return true;
+    }
+
     public bool AddSeconds(long seconds, string eventId, bool countSale, string audit)
     {
         if (seconds <= 0 || string.IsNullOrWhiteSpace(eventId)) return false;
@@ -56,16 +96,27 @@ public sealed class TimerEngine : IDisposable
         long remaining;
         lock (_gate)
         {
-            if (_state.AppliedEventIds.Contains(eventId)) return false;
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException(
+                    "Coin credit is suspended after an uncertain paid-state save. Operator recovery required.");
             wasActive = _state.RemainingSeconds > 0;
-            _state.AppliedEventIds.Add(eventId);
-            _state.RemainingSeconds = Math.Max(0, _state.RemainingSeconds) + seconds;
-            _state.TimerRunning = _state.RemainingSeconds > 0;
-            if (countSale) _state.SalesPulseCount++;
-            _state.UpdatedUtc = DateTimeOffset.UtcNow;
+            RuntimeState committed;
+            try
+            {
+                if (!TryPersistCredit(_state, seconds, eventId, countSale,
+                        _persistState, out committed)) return false;
+            }
+            catch (Exception ex)
+            {
+                // Even when File.Replace reports an error after a partial
+                // operation, we must not retry and credit the same coin.
+                _creditPersistenceFaulted = true;
+                throw new IOException(
+                    "Coin credit write is uncertain; credits are suspended pending operator reconciliation.", ex);
+            }
+            _state = committed;
             ResetTickClock();
-            Storage.SaveState(_state);
-            remaining = _state.RemainingSeconds;
+            remaining = committed.RemainingSeconds;
         }
         Audit?.Invoke(audit + $"; +{seconds}s; remaining={remaining}s");
         RemainingChanged?.Invoke(remaining);
@@ -401,6 +452,11 @@ public sealed class TimerEngine : IDisposable
     public void Dispose()
     {
         _tick.Dispose();
-        lock (_gate) Storage.SaveState(_state);
+        lock (_gate)
+        {
+            // A failed credit must retain any .tmp / previous state for manual
+            // reconciliation instead of performing another uncertain write.
+            if (!_creditPersistenceFaulted) _persistState(_state);
+        }
     }
 }
