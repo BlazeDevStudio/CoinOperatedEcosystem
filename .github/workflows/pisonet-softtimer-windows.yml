@@ -1,0 +1,65 @@
+name: BlazePisonet SoftTimer Windows synthetic CI
+
+on:
+  push:
+    branches:
+      - 'pisonet/softtimer-foundation-20261107'
+    paths:
+      - 'Pisonet/SoftTimer/**'
+      - '.github/workflows/pisonet-softtimer-windows.yml'
+  pull_request:
+    paths:
+      - 'Pisonet/SoftTimer/**'
+      - '.github/workflows/pisonet-softtimer-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-lab:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: Pisonet/SoftTimer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build actual app and watchdog
+        run: |
+          dotnet restore ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'App restore failed' }
+          dotnet build ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'App build failed' }
+          dotnet build ./src/BlazePisonet.SoftTimer.Watchdog/BlazePisonet.SoftTimer.Watchdog.csproj -c Release -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'Watchdog build failed' }
+      - name: Shipped timer math regression
+        run: |
+          dotnet run --no-build --project ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -- --verify-timer-math
+          if ($LASTEXITCODE -ne 0) { throw 'Timer math verification failed' }
+      - name: Same-owned-handle native COM source test
+        run: |
+          dotnet run --project ./tests/NativeComInterfaceHandleLab/NativeComInterfaceHandleLab.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Native COM case failed' }
+      - name: Source-linked serial fault admission gate
+        run: |
+          dotnet run --project ./tests/NativeSerialPinFaultLab/NativeSerialPinFaultLab.csproj -c Release -- --safety-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Serial fault safety gate failed' }
+      - name: Source-linked stale coin-event ownership gate
+        run: |
+          dotnet run --project ./tests/NativeCoinEventOwnershipGuard/NativeCoinEventOwnershipGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Coin event ownership gate failed' }
+      - name: Publish unsigned Windows x64 lab diagnostic build
+        run: |
+          dotnet publish ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./lab-output
+          if ($LASTEXITCODE -ne 0) { throw 'Lab publish failed' }
+      - name: Upload LAB-only artifact (not a customer installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazePisonet-SoftTimer-Win64-UNSIGNED-LAB
+          path: Pisonet/SoftTimer/lab-output/
+          if-no-files-found: error
+          retention-days: 7
