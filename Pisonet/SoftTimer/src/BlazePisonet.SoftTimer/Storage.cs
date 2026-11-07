@@ -121,30 +121,53 @@ public static class Storage
     public static RuntimeState LoadState()
     {
         Directory.CreateDirectory(RootDirectory);
-        if (!File.Exists(StatePath)) return new RuntimeState();
         try
         {
-            var state = JsonSerializer.Deserialize<RuntimeState>(File.ReadAllText(StatePath), JsonOptions) ?? new RuntimeState();
-            state.Members ??= new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
-            state.RemoteMembers ??= new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
-            if (state.TimerRunning && state.RemainingSeconds > 0 && state.PendingMemberOperation is null)
-            {
-                var elapsed = Math.Max(0, (long)(DateTimeOffset.UtcNow - state.UpdatedUtc).TotalSeconds);
-                state.RemainingSeconds = Math.Max(0, state.RemainingSeconds - elapsed);
-                state.TimerRunning = state.RemainingSeconds > 0;
-                state.UpdatedUtc = DateTimeOffset.UtcNow;
-            }
-            else if (state.PendingMemberOperation is not null)
-            {
-                state.UpdatedUtc = DateTimeOffset.UtcNow;
-            }
-            return state;
+            return LoadStateFromPath(StatePath, DateTimeOffset.UtcNow);
         }
         catch (Exception ex)
         {
-            Log("State load failed: " + ex.Message);
-            return new RuntimeState();
+            // Never substitute an empty state for unreadable paid time or coin dedupe history.
+            // Preserve state.json, state.json.bak and state.json.tmp for manual recovery.
+            Log("CRITICAL paid session state unreadable; admission disabled: " + ex);
+            throw new InvalidDataException(
+                "Paid session state could not be verified. SoftTimer will not reset it automatically. " +
+                "Preserve state.json/.bak/.tmp and recover under operator supervision.", ex);
         }
+    }
+
+    // This is the same decoder called by production startup. A test-only path
+    // allows deterministic fault injection without touching a customer's ProgramData.
+    internal static RuntimeState LoadStateFromPath(string path, DateTimeOffset now)
+    {
+        if (!File.Exists(path))
+        {
+            if (File.Exists(path + ".bak") || File.Exists(path + ".tmp"))
+                throw new InvalidDataException(
+                    "Paid state is missing but a backup or pending transaction exists.");
+            return new RuntimeState(); // actual first installation only
+        }
+
+        var state = JsonSerializer.Deserialize<RuntimeState>(
+            File.ReadAllText(path), JsonOptions)
+            ?? throw new InvalidDataException("Paid state JSON is null.");
+        if (state.AppliedEventIds is null ||
+            state.Members is null || state.RemoteMembers is null)
+            throw new InvalidDataException("Paid state has null required collections.");
+
+        if (state.TimerRunning && state.RemainingSeconds > 0 &&
+            state.PendingMemberOperation is null)
+        {
+            var elapsed = Math.Max(0, (long)(now - state.UpdatedUtc).TotalSeconds);
+            state.RemainingSeconds = Math.Max(0, state.RemainingSeconds - elapsed);
+            state.TimerRunning = state.RemainingSeconds > 0;
+            state.UpdatedUtc = now;
+        }
+        else if (state.PendingMemberOperation is not null)
+        {
+            state.UpdatedUtc = now;
+        }
+        return state;
     }
 
     public static void SaveState(RuntimeState state)

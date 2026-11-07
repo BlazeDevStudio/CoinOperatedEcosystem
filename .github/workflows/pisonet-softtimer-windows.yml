@@ -1,12 +1,6 @@
 name: BlazePisonet SoftTimer Windows synthetic CI
 
 on:
-  push:
-    branches:
-      - 'pisonet/softtimer-foundation-20261107'
-    paths:
-      - 'Pisonet/SoftTimer/**'
-      - '.github/workflows/pisonet-softtimer-windows.yml'
   pull_request:
     paths:
       - 'Pisonet/SoftTimer/**'
@@ -52,6 +46,10 @@ jobs:
         run: |
           dotnet run --project ./tests/NativeCoinEventOwnershipGuard/NativeCoinEventOwnershipGuard.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Coin event ownership gate failed' }
+      - name: Source-linked paid-time state recovery corruption guard
+        run: |
+          dotnet run --project ./tests/StateRecoveryGuard/StateRecoveryGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Paid-state recovery guard failed' }
       - name: Publish unsigned Windows x64 lab diagnostic build
         run: |
           dotnet publish ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./lab-output
