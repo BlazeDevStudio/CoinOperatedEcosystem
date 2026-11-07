@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "Blaze PisoWiFi-only first-party public MIT source recovery; no commercial production authorization.",
   "source": {
     "repository": "BlazeDevStudio/BlazingSystems-Experiments",
@@ -11,14 +11,14 @@
   "destination": {
     "repository": "BlazeDevStudio/CoinOperatedEcosystem",
     "branch": "feature/pisowifi-cleanup-stabilization",
-    "verified_source_head_before_manifest": "b2314d16c105c1589b379f7827bc0e436cadc6be",
+    "verified_source_head_before_manifest": "18d109a13118a6112378b9c84185410ca21d2c16",
     "root": "Pisowifi/"
   },
   "summary": {
     "original_rootfs_file_count": 61,
     "recovered_rootfs_file_count": 38,
-    "recovered_byte_identical_count": 35,
-    "locally_derived_files": 3,
+    "recovered_byte_identical_count": 33,
+    "locally_derived_files": 5,
     "unrecovered_rootfs_file_count": 23,
     "unchanged_original_test_count": 4
   },
@@ -42,7 +42,7 @@
       "source_git_blob": "4a3d6240e700520c78acff4d3daea5b98d5df5d7",
       "destination_git_blob": "11c4679f95d804fe9f96fb9918b4ae2be8d5c92e",
       "git_mode": "100755",
-      "status": "derived_verified_locally"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/etc/uci-defaults/99-blazepwifi",
@@ -70,14 +70,14 @@
       "source_git_blob": "3753966f3e52c04ffddbc080f04bb37e12af0e67",
       "destination_git_blob": "098eafbe06193ff1ea7b4fc7e3bf4ae3b7b3e4cd",
       "git_mode": "100755",
-      "status": "derived_verified_locally"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/common.sh",
       "source_git_blob": "4ccb10777b08f541d092f7c2c2d2aad4d2f6562e",
-      "destination_git_blob": "4ccb10777b08f541d092f7c2c2d2aad4d2f6562e",
+      "destination_git_blob": "0e5ae706a350187e81cd9a620efed11be05e5a26",
       "git_mode": "100644",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/config.sh",
@@ -110,9 +110,9 @@
     {
       "path": "openwrt/rootfs/usr/sbin/blazepwifi-core",
       "source_git_blob": "94c6bfa462b509587e0ea5416c0481de0cb641f0",
-      "destination_git_blob": "5f05699d8f55b369f0e51ab2afd8f2ed56a054f5",
+      "destination_git_blob": "00b355b15d0988d32c0b447046bfaeaf50b1cabd",
       "git_mode": "100755",
-      "status": "derived_verified_locally"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/share/blazepwifi/VERSION",
@@ -187,9 +187,9 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/api",
       "source_git_blob": "a59c0080c04cdb6bd8fd830b623bdc62640fb6a5",
-      "destination_git_blob": "a59c0080c04cdb6bd8fd830b623bdc62640fb6a5",
+      "destination_git_blob": "438fd0ea389e09c052b2d745c320561addd278a8",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/vendo",
@@ -422,5 +422,43 @@
   "hardware_tested": false,
   "full_ci_tested": false,
   "source_admission_complete": false,
-  "note": "Original source is public; destination is public; do not add private device/site configs, secrets, customer state or paid records. No Phoenix CORE, Pisonet, Android application, independent ESP firmware or standalone rental source was modified."
+  "note": "Original source is public; destination is public; do not add private device/site configs, secrets, customer state or paid records. No Phoenix CORE, Pisonet, Android application, independent ESP firmware or standalone rental source was modified.",
+  "derived_tests": [
+    {
+      "path": "tests/nft_atomic_setup.sh",
+      "git_blob": "34f0e4cf60565b9c6978fb6d9cdce999af62d1db",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/nft_shutdown_guard.sh",
+      "git_blob": "96f164d65cc9ab5047141c72808b89f3f7984fb7",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/nft_membership_failclosed.sh",
+      "git_blob": "9f27d228b3b6a8677902e26d9d91a689b4c60ec8",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/nft_account_binding_guard.sh",
+      "git_blob": "a7ee6a2ce2459c02ce7f83eef05f4b384092ad09",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/capabilities.sh",
+      "git_blob": "542c68807b29fdd67bb1220b61e343daf5db88dd",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
+    }
+  ],
+  "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted."
 }
