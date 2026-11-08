@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -93,10 +94,22 @@ class StandaloneApi(unittest.TestCase):
         self.assertNotEqual(self.cmd('grant',info['device_id'],'60','bad_payload_0123',check=False).returncode,0)
         self.assertFalse(self.api(info['device_id'],info['device_secret'])['ok'])
 
-    def test_missing_crypto_does_not_generate_poor_entropy(self):
+    def test_zero_duration_denied(self):
         info=self.pair()
         bogus=self.cmd('grant',info['device_id'],'0','bad_range_12345',check=False)
         self.assertNotEqual(bogus.returncode,0)
+
+    def test_entropy_failure_fails_closed(self):
+        before=(self.state/'state.tsv').read_bytes()
+        with tempfile.TemporaryDirectory() as td:
+            fake=Path(td)/'openssl'
+            fake.write_text('#!/bin/sh\nexit 1\n')
+            fake.chmod(0o755)
+            env=self.env | {'PATH': td+os.pathsep+os.environ['PATH']}
+            cp=subprocess.run(['sh',str(CLI),'register'],capture_output=True,text=True,env=env)
+        self.assertNotEqual(cp.returncode,0)
+        self.assertNotIn('device_secret=',cp.stdout)
+        self.assertEqual((self.state/'state.tsv').read_bytes(),before)
 
 
 class JavaProtocol(unittest.TestCase):
