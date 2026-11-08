@@ -113,4 +113,75 @@ using (var engine = new TimerEngine(original, candidate =>
     Require(saves == 3, "invalid credentials triggered disk write");
 }
 Console.WriteLine("MEMBER_PERSIST_BEFORE_PUBLISH_PASS");
+
+var pending = new PendingMemberOperation
+{
+    Action = "member_bank", Username = "alice", MemberToken = "alice",
+    EventId = "pending:event:1", Seconds = 120, MemberRevision = 1
+};
+FailCase("pending-record", alice, bob, e => e.SetPendingMemberOperation(pending));
+FailCase("bank-reset", alice, bob, e => e.Reset("confirmed remote bank"));
+
+var clearSeed = Seed(alice, bob);
+clearSeed.PendingMemberOperation = pending;
+var clearWrites = 0;
+using (var engine = new TimerEngine(clearSeed, _ =>
+{
+    clearWrites++;
+    throw new IOException("failed pending clear");
+}, startTicker: false))
+{
+    try { engine.ClearPendingMemberOperation(pending.EventId); throw new Exception("Clear unexpectedly persisted"); }
+    catch (IOException) { }
+    Require(engine.CreditPersistenceFaulted && clearWrites == 1 &&
+        engine.PendingMemberOperation?.EventId == pending.EventId &&
+        clearSeed.PendingMemberOperation?.EventId == pending.EventId,
+        "failed pending-clear discarded replay evidence");
+}
+Console.WriteLine("PENDING_MEMBER_CLEAR_FAILURE_PRESERVED_PASS");
+
+var remote = Account("remote", "remote-test", 50);
+var remoteOriginalManaged = remote.RemoteManaged;
+using (var engine = new TimerEngine(Seed(alice, bob), _ =>
+{
+    throw new IOException("remote snapshot persist failure");
+}, startTicker: false))
+{
+    try
+    {
+        engine.ApplyRemoteMembers(new[] { remote }, 17);
+        throw new Exception("Remote member write unexpectedly succeeded");
+    }
+    catch (IOException) { }
+    Require(engine.CreditPersistenceFaulted && engine.RemoteMemberRevision == 0 &&
+        engine.RemoteMembersSnapshot().Count == 0 && remote.RemoteManaged == remoteOriginalManaged,
+        "failed remote snapshot changed published revision or caller-owned objects");
+}
+Console.WriteLine("REMOTE_SNAPSHOT_FAILED_WRITE_PRESERVED_PASS");
+
+var replayWrites = 0;
+RuntimeState? lastDurable = null;
+using (var engine = new TimerEngine(Seed(alice, bob), saved =>
+{
+    replayWrites++;
+    lastDurable = saved;
+}, startTicker: false))
+{
+    engine.SetPendingMemberOperation(pending);
+    Require(engine.PendingMemberOperation?.EventId == pending.EventId &&
+        lastDurable?.PendingMemberOperation?.EventId == pending.EventId,
+        "pending operation was not durably recorded");
+    pending.EventId = "mutated-outside-engine";
+    Require(engine.PendingMemberOperation?.EventId == "pending:event:1",
+        "caller mutated a committed pending transaction by alias");
+    engine.Reset("remote bank committed");
+    Require(engine.RemainingSeconds == 0 &&
+        lastDurable?.PendingMemberOperation?.EventId == "pending:event:1",
+        "confirmed bank reset must retain pending reconciliation record");
+    engine.ClearPendingMemberOperation("pending:event:1");
+    Require(engine.PendingMemberOperation is null && lastDurable?.PendingMemberOperation is null,
+        "pending operation not durably cleared");
+    Require(replayWrites == 3, "expected exactly three durable pending/reset/clear writes");
+}
+Console.WriteLine("PENDING_REPLAY_ORDER_AND_NO_ALIAS_PASS");
 return 0;

@@ -155,12 +155,15 @@ public sealed class TimerEngine : IDisposable
         bool oldActive;
         lock (_gate)
         {
-            oldActive = _state.RemainingSeconds > 0;
-            _state.RemainingSeconds = 0;
-            _state.TimerRunning = false;
-            _state.UpdatedUtc = DateTimeOffset.UtcNow;
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
+            var next = ClonePaidState(_state);
+            oldActive = next.RemainingSeconds > 0;
+            next.RemainingSeconds = 0;
+            next.TimerRunning = false;
+            next.UpdatedUtc = DateTimeOffset.UtcNow;
+            CommitFinancialStateLocked(next);
             ResetTickClock();
-            Storage.SaveState(_state);
         }
         Audit?.Invoke($"Timer reset: {reason}");
         RemainingChanged?.Invoke(0);
@@ -364,10 +367,25 @@ public sealed class TimerEngine : IDisposable
 
     public void SetPendingMemberOperation(PendingMemberOperation pending)
     {
+        ArgumentNullException.ThrowIfNull(pending);
+        if (string.IsNullOrWhiteSpace(pending.EventId))
+            throw new ArgumentException("Pending member transaction must have an event ID", nameof(pending));
         lock (_gate)
         {
-            _state.PendingMemberOperation = pending;
-            Storage.SaveState(_state);
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
+            if (_state.PendingMemberOperation is { } existing &&
+                !existing.EventId.Equals(pending.EventId, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Resolve existing pending member transaction first.");
+            var next = ClonePaidState(_state);
+            next.PendingMemberOperation = new PendingMemberOperation
+            {
+                Action = pending.Action, Username = pending.Username,
+                MemberToken = pending.MemberToken, EventId = pending.EventId,
+                Seconds = pending.Seconds, MemberRevision = pending.MemberRevision,
+                CreatedUtc = pending.CreatedUtc
+            };
+            CommitFinancialStateLocked(next);
         }
         Audit?.Invoke($"Pending BlazePwifi member operation recorded: {pending.Action}:{pending.Username}:{pending.EventId}");
     }
@@ -376,11 +394,14 @@ public sealed class TimerEngine : IDisposable
     {
         lock (_gate)
         {
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
             if (_state.PendingMemberOperation is null
                 || !_state.PendingMemberOperation.EventId.Equals(eventId, StringComparison.OrdinalIgnoreCase))
                 return;
-            _state.PendingMemberOperation = null;
-            Storage.SaveState(_state);
+            var next = ClonePaidState(_state);
+            next.PendingMemberOperation = null;
+            CommitFinancialStateLocked(next);
         }
         Audit?.Invoke($"Pending BlazePwifi member operation cleared: {eventId}");
     }
@@ -393,21 +414,30 @@ public sealed class TimerEngine : IDisposable
 
     public void ApplyRemoteMembers(IEnumerable<MemberAccount> members, long revision)
     {
+        ArgumentNullException.ThrowIfNull(members);
+        int count;
         lock (_gate)
         {
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
             if (revision < _state.RemoteMemberRevision) return;
-            var next = new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
+            var updated = new Dictionary<string, MemberAccount>(StringComparer.OrdinalIgnoreCase);
             foreach (var member in members)
             {
                 if (string.IsNullOrWhiteSpace(member.Username)) continue;
-                member.RemoteManaged = true;
-                next[member.Username] = CloneMember(member);
+                // Do not modify caller-owned server snapshot objects.
+                var copy = CloneMember(member);
+                copy.RemoteManaged = true;
+                if (!updated.TryAdd(copy.Username, copy))
+                    throw new InvalidDataException("Duplicate remote member identity: " + copy.Username);
             }
-            _state.RemoteMembers = next;
-            _state.RemoteMemberRevision = revision;
-            Storage.SaveState(_state);
+            count = updated.Count;
+            var next = ClonePaidState(_state);
+            next.RemoteMembers = updated;
+            next.RemoteMemberRevision = revision;
+            CommitFinancialStateLocked(next);
         }
-        Audit?.Invoke($"BlazePwifi member snapshot applied; revision={revision}; members={members.Count()}");
+        Audit?.Invoke($"BlazePwifi member snapshot applied; revision={revision}; members={count}");
     }
 
     public MemberAccount? RemoteMember(string username)
