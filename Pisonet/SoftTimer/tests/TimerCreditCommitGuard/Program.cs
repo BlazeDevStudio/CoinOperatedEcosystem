@@ -115,4 +115,59 @@ Require(overflowWrites == 0 && overflow.RemainingSeconds == long.MaxValue &&
     !overflow.AppliedEventIds.Contains("overflow"),
     "overflow must not mutate or persist paid balance");
 Console.WriteLine("COIN_OVERFLOW_REJECTED_PASS");
+
+// Source-linked ThreadPool countdown regression: a scheduled 5s checkpoint
+// must neither throw nor mutate the published balance after failed storage.
+var tickMethod = typeof(TimerEngine).GetMethod("Tick",
+    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+    ?? throw new Exception("TimerEngine.Tick production source unavailable");
+var tickTimestamp = typeof(TimerEngine).GetField("_lastTickStamp",
+    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+    ?? throw new Exception("TimerEngine monotonic tick field unavailable");
+var faultedCountdownWrites = 0;
+var faultedTickSource = new RuntimeState { RemainingSeconds = 120, TimerRunning = true };
+using (var engine = new TimerEngine(faultedTickSource, staged =>
+{
+    faultedCountdownWrites++;
+    Require(staged.RemainingSeconds < 120, "countdown did not stage elapsed debit");
+    throw new IOException("simulated periodic checkpoint storage loss");
+}, startTicker: false))
+{
+    var callbacks = 0;
+    engine.RemainingChanged += _ => callbacks++;
+    engine.ActiveChanged += _ => callbacks++;
+    tickTimestamp.SetValue(engine,
+        System.Diagnostics.Stopwatch.GetTimestamp() -
+        3L * System.Diagnostics.Stopwatch.Frequency);
+    tickMethod.Invoke(engine, null);  // MUST NOT throw TargetInvocationException
+    Require(engine.CreditPersistenceFaulted && engine.RemainingSeconds == 120 &&
+        faultedTickSource.RemainingSeconds == 120 && callbacks == 0,
+        "failed periodic checkpoint leaked paid seconds or emitted a success event");
+    tickMethod.Invoke(engine, null);
+    Require(faultedCountdownWrites == 1,
+        "countdown automatically retried after uncertain storage state");
+}
+Console.WriteLine("TIMER_PERIODIC_WRITE_FAILURE_FAILS_CLOSED_PASS");
+
+RuntimeState? successfulTickCheckpoint = null;
+using (var engine = new TimerEngine(
+    new RuntimeState { RemainingSeconds = 120, TimerRunning = true },
+    staged => successfulTickCheckpoint = staged, startTicker: false))
+{
+    long? announced = null;
+    engine.RemainingChanged += s =>
+    {
+        Require(successfulTickCheckpoint?.RemainingSeconds == s,
+            "countdown was announced before durable checkpoint");
+        announced = s;
+    };
+    tickTimestamp.SetValue(engine,
+        System.Diagnostics.Stopwatch.GetTimestamp() -
+        2L * System.Diagnostics.Stopwatch.Frequency);
+    tickMethod.Invoke(engine, null);
+    Require(!engine.CreditPersistenceFaulted && engine.RemainingSeconds == 118 &&
+        successfulTickCheckpoint?.RemainingSeconds == 118 && announced == 118,
+        "good countdown checkpoint did not debit/persist/notify in order");
+}
+Console.WriteLine("TIMER_PERIODIC_WRITE_SUCCESS_ORDER_PASS");
 return 0;

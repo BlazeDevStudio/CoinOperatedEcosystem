@@ -515,14 +515,14 @@ public sealed class TimerEngine : IDisposable
     {
         bool changed = false;
         bool becameInactive = false;
+        bool storageFaulted = false;
+        Exception? storageFailure = null;
         long remaining = 0;
         lock (_gate)
         {
             long stamp = Stopwatch.GetTimestamp();
             double elapsed = ElapsedSince(stamp, _lastTickStamp);
             _lastTickStamp = stamp;
-            // A credit write failure can leave an unresolved state.json.tmp.
-            // Never mutate or persist paid time again until reconciliation.
             if (_creditPersistenceFaulted)
             {
                 _fractionalSeconds = 0;
@@ -534,26 +534,55 @@ public sealed class TimerEngine : IDisposable
                 return;
             }
 
-            // Timer callback cadence is 250 ms. Debit only whole *elapsed*
-            // seconds; carry fractions forward instead of billing 1s per tick.
-            long secondsToDebit = DebitWholeSeconds(ref _fractionalSeconds, elapsed);
-            if (secondsToDebit <= 0) return;
-
+            long toDebit = DebitWholeSeconds(ref _fractionalSeconds, elapsed);
+            if (toDebit <= 0) return;
             long old = _state.RemainingSeconds;
-            _state.RemainingSeconds = Math.Max(0, old - secondsToDebit);
-            changed = _state.RemainingSeconds != old;
-            if (changed)
+            remaining = Math.Max(0, old - toDebit);
+            changed = remaining != old;
+            if (!changed) return;
+            becameInactive = old > 0 && remaining == 0;
+            bool persistNow = ElapsedSince(stamp, _lastPersistStamp) >= 5 || becameInactive;
+
+            if (persistNow)
             {
-                _state.TimerRunning = _state.RemainingSeconds > 0;
-                _state.UpdatedUtc = DateTimeOffset.UtcNow;
-                remaining = _state.RemainingSeconds;
-                becameInactive = old > 0 && remaining == 0;
-                if (ElapsedSince(stamp, _lastPersistStamp) >= 5 || becameInactive)
+                // Never mutate the live state before a durable scheduled save.
+                // A failed timer callback must not throw on the ThreadPool or
+                // leave a partially published credit/session state behind.
+                var staged = ClonePaidState(_state);
+                staged.RemainingSeconds = remaining;
+                staged.TimerRunning = remaining > 0;
+                staged.UpdatedUtc = DateTimeOffset.UtcNow;
+                try
                 {
-                    Storage.SaveState(_state);
+                    _persistState(staged);
+                    _state = staged;
                     _lastPersistStamp = stamp;
                 }
+                catch (Exception ex)
+                {
+                    _creditPersistenceFaulted = true;
+                    storageFailure = ex;
+                    storageFaulted = true;
+                    changed = false;
+                    becameInactive = false;
+                }
             }
+            else
+            {
+                // Normal interim debit stays in memory until the bounded
+                // periodic checkpoint. The next durable checkpoint is staged.
+                _state.RemainingSeconds = remaining;
+                _state.TimerRunning = remaining > 0;
+                _state.UpdatedUtc = DateTimeOffset.UtcNow;
+            }
+        }
+        if (storageFaulted)
+        {
+            Storage.Log("CRITICAL countdown persistence fault; paid session suspended: " +
+                storageFailure);
+            // AppController maintenance observes CreditPersistenceFaulted and
+            // applies customer lock; do not announce uncommitted time changes.
+            return;
         }
         if (changed) RemainingChanged?.Invoke(remaining);
         if (becameInactive) ActiveChanged?.Invoke(false);
