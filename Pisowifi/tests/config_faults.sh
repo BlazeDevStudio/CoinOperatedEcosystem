@@ -4,7 +4,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT HUP INT TERM
-mkdir -p "$T/bin"
+mkdir -p "$T/bin" "$T/run"
 printf '%s\n' 'blazepwifi.main.admin_port=8443' > "$T/uci.db"
 cat > "$T/bin/uci" <<'UCI'
 #!/bin/sh
@@ -43,7 +43,7 @@ case "$cmd" in
 esac
 UCI
 chmod +x "$T/bin/uci"
-export PATH="$T/bin:$PATH" TEST_DIR="$T" 
+export PATH="$T/bin:$PATH" TEST_DIR="$T" BP_RUN="$T/run"
 CONFIG="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/config.sh"
 sh -n "$CONFIG"
 . "$CONFIG"
@@ -142,4 +142,29 @@ run_set 9443
 [ "$rc" -eq 8 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
 grep -q 'CRITICAL: UCI rollback failed' "$T/stderr"
 printf 'PASS persistent commit failure reported as uncertain\n'
-printf 'ALL PASS — source-linked UCI fault injection (14 cases)\n'
+reset
+value="$(bp_config_get_optional admin_port)"
+[ "$value" = 8443 ]
+printf 'PASS optional config getter reads existing setting\n'
+reset
+: > "$T/uci.db"
+value="$(bp_config_get_optional admin_port)"
+[ -z "$value" ]
+printf 'PASS optional config getter permits genuinely absent option\n'
+reset
+touch "$T/fail_get"
+set +e
+value="$(bp_config_get_optional admin_port)"
+getter_rc=$?
+set -e
+[ "$getter_rc" -eq 8 ] && [ -z "$value" ]
+printf 'PASS optional getter rejects unreadable existing setting\n'
+reset
+touch "$T/fail_show"
+set +e
+value="$(bp_config_get_optional admin_port)"
+getter_rc=$?
+set -e
+[ "$getter_rc" -eq 8 ] && [ -z "$value" ]
+printf 'PASS optional getter rejects unreadable section\n'
+printf 'ALL PASS — source-linked UCI fault injection (18 cases)\n'

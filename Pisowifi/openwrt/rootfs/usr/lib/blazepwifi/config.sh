@@ -59,6 +59,21 @@ bp_config_get() {
 	uci -q get "blazepwifi.main.$key"
 }
 
+# Optional admin settings may legitimately be unset. Never convert an actual
+# read failure on an existing option into a falsely successful empty value.
+bp_config_get_optional() (
+	key="$1"
+	bp_config_key_allowed "$key" || return 2
+	snapshot="$(uci -q show blazepwifi.main 2>/dev/null)" || return 8
+	printf '%s\n' "$snapshot" | grep -q '^blazepwifi\.main=' || return 8
+	if value="$(uci -q get "blazepwifi.main.$key" 2>/dev/null)"; then
+		printf '%s' "$value"
+		return 0
+	fi
+	printf '%s\n' "$snapshot" | grep -Fq "blazepwifi.main.$key=" && return 8
+	return 0
+)
+
 # Restore must be fully committed or its caller reports uncertain state.
 # A subshell keeps UCI helper variables from clobbering the caller's key.
 bp_config_restore() (
@@ -87,9 +102,23 @@ bp_config_apply() {
 	return 0
 }
 
-bp_config_set() {
+# Serialize the full snapshot -> commit -> apply -> rollback transaction.
+# This only coordinates writers using bp_config_set, not external UCI users.
+bp_config_set() (
 	key="$1"; value="$2"
 	bp_config_validate "$key" "$value" || return 2
+	config_run="${BP_RUN:-/tmp/blazepwifi}"
+	[ ! -L "$config_run" ] || return 8
+	umask 077
+	mkdir -p "$config_run" || return 8
+	[ -d "$config_run" ] && [ ! -L "$config_run" ] || return 8
+	chmod 700 "$config_run" || return 8
+	config_lock="$config_run/config-write.lock"
+	# A corrupt/hostile lock path must not be followed or overwritten.
+	[ ! -L "$config_lock" ] || return 8
+	[ ! -e "$config_lock" ] || [ -f "$config_lock" ] || return 8
+	exec 8>"$config_lock" || return 8
+	flock -w 10 8 || return 8
 	# A failed UCI get is ambiguous: the option may exist but its read failed.
 	# Check a readable section snapshot first, and never treat an unreadable
 	# existing option (or unreadable section) as an absent option to delete.
@@ -129,4 +158,4 @@ bp_config_set() {
 		bp_auth_audit config_change "${BP_AUTH_USER:-local}" "${REMOTE_ADDR:-local}" "$key"
 	fi
 	return 0
-}
+)

@@ -626,7 +626,7 @@ EOF
     require_role viewer
     key="$(bp_param key)"
     bp_config_key_allowed "$key" || bp_fail "invalid config key"
-    value="$(bp_config_get "$key")"
+    value="$(bp_config_get_optional "$key")" || bp_fail "configuration read failed"
     body="$(printf '{"ok":true,"key":"%s","value":"%s"}' "$(bp_json_escape "$key")" "$(bp_json_escape "$value")")"
     bp_json "$body"
     ;;
@@ -637,7 +637,15 @@ EOF
     key="$(bp_param key)"; value="$(bp_param value)"
     bp_config_key_allowed "$key" || bp_fail "invalid config key"
     bp_config_validate "$key" "$value" || bp_fail "invalid config value"
-    bp_config_set "$key" "$value" || bp_fail "config apply failed and was rolled back"
+    if bp_config_set "$key" "$value"; then
+      :
+    else
+      rc=$?
+      case "$rc" in
+        8) bp_fail "configuration state uncertain; operator inspection required" ;;
+        *) bp_fail "configuration change failed; inspect live service state before retry" ;;
+      esac
+    fi
     body="$(printf '{"ok":true,"key":"%s","value":"%s"}' "$(bp_json_escape "$key")" "$(bp_json_escape "$value")")"
     bp_json "$body"
     ;;
