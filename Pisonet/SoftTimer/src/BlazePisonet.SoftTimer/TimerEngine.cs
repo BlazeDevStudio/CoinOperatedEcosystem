@@ -127,27 +127,58 @@ public sealed class TimerEngine : IDisposable
     public void SetAuthoritativeSeconds(long seconds, string source)
     {
         seconds = Math.Max(0, seconds);
-        bool oldActive;
-        bool newActive;
-        bool changed;
+        bool oldActive = false;
+        bool changed = false;
+        bool failed = false;
+        Exception? failure = null;
         lock (_gate)
         {
             _externalAuthority = true;
+            if (_creditPersistenceFaulted) return;
             oldActive = _state.RemainingSeconds > 0;
             changed = _state.RemainingSeconds != seconds;
-            _state.RemainingSeconds = seconds;
-            _state.TimerRunning = seconds > 0;
-            _state.UpdatedUtc = DateTimeOffset.UtcNow;
-            ResetTickClock();
-            newActive = seconds > 0;
-            if (changed && (ElapsedSince(Stopwatch.GetTimestamp(), _lastPersistStamp) >= 2))
+            if (!changed)
             {
-                Storage.SaveState(_state);
-                _lastPersistStamp = Stopwatch.GetTimestamp();
+                ResetTickClock();
+                return;
+            }
+
+            // External timer updates can change customer lock state. Never
+            // publish a due checkpoint before the disk write is confirmed.
+            var next = ClonePaidState(_state);
+            next.RemainingSeconds = seconds;
+            next.TimerRunning = seconds > 0;
+            next.UpdatedUtc = DateTimeOffset.UtcNow;
+            var stamp = Stopwatch.GetTimestamp();
+            if (ElapsedSince(stamp, _lastPersistStamp) >= 2)
+            {
+                try
+                {
+                    _persistState(next);
+                    _lastPersistStamp = stamp;
+                }
+                catch (Exception ex)
+                {
+                    _creditPersistenceFaulted = true;
+                    failure = ex;
+                    failed = true;
+                }
+            }
+
+            if (!failed)
+            {
+                _state = next;
+                ResetTickClock();
             }
         }
-        if (changed) RemainingChanged?.Invoke(seconds);
-        if (oldActive != newActive) ActiveChanged?.Invoke(newActive);
+        if (failed)
+        {
+            Audit?.Invoke("CRITICAL external timer persistence fault; access locked: " +
+                failure?.GetType().Name);
+            return;
+        }
+        RemainingChanged?.Invoke(seconds);
+        if (oldActive != (seconds > 0)) ActiveChanged?.Invoke(seconds > 0);
     }
 
     public void Reset(string reason = "admin reset")
@@ -578,8 +609,8 @@ public sealed class TimerEngine : IDisposable
         }
         if (storageFaulted)
         {
-            Storage.Log("CRITICAL countdown persistence fault; paid session suspended: " +
-                storageFailure);
+            Audit?.Invoke("CRITICAL countdown persistence fault; paid session suspended: " +
+                storageFailure?.GetType().Name);
             // AppController maintenance observes CreditPersistenceFaulted and
             // applies customer lock; do not announce uncommitted time changes.
             return;

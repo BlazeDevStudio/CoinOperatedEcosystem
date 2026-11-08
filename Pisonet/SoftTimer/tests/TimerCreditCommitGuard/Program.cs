@@ -170,4 +170,55 @@ using (var engine = new TimerEngine(
         "good countdown checkpoint did not debit/persist/notify in order");
 }
 Console.WriteLine("TIMER_PERIODIC_WRITE_SUCCESS_ORDER_PASS");
+
+// External authority runs on serial/bridge events, not the coin callback;
+// a failed checkpoint must fail closed and must not report successful unlock.
+var externalWrites = 0;
+using (var engine = new TimerEngine(
+    new RuntimeState { RemainingSeconds = 120, TimerRunning = true },
+    staged =>
+    {
+        externalWrites++;
+        Require(staged.RemainingSeconds == 1,
+            "external signal did not stage authoritative one-second session");
+        throw new IOException("simulated external timer storage outage");
+    }, startTicker: false))
+{
+    var announcements = 0;
+    engine.RemainingChanged += _ => announcements++;
+    engine.ActiveChanged += _ => announcements++;
+    engine.SetAuthoritativeSeconds(1, "external board");
+    Require(engine.CreditPersistenceFaulted && engine.RemainingSeconds == 120 &&
+        announcements == 0 && externalWrites == 1,
+        "uncommitted external signal was reported as authoritative");
+    engine.SetAuthoritativeSeconds(0, "external board retry");
+    Require(externalWrites == 1 && engine.RemainingSeconds == 120,
+        "external timer retried after an uncertain checkpoint");
+}
+Console.WriteLine("EXTERNAL_AUTHORITY_UNCERTAIN_WRITE_LOCKOUT_PASS");
+
+RuntimeState? durableExternal = null;
+using (var engine = new TimerEngine(
+    new RuntimeState { RemainingSeconds = 0, TimerRunning = false },
+    staged => durableExternal = staged, startTicker: false))
+{
+    var notifications = 0;
+    engine.RemainingChanged += s =>
+    {
+        Require(durableExternal?.RemainingSeconds == s,
+            "external authority callback preceded persistence");
+        notifications++;
+    };
+    engine.ActiveChanged += active =>
+    {
+        Require(durableExternal?.TimerRunning == active,
+            "external authority lock event preceded persistence");
+        notifications++;
+    };
+    engine.SetAuthoritativeSeconds(1, "external positive");
+    Require(engine.RemainingSeconds == 1 && !engine.CreditPersistenceFaulted &&
+        durableExternal?.RemainingSeconds == 1 && notifications == 2,
+        "valid external authority did not persist then activate");
+}
+Console.WriteLine("EXTERNAL_AUTHORITY_COMMIT_ORDER_PASS");
 return 0;
