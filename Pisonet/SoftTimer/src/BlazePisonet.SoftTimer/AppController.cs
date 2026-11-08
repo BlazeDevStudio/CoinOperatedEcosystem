@@ -650,6 +650,15 @@ public sealed class AppController : IDisposable
     private async Task MaintenanceTick()
     {
         if (!Config.Enabled) return;
+        // A failed member transaction has the same uncertain on-disk state as
+        // a failed coin credit. Stop reconnecting and lock within one UI tick.
+        if (_timer.CreditPersistenceFaulted)
+        {
+            if (_serial.IsConnected) _serial.Disconnect();
+            HardwareStatus = "PAID STATE STORAGE FAULT · operator recovery required";
+            EvaluateLockState();
+            return;
+        }
         if (Config.TimerSource is TimerSourceMode.InternalPcTimer or TimerSourceMode.ExternalTimerBoard && Config.CoinTopology != CoinTopologyMode.CentralizedStation)
         {
             // Keep the coin input disconnected after an uncertain credit save.

@@ -39,3 +39,7 @@ The destination `SerialHardware.TryGetSignal` exposes whether a modem-control le
 ## Post-fault countdown and access control (2026-11-08)
 
 When a coin save raises an uncertain persistence error, `TimerEngine.Tick` now stops spending or rewriting paid time. The source-linked `TimerCreditCommitGuard` invokes the real private periodic callback in a disposable injected-storage engine and asserts no further debit or save. `AppController.EvaluateLockState` also treats `CreditPersistenceFaulted` as a customer lock condition, while admin maintenance remains available. This avoids infinite free play after the countdown is halted. Hardware lock behavior still needs Windows integration proof.
+
+## Banked-time financial write isolation (2026-11-08)
+
+Destination-only `TimerEngine` member banking, restoration, transfers and member-password updates now stage deep-copied paid state and persist before publication. Failed/ambiguous disk saves latch the existing financial persistence fault so no original member objects or callbacks are mutated. A periodic maintenance check locks the customer, disconnects the serial acceptor and blocks automatic reconnect after such a failure. The new `tests/MemberTimeCommitGuard` compiles the actual production timer and storage source and injects failing writes, checks unchanged original account references, and checks success ordering. Future audit must cover other persistence methods, recovery after power loss, and installed Windows UI lifecycle.

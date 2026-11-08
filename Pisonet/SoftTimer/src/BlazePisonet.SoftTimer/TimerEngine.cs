@@ -177,6 +177,48 @@ public sealed class TimerEngine : IDisposable
         Audit?.Invoke(paused ? "Timer paused" : "Timer resumed");
     }
 
+    // Clone *all* paid state before financial member mutations. A staged
+    // change must not leak through MemberAccount references before disk commit.
+    private static RuntimeState ClonePaidState(RuntimeState original) => new()
+    {
+        RemainingSeconds = original.RemainingSeconds,
+        TimerRunning = original.TimerRunning,
+        UpdatedUtc = original.UpdatedUtc,
+        SalesPulseCount = original.SalesPulseCount,
+        AppliedEventIds = new HashSet<string>(original.AppliedEventIds,
+            StringComparer.OrdinalIgnoreCase),
+        Members = original.Members.ToDictionary(x => x.Key, x => CloneMember(x.Value),
+            StringComparer.OrdinalIgnoreCase),
+        RemoteMembers = original.RemoteMembers.ToDictionary(x => x.Key, x => CloneMember(x.Value),
+            StringComparer.OrdinalIgnoreCase),
+        RemoteMemberRevision = original.RemoteMemberRevision,
+        PendingMemberOperation = original.PendingMemberOperation is { } p
+            ? new PendingMemberOperation
+            {
+                Action = p.Action, Username = p.Username, MemberToken = p.MemberToken,
+                EventId = p.EventId, Seconds = p.Seconds,
+                MemberRevision = p.MemberRevision, CreatedUtc = p.CreatedUtc
+            }
+            : null
+    };
+
+    // Caller holds _gate. Publish only after durable write is acknowledged;
+    // any uncertain persistence failure latches the same lockout as a coin.
+    private void CommitFinancialStateLocked(RuntimeState staged)
+    {
+        if (_creditPersistenceFaulted)
+            throw new InvalidOperationException(
+                "Paid-state persistence is uncertain; operator recovery required.");
+        try { _persistState(staged); }
+        catch (Exception ex)
+        {
+            _creditPersistenceFaulted = true;
+            throw new IOException(
+                "Paid-state write result is uncertain; session and credits suspended.", ex);
+        }
+        _state = staged;
+    }
+
     public bool CreateOrUpdateMember(string username, string password)
     {
         username = username.Trim();
@@ -184,7 +226,10 @@ public sealed class TimerEngine : IDisposable
         var hp = Passwords.HashMemberPassword(password);
         lock (_gate)
         {
-            _state.Members[username] = new MemberAccount
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
+            var next = ClonePaidState(_state);
+            next.Members[username] = new MemberAccount
             {
                 Username = username,
                 Enabled = true,
@@ -192,10 +237,11 @@ public sealed class TimerEngine : IDisposable
                 PasswordRounds = 120000,
                 PasswordSalt = hp.Salt,
                 PasswordHash = hp.Hash,
-                BankedSeconds = _state.Members.TryGetValue(username, out var old) ? old.BankedSeconds : 0,
+                BankedSeconds = next.Members.TryGetValue(username, out var old)
+                    ? old.BankedSeconds : 0,
                 UpdatedUtc = DateTimeOffset.UtcNow
             };
-            Storage.SaveState(_state);
+            CommitFinancialStateLocked(next);
         }
         Audit?.Invoke($"Member account created/updated: {username}");
         return true;
@@ -203,17 +249,26 @@ public sealed class TimerEngine : IDisposable
 
     public bool BankCurrentTime(string username, string password)
     {
+        bool wasActive;
         lock (_gate)
         {
-            if (!_state.Members.TryGetValue(username, out var member) || !Passwords.VerifyMemberPassword(member, password)) return false;
-            member.BankedSeconds += Math.Max(0, _state.RemainingSeconds);
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
+            if (!_state.Members.TryGetValue(username, out var original) ||
+                !Passwords.VerifyMemberPassword(original, password)) return false;
+            var next = ClonePaidState(_state);
+            var member = next.Members[username];
+            wasActive = next.RemainingSeconds > 0;
+            member.BankedSeconds = checked(member.BankedSeconds + Math.Max(0, next.RemainingSeconds));
             member.UpdatedUtc = DateTimeOffset.UtcNow;
-            _state.RemainingSeconds = 0;
-            _state.TimerRunning = false;
-            Storage.SaveState(_state);
+            next.RemainingSeconds = 0;
+            next.TimerRunning = false;
+            next.UpdatedUtc = DateTimeOffset.UtcNow;
+            CommitFinancialStateLocked(next);
+            ResetTickClock();
         }
         RemainingChanged?.Invoke(0);
-        ActiveChanged?.Invoke(false);
+        if (wasActive) ActiveChanged?.Invoke(false);
         Audit?.Invoke($"Time banked to member: {username}");
         return true;
     }
@@ -221,21 +276,30 @@ public sealed class TimerEngine : IDisposable
     public bool RestoreMemberTime(string username, string password)
     {
         long restored;
+        long remaining;
+        bool wasActive;
         lock (_gate)
         {
-            if (!_state.Members.TryGetValue(username, out var member) || !Passwords.VerifyMemberPassword(member, password)) return false;
-            restored = member.BankedSeconds;
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
+            if (!_state.Members.TryGetValue(username, out var original) ||
+                !Passwords.VerifyMemberPassword(original, password)) return false;
+            restored = original.BankedSeconds;
             if (restored <= 0) return true;
-            _state.RemainingSeconds += restored;
-            _state.TimerRunning = true;
+            var next = ClonePaidState(_state);
+            wasActive = next.RemainingSeconds > 0;
+            next.RemainingSeconds = checked(next.RemainingSeconds + restored);
+            next.TimerRunning = true;
+            var member = next.Members[username];
             member.BankedSeconds = 0;
             member.UpdatedUtc = DateTimeOffset.UtcNow;
-            _state.UpdatedUtc = DateTimeOffset.UtcNow;
+            next.UpdatedUtc = DateTimeOffset.UtcNow;
+            CommitFinancialStateLocked(next);
             ResetTickClock();
-            Storage.SaveState(_state);
+            remaining = next.RemainingSeconds;
         }
-        RemainingChanged?.Invoke(RemainingSeconds);
-        ActiveChanged?.Invoke(true);
+        RemainingChanged?.Invoke(remaining);
+        if (!wasActive) ActiveChanged?.Invoke(true);
         Audit?.Invoke($"Member time restored: {username}; {restored}s");
         return true;
     }
@@ -245,12 +309,21 @@ public sealed class TimerEngine : IDisposable
         if (seconds <= 0) return false;
         lock (_gate)
         {
-            if (!_state.Members.TryGetValue(fromUser, out var from) || !_state.Members.TryGetValue(toUser, out var to)) return false;
-            if (!Passwords.VerifyMemberPassword(from, fromPassword) || from.BankedSeconds < seconds) return false;
-            from.BankedSeconds -= seconds;
-            to.BankedSeconds += seconds;
-            from.UpdatedUtc = to.UpdatedUtc = DateTimeOffset.UtcNow;
-            Storage.SaveState(_state);
+            if (_creditPersistenceFaulted)
+                throw new InvalidOperationException("Paid-state recovery required.");
+            if (!_state.Members.TryGetValue(fromUser, out var from) ||
+                !_state.Members.TryGetValue(toUser, out var to)) return false;
+            if (!Passwords.VerifyMemberPassword(from, fromPassword) ||
+                from.BankedSeconds < seconds) return false;
+            // No-op for transfers to the same case-insensitive member identity.
+            if (ReferenceEquals(from, to)) return true;
+            var next = ClonePaidState(_state);
+            var debited = next.Members[fromUser];
+            var credited = next.Members[toUser];
+            debited.BankedSeconds = checked(debited.BankedSeconds - seconds);
+            credited.BankedSeconds = checked(credited.BankedSeconds + seconds);
+            debited.UpdatedUtc = credited.UpdatedUtc = DateTimeOffset.UtcNow;
+            CommitFinancialStateLocked(next);
         }
         Audit?.Invoke($"Member transfer: {fromUser} -> {toUser}; {seconds}s");
         return true;

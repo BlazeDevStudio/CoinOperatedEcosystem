@@ -54,6 +54,10 @@ jobs:
         run: |
           dotnet run --project ./tests/TimerCreditCommitGuard/TimerCreditCommitGuard.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Timer credit commit guard failed' }
+      - name: Source-linked member time banking restoration and transfer financial guard
+        run: |
+          dotnet run --project ./tests/MemberTimeCommitGuard/MemberTimeCommitGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Member time persistence guard failed' }
       - name: Publish unsigned Windows x64 lab diagnostic build
         run: |
           dotnet publish ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./lab-output
