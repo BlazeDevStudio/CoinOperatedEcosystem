@@ -1,5 +1,5 @@
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "description": "Blaze PisoWiFi-only first-party public MIT source recovery; no commercial production authorization.",
   "source": {
     "repository": "BlazeDevStudio/BlazingSystems-Experiments",
@@ -11,7 +11,7 @@
   "destination": {
     "repository": "BlazeDevStudio/CoinOperatedEcosystem",
     "branch": "feature/pisowifi-cleanup-stabilization",
-    "verified_source_head_before_manifest": "2ff8c618fb9f546a80dd7bc4f618b40503236594",
+    "verified_source_head_before_manifest": "cf59b41e5273bcc42acf59a7971481670e4b2611",
     "root": "Pisowifi/"
   },
   "summary": {
@@ -103,7 +103,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/config.sh",
       "source_git_blob": "7bde717f02d6f1d90ca099ab29bff336824ad81f",
-      "destination_git_blob": "2c005528058275a4ad25d25470dd697aa5a51edd",
+      "destination_git_blob": "4535ef6993185208fb3b098842a0f8d69e71d5c7",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -299,7 +299,7 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/admin",
       "source_git_blob": "2fc9615c3a2f101ecc2e7d01a35d5bb67883d58e",
-      "destination_git_blob": "87a0a78daa4fae08ae7db84b9b0ce165108a56cc",
+      "destination_git_blob": "6ec03db26a43d6669c067e452f6c0098bd2c8051",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -455,7 +455,7 @@
     {
       "path": "tests/config.sh",
       "source_git_blob": "a42a7d5ef27169f5aa72e7bf8d19b8637fbd3d80",
-      "destination_git_blob": "4b1178a1c1242987b7a34fe8086e1273fe812b99",
+      "destination_git_blob": "d585b772538030bac20400197a981639eb3dd4b2",
       "git_mode": "100755",
       "status": "derived_fixture_repair_unexecuted"
     },
@@ -529,7 +529,7 @@
     },
     {
       "path": "tests/config_faults.sh",
-      "git_blob": "48c3b75af85285cc223ef967b9a99e290ac15873",
+      "git_blob": "8e8053f709d53e78cef154ee9b6d0242075bebf7",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -543,21 +543,28 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "03f0d35a63c140420d9c2e904ab96a0eba7ef452",
+      "git_blob": "cdca7e1e9e44397a80de3fa841a9caea278ac044",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
     },
     {
       "path": "tests/config_concurrency.sh",
-      "git_blob": "9ebcd67fe022c28d82054c70172efaee070c57a2",
+      "git_blob": "f8eaa2c0bc3cd1018942fe4bed7511a65db1118d",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
     },
     {
       "path": "tests/admin_config_result.sh",
-      "git_blob": "d8c8d8fc74bcbc66f87fc9f044cb9b2dc023d2aa",
+      "git_blob": "975b3245d078e33faa54f22ac9fb5af0bfe49cf0",
+      "mode": "100755",
+      "github_actions_status": "NOT_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/config_apply_failclosed.sh",
+      "git_blob": "e6a6af64999769d5481506e7ee64e3934f4ae909",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -571,5 +578,6 @@
     "openwrt/paid-authority/src/v060_journal_authority.c",
     "openwrt/lab-native/Makefile"
   ],
-  "note_pass07": "Pass07 source lock protects config_set() cooperating writers around snapshot->commit->apply->rollback; exact old config Git SHA da6319d5136f02f3b1d474460a91ccfef62dc449 reproduced RED racing a second writer. Corrected config Git SHA 2c005528058275a4ad25d25470dd697aa5a51edd and tests config_concurrency.sh 9ebcd67fe022c28d82054c70172efaee070c57a2, config_faults.sh 48c3b75af85285cc223ef967b9a99e290ac15873 passed local POSIX sh and BusyBox ash. Admin CGI full Git SHA 87a0a78daa4fae08ae7db84b9b0ce165108a56cc; exact extracted case blob SHA 49651cf8f363a7d77c94fcdec5831e74f4a4888f passed seven local isolated arm checks in sh and BusyBox ash using new admin_config_result.sh d8c8d8fc74bcbc66f87fc9f044cb9b2dc023d2aa. Full checkout, original full CGI, real UCI, and GitHub Actions NOT RUN."
+  "note_pass07": "Pass07 source lock protects config_set() cooperating writers around snapshot->commit->apply->rollback; exact old config Git SHA da6319d5136f02f3b1d474460a91ccfef62dc449 reproduced RED racing a second writer. Corrected config Git SHA 2c005528058275a4ad25d25470dd697aa5a51edd and tests config_concurrency.sh 9ebcd67fe022c28d82054c70172efaee070c57a2, config_faults.sh 48c3b75af85285cc223ef967b9a99e290ac15873 passed local POSIX sh and BusyBox ash. Admin CGI full Git SHA 87a0a78daa4fae08ae7db84b9b0ce165108a56cc; exact extracted case blob SHA 49651cf8f363a7d77c94fcdec5831e74f4a4888f passed seven local isolated arm checks in sh and BusyBox ash using new admin_config_result.sh d8c8d8fc74bcbc66f87fc9f044cb9b2dc023d2aa. Full checkout, original full CGI, real UCI, and GitHub Actions NOT RUN.",
+  "note_pass08": "2026-11-09 Pass 08: config_apply executable preflight; missing script returns clean refusal rc7 without UCI changes, lost/failed apply after commit returns uncertain live state rc8, confirmed UCI revert without false live rollback guarantee. Source config Git SHA 4535ef6993185208fb3b098842a0f8d69e71d5c7; admin CGI Git SHA 6ec03db26a43d6669c067e452f6c0098bd2c8051 and extracted exact config-arm Git SHA ca291ac70125065b5d964294bc9ea7173dd4a2c6. Exact local test blobs config_faults=8e8053f709d53e78cef154ee9b6d0242075bebf7, config_concurrency=f8eaa2c0bc3cd1018942fe4bed7511a65db1118d, config_apply_failclosed=e6a6af64999769d5481506e7ee64e3934f4ae909, admin_config_result=975b3245d078e33faa54f22ac9fb5af0bfe49cf0 all PASS under sh and BusyBox ash. 18+3+9+8 = 38 checks each shell. This is a partially reconstructed Git-blob-verified test subset, not full GitHub checkout/CI, real UCI, real firewall or router."
 }
