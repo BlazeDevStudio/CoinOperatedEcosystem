@@ -1,5 +1,8 @@
 """Host-only fault injection for the standalone local ledger, NOT flash power-loss certification."""
 import concurrent.futures
+import hashlib
+import hmac
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -9,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / 'openwrt/bin/blazerentalctl'
 LIB = ROOT / 'openwrt/lib/core.sh'
+CGI = ROOT / 'openwrt/cgi-bin/blazerental'
 
 
 class LedgerDurability(unittest.TestCase):
@@ -151,6 +155,21 @@ class LedgerDurability(unittest.TestCase):
     def test_busybox_shell_syntax(self):
         for filename in [CLI, LIB]:
             self.assertEqual(subprocess.run(['busybox','sh','-n',str(filename)], capture_output=True).returncode, 0)
+
+    def test_http_status_denies_pending_after_rename(self):
+        nonce = 'deadbeef00112233deadbeef00112233'
+        sig = hmac.new(bytes.fromhex(self.identity['device_secret']),
+                       f'v1|status|{self.did}|{nonce}'.encode(), hashlib.sha256).hexdigest()
+        env = self.env | {'REQUEST_METHOD': 'GET', 'QUERY_STRING':
+                          f'action=status&device_id={self.did}&nonce={nonce}&sig={sig}'}
+        def http():
+            cp = subprocess.run(['sh', str(CGI)], env=env,
+                                capture_output=True, text=True, timeout=15)
+            self.assertEqual(cp.returncode, 0, cp.stderr)
+            return json.loads(cp.stdout.partition('\n\n')[2])
+        self.assertTrue(http()['ok'])
+        (self.state / '.pending').write_text('PENDING\n')
+        self.assertFalse(http()['ok'])
 
     def test_registration_does_not_emit_key_when_sync_fails(self):
         before = (self.state / 'state.tsv').read_bytes()
