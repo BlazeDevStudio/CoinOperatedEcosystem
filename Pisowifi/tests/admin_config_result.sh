@@ -45,6 +45,10 @@ require_text "$out" '"ok":false'
 require_text "$out" 'configuration state uncertain'
 if printf '%s\n' "$out" | grep -Fq 'rolled back'; then echo 'FAIL false rollback confirmation' >&2; exit 1; fi
 printf 'PASS uncertain configuration state gets explicit failure\n'
+out="$(TEST_ACTION=config_set TEST_SET_RC=7 run)"
+require_text "$out" '"ok":false'
+require_text "$out" 'no setting modified'
+printf 'PASS missing apply program does not claim a committed change\n'
 out="$(TEST_ACTION=config_set TEST_SET_RC=1 run)"
 require_text "$out" '"ok":false'
 require_text "$out" 'inspect live service state'

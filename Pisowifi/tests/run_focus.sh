@@ -9,6 +9,7 @@ for test_file in \
   nft_membership_failclosed.sh \
   nft_account_binding_guard.sh \
   config_faults.sh \
+  config_apply_failclosed.sh \
   config_concurrency.sh \
   admin_config_result.sh \
   config_fixture_smoke.sh

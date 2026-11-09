@@ -71,6 +71,8 @@ export BP_MEMBER_MIGRATION_LIB="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/member_m
 export BP_CONSOLE_OPS_LIB="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh"
 export BP_REMOTE_APPLY_LIB="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/remote_apply.sh"
 export BP_AUTH_NOW=2000000000 SERVER_PORT=8443 REMOTE_ADDR=10.0.0.9
+# The historical fake-UCI fixture has no live service apply implementation.
+export BP_CONFIG_APPLY_HOOK=true
 
 CONFIG="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/config.sh"
 LOGIN="$ROOT/openwrt/rootfs/www/blazepwifi/cgi-bin/admin-login"
@@ -95,7 +97,7 @@ bp_config_set admin_port 9443
 export BP_CONFIG_APPLY_HOOK=false
 ! bp_config_set admin_port 9555
 [ "$(uci -q get blazepwifi.main.admin_port)" = 9443 ]
-unset BP_CONFIG_APPLY_HOOK
+export BP_CONFIG_APPLY_HOOK=true
 export SERVER_PORT=9443
 
 . "$BP_AUTH_LIB"

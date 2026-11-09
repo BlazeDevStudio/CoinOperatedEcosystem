@@ -86,20 +86,35 @@ bp_config_restore() (
 	uci commit blazepwifi || return 8
 )
 
+# Applying live configuration requires a real, executable apply program.
+# Test operators may select a single trusted executable; never evaluate shell
+# strings. The installed runtime path is fixed, not a user-configurable UCI key.
+bp_config_apply_program() {
+	case "${BP_CONFIG_APPLY_HOOK:-}" in
+		'') printf '%s\n' /usr/lib/blazepwifi/apply-config.sh ;;
+		*[!A-Za-z0-9_./-]*|-*) return 7 ;;
+		*) printf '%s\n' "$BP_CONFIG_APPLY_HOOK" ;;
+	esac
+}
+
+bp_config_apply_preflight() (
+	program="$(bp_config_apply_program)" || return 7
+	case "$program" in
+		*/*) [ -f "$program" ] && [ -x "$program" ] ;;
+		*) command -v "$program" >/dev/null 2>&1 ;;
+	esac || {
+		echo "configuration apply executable unavailable; no UCI change permitted" >&2
+		return 7
+	}
+)
+
 bp_config_apply() {
-	if [ -n "${BP_CONFIG_APPLY_HOOK:-}" ]; then
-		# Development hook is ONE executable, not a shell program to eval.
-		# The production path below remains a fixed, absolute script path.
-		case "$BP_CONFIG_APPLY_HOOK" in
-			*[!A-Za-z0-9_./-]*|-*) return 1 ;;
-		esac
-		"$BP_CONFIG_APPLY_HOOK" || return 1
-		return 0
-	fi
-	if [ -x /usr/lib/blazepwifi/apply-config.sh ]; then
-		/usr/lib/blazepwifi/apply-config.sh || return 1
-	fi
-	return 0
+	bp_config_apply_preflight || return 7
+	program="$(bp_config_apply_program)" || return 7
+	"$program" || {
+		echo "CRITICAL: live configuration apply failed or disappeared" >&2
+		return 8
+	}
 }
 
 # Serialize the full snapshot -> commit -> apply -> rollback transaction.
@@ -119,6 +134,8 @@ bp_config_set() (
 	[ ! -e "$config_lock" ] || [ -f "$config_lock" ] || return 8
 	exec 8>"$config_lock" || return 8
 	flock -w 10 8 || return 8
+	# Refuse to commit options that the installed firmware cannot apply.
+	bp_config_apply_preflight || return 7
 	# A failed UCI get is ambiguous: the option may exist but its read failed.
 	# Check a readable section snapshot first, and never treat an unreadable
 	# existing option (or unreadable section) as an absent option to delete.
@@ -152,7 +169,10 @@ bp_config_set() (
 			echo "CRITICAL: UCI rollback failed after config apply rejection: $key" >&2
 			return 8
 		fi
-		return 1
+		# Restoring UCI cannot prove that partially applied uhttpd/firewall
+		# state was restored; never report an ordinary reversible failure.
+		echo "CRITICAL: UCI restored, but live configuration state unverified: $key" >&2
+		return 8
 	fi
 	if command -v bp_auth_audit >/dev/null 2>&1; then
 		bp_auth_audit config_change "${BP_AUTH_USER:-local}" "${REMOTE_ADDR:-local}" "$key"

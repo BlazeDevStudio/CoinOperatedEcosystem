@@ -75,7 +75,7 @@ wait "$A" || true
 wait "$B" || true
 [ -f "$T/a.status" ] || { echo "FAIL A status missing" >&2; exit 1; }
 [ -f "$T/b.status" ] || { echo "FAIL B status missing" >&2; exit 1; }
-[ "$(cat "$T/a.status")" = 1 ] || { echo "FAIL A status unexpected" >&2; exit 1; }
+[ "$(cat "$T/a.status")" = 8 ] || { echo "FAIL A status unexpected" >&2; exit 1; }
 [ "$(cat "$T/b.status")" = 0 ] || { echo "FAIL B status unexpected" >&2; exit 1; }
 [ "$(uci get blazepwifi.main.admin_port)" = 9555 ] || { echo "FAIL final config wrong" >&2; exit 1; }
 printf 'PASS concurrent config writes are serialized across apply and rollback\n'

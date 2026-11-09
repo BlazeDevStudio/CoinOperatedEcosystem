@@ -642,6 +642,7 @@ EOF
     else
       rc=$?
       case "$rc" in
+        7) bp_fail "configuration apply program unavailable; no setting modified" ;;
         8) bp_fail "configuration state uncertain; operator inspection required" ;;
         *) bp_fail "configuration change failed; inspect live service state before retry" ;;
       esac

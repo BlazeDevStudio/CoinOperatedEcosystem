@@ -58,7 +58,7 @@ get_port() { uci get blazepwifi.main.admin_port; }
 reset() {
   rm -f "$T"/fail_* "$T/injected"
   printf '%s\n' 'blazepwifi.main.admin_port=8443' > "$T/uci.db"
-  unset BP_CONFIG_APPLY_HOOK
+  BP_CONFIG_APPLY_HOOK=true; export BP_CONFIG_APPLY_HOOK
   : > "$T/audit"
 }
 bp_auth_audit() { printf 'called\n' >> "$T/audit"; }
@@ -93,13 +93,14 @@ printf 'PASS truly absent option can be configured\n'
 reset
 BP_CONFIG_APPLY_HOOK=false; export BP_CONFIG_APPLY_HOOK
 run_set 9443
-[ "$rc" -eq 1 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
-printf 'PASS apply failure restores old value without auditing\n'
+[ "$rc" -eq 8 ] && [ "$(get_port)" = 8443 ] && [ ! -s "$T/audit" ]
+grep -Fq 'CRITICAL: UCI restored, but live configuration state unverified' "$T/stderr"
+printf 'PASS failed apply restores UCI but leaves live status uncertain\n'
 reset
 : > "$T/uci.db"
 BP_CONFIG_APPLY_HOOK=false; export BP_CONFIG_APPLY_HOOK
 run_set 9443
-[ "$rc" -eq 1 ] && [ -z "$(cat "$T/uci.db")" ] && [ ! -s "$T/audit" ]
+[ "$rc" -eq 8 ] && [ -z "$(cat "$T/uci.db")" ] && [ ! -s "$T/audit" ]
 printf 'PASS absent option restored by delete on failed apply\n'
 reset
 touch "$T/fail_commit_once"
