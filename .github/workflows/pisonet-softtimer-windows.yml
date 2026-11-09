@@ -92,6 +92,59 @@ jobs:
           foreach ($file in @('BlazePisonet.SoftTimer.exe', 'BlazePisonet.SoftTimer.Watchdog.exe')) {
             if (-not (Test-Path "./out/bundle/$file")) { throw "Missing payload: $file" }
           }
+      - name: Produce genuine self-contained lab EXEs and a blocked partial ZIP
+        run: |
+          & ./build-local.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone publish command failed' }
+          $publish = Join-Path (Get-Location) 'out/lab-publish'
+          $stage = Join-Path (Get-Location) 'out/softtimer-blocked-lab'
+          $target = Join-Path $stage 'SoftTimer'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          $names = @('BlazePisonet.SoftTimer.exe', 'BlazePisonet.SoftTimer.Watchdog.exe')
+          $sums = @()
+          foreach ($name in $names) {
+            $source = Join-Path $publish $name
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Get-Item -LiteralPath $source).Length -le 0) { throw "Missing or empty executable: $name" }
+            $dest = Join-Path $target $name
+            Copy-Item -LiteralPath $source -Destination $dest -ErrorAction Stop
+            $item = Get-Item -LiteralPath $dest
+            $hash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+            $sums += "$hash  SoftTimer/$name"
+            Write-Host "LAB_PAYLOAD $name BYTES $($item.Length) SHA256 $hash"
+          }
+          @(
+            'NO-GO FOR SHOP INSTALL. Spare-machine lab inspection only; never install on a counter taking customer money.',
+            'Only the two Windows self-contained unsigned executables built successfully. This ZIP is not the requested full BlazeCoin installer.',
+            'On an isolated spare Windows PC: run SoftTimer/BlazePisonet.SoftTimer.exe for the application and SoftTimer/BlazePisonet.SoftTimer.Watchdog.exe for its separate watchdog.',
+            'Do not connect a coin acceptor or authorize payments. Physical serial identity, persistence and anti-rollback remain unapproved.'
+          ) | Set-Content -LiteralPath (Join-Path $stage 'INSTALL.txt') -Encoding utf8
+          @(
+            'NO-GO — BLOCKED PARTIAL BUNDLE',
+            'Router image NOT BUILT: Pisowifi draft has only a rootfs overlay and no documented exact shop board/ImageBuilder profile.',
+            'Rental APK NOT BUILT: Rental/android lacks ./gradlew; no APK or existing signing setup confirmed.',
+            'ESP8266 binaries NOT BUILT: both Labs READMEs omit an exact board/FQBN; the sketch cannot be compiled against a guessed target.',
+            'No router sysupgrade, adb install or esptool flash command is issued for nonexistent binaries.',
+            'Experiments issues #31 #32 #34 #43 #164 #177 remain OPEN; payment admission stays denied.'
+          ) | Set-Content -LiteralPath (Join-Path $stage 'BUILD_FAILED.txt') -Encoding utf8
+          foreach ($file in @('INSTALL.txt', 'BUILD_FAILED.txt')) {
+            $h = (Get-FileHash -LiteralPath (Join-Path $stage $file) -Algorithm SHA256).Hash.ToLowerInvariant()
+            $sums += "$h  $file"
+          }
+          $sums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS') -Encoding ascii
+          $zip = Join-Path (Get-Location) 'out/BlazeCoin-SoftTimer-NO-GO-20261109.zip'
+          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal -ErrorAction Stop
+          $archive = Get-Item -LiteralPath $zip
+          if ($archive.Length -le 0) { throw 'Missing/empty partial lab ZIP' }
+          $digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PARTIAL_ZIP $($archive.Name) BYTES $($archive.Length) SHA256 $digest STATUS BLOCKED"
+      - name: Upload Windows-only blocked lab ZIP (not a full install bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazeCoin-SoftTimer-NO-GO-20261109
+          path: Pisonet/SoftTimer/out/BlazeCoin-SoftTimer-NO-GO-20261109.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify literal NSIS installation layout before packaging
         run: |
           & ./tests/InstallerLayoutGuard/validate.ps1
