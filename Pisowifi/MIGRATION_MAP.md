@@ -101,6 +101,8 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 | `Pisowifi/tests/admin_config_result.sh` | `975b3245d078e33faa54f22ac9fb5af0bfe49cf0` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_apply_failclosed.sh` | `e6a6af64999769d5481506e7ee64e3934f4ae909` | locally derived; source retained where applicable; CI NOT_RUN |
 
+| `Pisowifi/tests/member_crash_atomicity_red.sh` | `39d851f8cdfa425d836620efd8680a142d858bf0` | locally authored #31 expected-RED failure-injection regression; sh -n checked; full source test NOT_RUN |
+
 ## Other provenance
 
 - `Pisowifi/LICENSE` is the imported first-party license, recorded as blob `1ee55b94183417be977ca287cd7391f9a6f7e721`.
