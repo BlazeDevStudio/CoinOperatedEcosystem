@@ -205,14 +205,40 @@ public static class Storage
         return state;
     }
 
-    public static void SaveState(RuntimeState state)
+    public static void SaveState(RuntimeState state) =>
+        SaveStateToPath(StatePath, state, DateTimeOffset.UtcNow);
+
+    // Production uses this exact writer; tests provide only a disposable
+    // destination and clock. Do not mutate caller-owned state on failure.
+    internal static void SaveStateToPath(string path, RuntimeState state, DateTimeOffset now)
     {
-        state.UpdatedUtc = DateTimeOffset.UtcNow;
-        if (state.AppliedEventIds.Count > 2048)
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.RemainingSeconds < 0 || state.SalesPulseCount < 0 ||
+            state.RemoteMemberRevision < 0 || state.AppliedEventIds is null ||
+            state.Members is null || state.RemoteMembers is null ||
+            state.AppliedEventIds.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("Cannot persist invalid financial state.");
+
+        // Never silently truncate historical event identities. Removing an
+        // old ID permits a replay of already-paid coin/member events. A
+        // future bounded ledger requires an explicit durable tombstone design,
+        // not an arbitrary HashSet length threshold.
+        var snapshot = new RuntimeState
         {
-            state.AppliedEventIds = state.AppliedEventIds.TakeLast(1024).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        }
-        AtomicWrite(StatePath, JsonSerializer.Serialize(state, JsonOptions));
+            RemainingSeconds = state.RemainingSeconds,
+            TimerRunning = state.TimerRunning,
+            UpdatedUtc = now,
+            SalesPulseCount = state.SalesPulseCount,
+            AppliedEventIds = new HashSet<string>(
+                state.AppliedEventIds, StringComparer.OrdinalIgnoreCase),
+            Members = new Dictionary<string, MemberAccount>(
+                state.Members, StringComparer.OrdinalIgnoreCase),
+            RemoteMembers = new Dictionary<string, MemberAccount>(
+                state.RemoteMembers, StringComparer.OrdinalIgnoreCase),
+            RemoteMemberRevision = state.RemoteMemberRevision,
+            PendingMemberOperation = state.PendingMemberOperation
+        };
+        AtomicWrite(path, JsonSerializer.Serialize(snapshot, JsonOptions));
     }
 
     public static void AtomicWrite(string path, string content)

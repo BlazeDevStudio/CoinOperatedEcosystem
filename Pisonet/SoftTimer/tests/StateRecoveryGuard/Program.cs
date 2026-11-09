@@ -108,6 +108,50 @@ try
         "a rejected write must preserve primary, backup and pending evidence");
     Console.WriteLine("STATE_ATOMIC_WRITE_GUARD_PASS: replace, backup and unresolved temporary preservation");
 
+    // Financial regression: the previous writer silently removed older IDs
+    // above 2,048 entries. A later duplicate could then be credited again.
+    var historyPath = Path.Combine(root, "large-paid-state.json");
+    var historicalId = "coin:oldest:already-paid";
+    var allIds = Enumerable.Range(0, 2600).Select(i => $"coin:entry:{i:0000}")
+        .Append(historicalId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var beforeSave = now.AddMinutes(-17);
+    var largeState = new RuntimeState {
+        RemainingSeconds = 4300,
+        TimerRunning = true,
+        UpdatedUtc = beforeSave,
+        SalesPulseCount = 2601,
+        AppliedEventIds = allIds
+    };
+    Storage.SaveStateToPath(historyPath, largeState, now);
+    Require(largeState.AppliedEventIds.Count == 2601 &&
+        largeState.UpdatedUtc == beforeSave &&
+        largeState.AppliedEventIds.Contains(historicalId),
+        "persistence must not mutate caller-owned timestamps or event history");
+    var largeRecovered = Storage.LoadStateFromPath(historyPath, now);
+    Require(largeRecovered.AppliedEventIds.Count == 2601 &&
+        largeRecovered.AppliedEventIds.Contains("COIN:OLDEST:ALREADY-PAID") &&
+        largeRecovered.SalesPulseCount == 2601 &&
+        largeRecovered.RemainingSeconds == 4300,
+        "recovery must retain every older event and sales total after the 2048 threshold");
+    largeState.AppliedEventIds.Add("coin:new-credit");
+    Storage.SaveStateToPath(historyPath, largeState, now);
+    var afterSecondSave = Storage.LoadStateFromPath(historyPath, now);
+    Require(afterSecondSave.AppliedEventIds.Count == 2602 &&
+        afterSecondSave.AppliedEventIds.Contains(historicalId) &&
+        afterSecondSave.AppliedEventIds.Contains("coin:new-credit"),
+        "a subsequent credit must retain deduplication of older coins");
+    Require(File.Exists(historyPath + ".bak"),
+        "successful replacement must leave previous committed history as backup");
+    File.WriteAllText(historyPath + ".tmp", "unresolved paid credit");
+    MustReject(() => Storage.SaveStateToPath(historyPath, largeState, now),
+        "pending financial write cannot discard historical replay evidence");
+    Require(largeState.UpdatedUtc == beforeSave &&
+        largeState.AppliedEventIds.Count == 2602 &&
+        File.ReadAllText(historyPath + ".tmp") == "unresolved paid credit",
+        "failed state save must not alter the original state or pending evidence");
+    Console.WriteLine("STATE_EVENT_HISTORY_NOT_PRUNED_PASS: 2602 IDs preserved and old coin remains deduplicated");
+    Console.WriteLine("STATE_SAVE_CALLER_IMMUTABLE_PASS");
+
     var defaults = new AppConfig();
     Require(!defaults.Enabled && !defaults.DtrEnabled && !defaults.RtsEnabled,
         "new installations must disable coin acceptance and DTR/RTS outputs");
