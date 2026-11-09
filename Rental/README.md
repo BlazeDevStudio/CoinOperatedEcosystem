@@ -12,3 +12,5 @@ This case-sensitive Rental/ source tree is independent of BlazePwifi, Pisonet, P
 Quick local simulated test: python3 -m unittest discover -s Rental/tests -v from repository root (requires openssl, awk, POSIX shell and Java 17).
 
 Do not execute the historical R281 installer as a means of installing this source. See docs/RECOVERY_AND_CLEANUP.md and docs/API_v1.md first.
+
+Crash-safety scope: a missing or failed `sync`, interrupted rename, or killed writer may leave `.pending` / `.lock`; both admin and read-only status must fail closed until manual reconciliation. See [`docs/DURABILITY_AND_RECOVERY.md`](docs/DURABILITY_AND_RECOVERY.md). No automatic marker clearing or paid recovery exists.
