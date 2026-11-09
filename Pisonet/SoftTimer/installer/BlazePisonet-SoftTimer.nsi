@@ -39,12 +39,13 @@ Function .onInit
   IfFileExists "$PROGRAMFILES64\BlazeSystems\BlazePisonet SoftTimer\BlazePisonet.SoftTimer.exe" 0 +3
   MessageBox MB_ICONSTOP|MB_OK "Existing SoftTimer installation detected. Do not install this lab build on an occupied PC."
   Abort
-  MessageBox MB_ICONEXCLAMATION|MB_OK "UNSIGNED LAB PREVIEW ONLY. Use a clean disposable Windows test PC or VM. Not approved for live coins or customer deployment."
+  ; The LAB package is a file-copy diagnostic only, not an upgrade. Refuse
+  ; machines already carrying the canonical paid session/configuration state.
+  IfFileExists "$COMMONAPPDATA\BlazeSystems\BlazePisonetSoftTimer\*.*" 0 +3
+  MessageBox MB_ICONSTOP|MB_OK "Existing BlazePisonet state or configuration detected. LAB installation is blocked to protect paid sessions."
+  Abort
+  MessageBox MB_ICONEXCLAMATION|MB_OK "UNSIGNED LAB PREVIEW ONLY. No startup tasks will be installed. Use a clean disposable Windows test PC or VM; no live money."
 FunctionEnd
-
-
-Var TaskResult
-Var TaskOutput
 
 
 
@@ -56,13 +57,8 @@ Section "BlazePisonet SoftTimer" SEC_MAIN
   File "..\out\bundle\BlazePisonet.SoftTimer.exe"
   File "..\out\bundle\BlazePisonet.SoftTimer.Watchdog.exe"
 
-  CreateDirectory "$APPDATA\BlazeSystems\BlazePisonetSoftTimer"
-  nsExec::ExecToStack '$\"$SYSDIR\icacls.exe$\" $\"$APPDATA\BlazeSystems\BlazePisonetSoftTimer$\" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /T /C'
-  Pop $TaskResult
-  Pop $TaskOutput
-  DetailPrint "$TaskOutput"
-
-  Delete "$APPDATA\BlazeSystems\BlazePisonetSoftTimer\maintenance.until"
+  ; No ProgramData creation/ACL changes or maintenance-file deletion from
+  ; the lab installer. Start and configure only on a disposable VM manually.
 
   CreateDirectory "$SMPROGRAMS\BlazePisonet SoftTimer LAB"
   CreateShortcut "$SMPROGRAMS\BlazePisonet SoftTimer LAB\BlazePisonet SoftTimer LAB.lnk" "$INSTDIR\BlazePisonet.SoftTimer.exe"
@@ -79,12 +75,7 @@ Section "BlazePisonet SoftTimer" SEC_MAIN
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BlazePisonetSoftTimerLab" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\BlazePisonetSoftTimerLab" "NoRepair" 1
 
-  DetailPrint "Registering SoftTimer Windows startup integration..."
-  ExecWait '"$INSTDIR\BlazePisonet.SoftTimer.exe" --install-system-integration' $TaskResult
-  ${If} $TaskResult != 0
-    SetErrorLevel 1603
-    Abort "BlazePisonet SoftTimer could not register Windows startup integration."
-  ${EndIf}
+  DetailPrint "LAB file-copy install complete; no Windows startup tasks created."
 
 SectionEnd
 
@@ -96,21 +87,9 @@ SectionEnd
 Section "Uninstall"
   SetShellVarContext all
 
-  CreateDirectory "$APPDATA\BlazeSystems\BlazePisonetSoftTimer"
-  FileOpen $0 "$APPDATA\BlazeSystems\BlazePisonetSoftTimer\maintenance.until" w
-  FileWrite $0 "4102444800"
-  FileClose $0
-
-  ExecWait '"$INSTDIR\BlazePisonet.SoftTimer.exe" --uninstall-system-integration' $TaskResult
-  DetailPrint "SoftTimer system-integration removal exit code: $TaskResult"
-
-  nsExec::ExecToStack '$\"$SYSDIR\taskkill.exe$\" /IM BlazePisonet.SoftTimer.exe /F'
-  Pop $TaskResult
-  Pop $TaskOutput
-  nsExec::ExecToStack '$\"$SYSDIR\taskkill.exe$\" /IM BlazePisonet.SoftTimer.Watchdog.exe /F'
-  Pop $TaskResult
-  Pop $TaskOutput
-
+  ; LAB uninstaller removes only its own files/shortcuts/registry keys.
+  ; Never stop another installation's SoftTimer or Watchdog process,
+  ; delete Windows tasks or touch a customer's paid-session storage.
 
   Delete "$DESKTOP\BlazePisonet SoftTimer LAB.lnk"
   Delete "$SMPROGRAMS\BlazePisonet SoftTimer LAB\BlazePisonet SoftTimer LAB.lnk"
