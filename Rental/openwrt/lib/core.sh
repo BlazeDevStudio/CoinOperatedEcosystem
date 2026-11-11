@@ -56,12 +56,12 @@ br_lock() {
         i=$((i+1)); [ "$i" -lt 5 ] || { br_die 'state locked; refusing operation'; return 1; }
         sleep 1
     done
-    trap 'rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || :' 0
+    trap 'if [ ! -e /proc/self/stat ] || [ /proc/self/stat -ef "/proc/$$/stat" ]; then rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || :; fi' 0
     trap 'exit 130' 1 2 3 15
 }
 br_unlock() {
-    rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || return 1
     trap - 0 1 2 3 15
+    rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || return 1
 }
 br_get_device() { awk -F '\t' -v id="$1" '$1=="D" && $2==id {print;exit}' "$BR_DB"; }
 br_get_receipt() { awk -F '\t' -v id="$1" '$1=="R" && $2==id {print;exit}' "$BR_DB"; }
