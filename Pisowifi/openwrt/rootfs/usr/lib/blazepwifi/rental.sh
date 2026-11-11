@@ -606,31 +606,37 @@ bp_rental_device_revoke() {
   if [ "$lease" -gt "$now" ]; then
     bp_rental_admin_unmodified_reject 6; return $?
   fi
-  for file in "$BP_RENTAL_DEVICES" "$BP_RENTAL_POLICY" "$BP_RENTAL_INVENTORY" "${BP_RENTAL_POLICY_V2:-}"; do
+  # Stage the device removal and audit event through the rental transaction
+  # journal so devices and events commit atomically.
+  if ! bp_rental_txn_begin; then
+    bp_rental_admin_unmodified_reject 8
+    return $?
+  fi
+  if ! awk -F '\t' -v d="$did" '$1!=d {print}' "$BP_RENTAL_DEVICES" > "$BP_RENTAL_TXN_DEVICES" ||
+     ! chmod 600 "$BP_RENTAL_TXN_DEVICES" ||
+     ! bp_rental_txn_event_log revoke "$did" "revoked"; then
+    bp_rental_txn_clear_stage
+    bp_paid_abort
+    return 8
+  fi
+  bp_rental_txn_commit || { bp_paid_abort; return 8; }
+  for file in "$BP_RENTAL_POLICY" "$BP_RENTAL_INVENTORY" "${BP_RENTAL_POLICY_V2:-}"; do
     [ -n "$file" ] || continue
     [ -f "$file" ] || continue
     tmp="$BP_STATE/.rental-revoke.$(bp_tmp_suffix)"
-    if ! awk -F '\t' -v d="$did" '$1!=d {print}' "$file" > "$tmp" ||
-       ! chmod 600 "$tmp" ||
-       ! mv "$tmp" "$file"; then
+    if awk -F '\t' -v d="$did" '$1!=d {print}' "$file" > "$tmp" &&
+       chmod 600 "$tmp"; then
+      mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
+    else
       rm -f "$tmp" 2>/dev/null || true
-      bp_paid_abort
-      return 8
     fi
   done
   for target_file in "$BP_TARGET_DIR"/*.tsv; do
     [ -f "$target_file" ] || continue
-    if [ "$(cut -f1 "$target_file")" = "$did" ]; then
-      if ! rm -f "$target_file"; then
-        bp_paid_abort
-        return 8
-      fi
+    if [ "$(cut -f1 "$target_file" 2>/dev/null)" = "$did" ]; then
+      rm -f "$target_file" 2>/dev/null || true
     fi
   done
-  if ! bp_rental_event_log revoke "$did" "revoked"; then
-    bp_paid_abort
-    return 8
-  fi
   bp_paid_commit || return 8
   return 0
 }

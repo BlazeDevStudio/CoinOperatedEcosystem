@@ -211,5 +211,12 @@ printf '%s' "$dup_out" | grep -q '^duplicate	' || fail "unexpected rental replay
 [ ! -e "$BP_RENTAL_TXN_COMMIT" ] || fail 'rental commit record left after recovery'
 pass 'rental coin-credit journal prevents unreceipted lease changes and rolls forward on recovery'
 
+# Verify device revocation commits through the journal and logs the revoke audit event
+printf 'dev_to_revoke\tsec_rev\t1000\tPhoneRevoke\t1000\n' >> "$BP_RENTAL_DEVICES"
+bp_rental_device_revoke dev_to_revoke || fail 'rental device revoke failed'
+grep -q '^dev_to_revoke	' "$BP_RENTAL_DEVICES" && fail 'revoked device still present in devices file'
+grep -q '	dev_to_revoke	revoked	' "$BP_RENTAL_EVENTS" || fail 'revoke event not logged in rental-events.tsv'
+pass 'rental device revoke commits atomically through transaction journal and logs audit event'
+
 echo 'ALL MEMBER & RENTAL TXN JOURNAL TESTS PASS (SIMULATED FAULTS ONLY; NO POWER-CUT PROOF)'
 
