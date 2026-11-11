@@ -39,6 +39,9 @@ jobs:
       - name: Validate appliance firmware packaging & tools
         run: python3 -m unittest discover -s tools -p 'test_*.py' -v
 
+      - name: Validate all appliance profiles & firmware staging end-to-end
+        run: python3 tools/validate_all_profiles.py
+
   esp8266:
     name: Compile ESP8266 Vendo Firmware (NO-GO)
     runs-on: ubuntu-latest

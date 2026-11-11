@@ -27,6 +27,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "archer-c6-v3",
             "gl-mt1300",
             "raspberrypi-4b",
+            "xiaomi-4a-gigabit",
+            "nanopi-r2s",
             "x86_64"
         ]
 
@@ -147,8 +149,24 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
 
+    def test_generate_network_uci_xiaomi(self):
+        p = load_profile("xiaomi-4a-gigabit")
+        uci = generate_network_uci(p)
+        self.assertIn("option name 'br-lan'", uci)
+        self.assertIn("option vlan_filtering '1'", uci)
+        self.assertIn("list ports 'lan1 lan2'", uci)
+        self.assertIn("option device 'wan'", uci)
+
+    def test_generate_network_uci_nanopi(self):
+        p = load_profile("nanopi-r2s")
+        uci = generate_network_uci(p)
+        self.assertIn("option name 'br-lan'", uci)
+        self.assertIn("list ports 'eth1'", uci)
+        self.assertIn("option device 'eth0'", uci)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

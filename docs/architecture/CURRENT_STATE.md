@@ -21,7 +21,7 @@
 | **Hardware** (ESP8266/ESP32 vendo and timer firmware) | Arduino C++ | PR #27 (`Hardware/esp32`, `Hardware/esp8266`); Labs standalone timers; Experiments PR #283 | PR #27 (`Hardware/`), Candidate PR #26 | **RECOVERING** (CI green) | **NO-GO** |
 | **CORE (COE-CORE)** (capability tiers, config transactions, nft authorization) | POSIX sh | PRs #3–#16 chain (head `d537b30f67…`) | #3–#16 | **DEVELOPING** (drafts, CI green per PR) | **NO-GO** |
 | **Shared contracts / accounting** | JSON Schema, golden vectors | PR #27 (`Shared/contracts/`); PR #24 (`member_txn_journal.sh`) | PR #27 (`Shared/`), Candidate PR #26 | **ESTABLISHED** (CI green) | **NO-GO** |
-| **Deployment / packaging** | Python 3, OpenWrt ImageBuilder, POSIX sh | `tools/package_appliance_firmware.py`, `Shared/contracts/router-profile/profiles/`, `Pisowifi/openwrt/rootfs/usr/sbin/blaze-appliance-diag` | PR #26 (Candidate Monorepo) | **OPERATIONAL** (5 profiles, CI green) | **NO-GO** |
+| **Deployment / packaging** | Python 3, OpenWrt ImageBuilder, POSIX sh | `tools/package_appliance_firmware.py`, `tools/validate_all_profiles.py`, `Shared/contracts/router-profile/profiles/`, `Pisowifi/openwrt/rootfs/usr/sbin/blaze-appliance-diag` | PR #26 (Candidate Monorepo) | **OPERATIONAL** (10 profiles, CI green) | **NO-GO** |
 
 ## 3. Interaction model (verified by reading source and docs)
 
@@ -43,7 +43,8 @@
 | Python/Java Rental tests | PR #26 HEAD | 23/23 tests PASS (with openssl/Java 17) |
 | .NET compile + Windows CI | SoftTimer WinForms (.NET 8) | **CI PASS** in `windows-lab` and `installer-lab` |
 | Arduino Firmware compile | ESP32 and ESP8266 Vendo Firmwares | **CI PASS** in `hardware-ci.yml` |
-| Appliance Packaging & Diag | ImageBuilder packaging and `blaze-appliance-diag` | **21/21 tests PASS** in `tools/test_*.py` |
+| Appliance Packaging & Diag | ImageBuilder packaging and `blaze-appliance-diag` | **25/25 tests PASS** in `tools/test_*.py` |
+| End-to-End Appliance Staging | 10 Hardware Profiles (Standalone & Rental) | **10/10 PASS** in `tools/validate_all_profiles.py` |
 
 ## 5. Not audited in this pass
 
@@ -52,10 +53,11 @@ Android sources (`BlazeRentalLauncher`, ~965 files), EasyMode, the other 20 repo
 ## 6. Status Addendum — 2026-11-11 (Hardware Appliance Bundles Architecture, Candidate PR #26)
 
 1. **Hardware Firmwares Migrated (PR #27 & PR #26):** ESP32 (`Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino`) and ESP8266 (`Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino`) firmwares are housed natively within `CoinOperatedEcosystem` with setup quarantine endpoints (`/quarantine`, `/quarantine/clear`), server response signature verification, and fresh CSPRNG nonces. Arduino CLI CI workflow `.github/workflows/hardware-ci.yml` compiles both targets and validates firmware hardening in CI.
-2. **Shared Contracts Established:** Inter-product contract specifications and golden vectors are located at `Shared/contracts/controller-signature/`, `Shared/contracts/member-bank-restore/`, and `Shared/contracts/router-profile/` with JSON schemas and automated Python validation (`Shared/tests/test_shared_contracts.py`, `test_router_profiles.py`, `test_vlan_isolation.py`). All 13 tests pass.
-3. **Turnkey Hardware Appliance Bundles Model:** Per owner direction, software is not distributed standalone; it is shipped pre-flashed/installed alongside physical hardware bundles (Ruijie RG-EW1200G Pro v1.1, Notion R281, Orange Pi R1 Plus LTS, Orange Pi Zero 3, x86_64 Mini PCs). All appliance components are unified in this monorepo.
-4. **Appliance Packaging Toolchain:** `tools/package_appliance_firmware.py` provides automated ImageBuilder profile generation and rootfs overlay staging across all 5 router hardware profiles, enforcing strict flash memory margins, DSA switch VLAN isolation, and optional Rental module bundling (`--include-rental`).
+2. **Shared Contracts Established:** Inter-product contract specifications and golden vectors are located at `Shared/contracts/controller-signature/`, `Shared/contracts/member-bank-restore/`, and `Shared/contracts/router-profile/` with JSON schemas and automated Python validation (`Shared/tests/test_shared_contracts.py`, `test_router_profiles.py`, `test_vlan_isolation.py`). All 18 tests pass across 10 hardware profiles.
+3. **Turnkey Hardware Appliance Bundles Model:** Per owner direction, software is not distributed standalone; it is shipped pre-flashed/installed alongside physical hardware bundles (Ruijie RG-EW1200G Pro v1.1, Notion R281, TP-Link Archer C6 v3, GL.iNet GL-MT1300, Orange Pi R1 Plus LTS, Orange Pi Zero 3, Raspberry Pi 4B, Xiaomi Mi Router 4A Gigabit, NanoPi R2S, x86_64 Mini PCs). All appliance components are unified in this monorepo.
+4. **Appliance Packaging Toolchain:** `tools/package_appliance_firmware.py` and `tools/validate_all_profiles.py` provide automated ImageBuilder profile generation and rootfs overlay staging across all 10 hardware profiles, enforcing strict flash memory margins, DSA switch VLAN isolation, and optional Rental module bundling (`--include-rental`).
 5. **Runtime Appliance Diagnostics:** `Pisowifi/openwrt/rootfs/usr/sbin/blaze-appliance-diag` provides invariant verification on boot (profile matching, overlay storage margin >= `min_free_overlay_kb`, journal integrity, and network bridge detection), outputting human-readable and JSON statuses. Tested across 6 cases in `tools/test_appliance_diag.py`.
 6. **Crash-Atomic Redo Journaling (Issue #31):** Two-pass redo journals are fully implemented in `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/common.sh` for both member balances and voucher redemptions (`bp_member_txn_*` and `bp_voucher_txn_*`), with fail-closed digest checking and zero partial writes on fault.
 7. **Production Gate Notice:** Production admission remains strictly **NO-GO** across all components pending independent durable witness and physical hardware power-cut testing.
+
 

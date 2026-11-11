@@ -3,11 +3,13 @@
 # Verifies profile alignment, storage margins, journal health, and networking invariants.
 set -eu
 
-BP_STATE="${BP_STATE:-/etc/blazepwifi/state}"
-BP_APPLIANCE_PROFILE="${BP_APPLIANCE_PROFILE:-/etc/blazepwifi/appliance_profile.json}"
-BP_SYSINFO_BOARD="${BP_SYSINFO_BOARD:-/tmp/sysinfo/board_name}"
-BP_SYSINFO_MODEL="${BP_SYSINFO_MODEL:-/tmp/sysinfo/model}"
+BLAZE_ROOT="${BLAZE_ROOT:-}"
+BP_STATE="${BP_STATE:-${BLAZE_ROOT}/etc/blazepwifi/state}"
+BP_APPLIANCE_PROFILE="${BP_APPLIANCE_PROFILE:-${BLAZE_ROOT}/etc/blazepwifi/appliance_profile.json}"
+BP_SYSINFO_BOARD="${BP_SYSINFO_BOARD:-${BLAZE_ROOT}/tmp/sysinfo/board_name}"
+BP_SYSINFO_MODEL="${BP_SYSINFO_MODEL:-${BLAZE_ROOT}/tmp/sysinfo/model}"
 BP_PAID_UNCERTAIN="$BP_STATE/paid-state-uncertain"
+
 
 JSON_MODE=0
 for arg in "$@"; do

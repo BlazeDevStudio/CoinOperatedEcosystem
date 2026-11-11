@@ -43,6 +43,8 @@ Shared/contracts  ←  { Pisowifi, Rental, Pisonet SoftTimer, Hardware }
   - [`profiles/orangepi-r1-plus-lts.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/orangepi-r1-plus-lts.json): Exact profile for Orange Pi R1 Plus LTS Appliance (`rockchip/arm64`, 4-core, 1GB RAM, eMMC, 2x GbE).
   - [`profiles/orangepi-zero3.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/orangepi-zero3.json): Exact profile for Orange Pi Zero 3 Appliance (`sunxi/cortexa53`, 4-core, 1GB RAM, eMMC/SD, GbE + WLAN).
   - [`profiles/raspberrypi-4b.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/raspberrypi-4b.json): Exact profile for Raspberry Pi 4 Model B Appliance (`bcm27xx/bcm2711`, 4-core, 2GB RAM, eMMC/SD, GbE + WLAN).
+  - [`profiles/xiaomi-4a-gigabit.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/xiaomi-4a-gigabit.json): Exact profile for Xiaomi Mi Router 4A Gigabit Edition (`ramips/mt7621`, 16MB flash, 128MB RAM, DSA switch, 1x WAN, 2x LAN).
+  - [`profiles/nanopi-r2s.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/nanopi-r2s.json): Exact profile for FriendlyElec NanoPi R2S Appliance (`rockchip/arm64`, 4-core, 1GB RAM, eMMC, 2x GbE).
   - [`profiles/x86_64.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/x86_64.json): Exact profile for Generic x86_64 OpenWrt Appliance (`x86/64`, generic switch, 1x WAN, 1x LAN).
 
 ---

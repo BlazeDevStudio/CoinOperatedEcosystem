@@ -215,7 +215,38 @@ class TestRouterProfiles(unittest.TestCase):
         self.assertEqual(p["hardware"]["storage_type"], "emmc")
         self.assertEqual(p["hardware"]["ram_mb"], 2048)
 
+    def test_xiaomi_4a_gigabit_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "xiaomi-4a-gigabit.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("xiaomi,mi-router-4a-gigabit"))
+        self.assertTrue(model_re.match("Xiaomi Mi Router 4A Gigabit Edition"))
+
+        self.assertEqual(p["target_architecture"], "ramips/mt7621")
+        self.assertEqual(p["hardware"]["storage_type"], "nor_spi")
+        self.assertEqual(p["hardware"]["ram_mb"], 128)
+
+    def test_nanopi_r2s_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "nanopi-r2s.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("friendlyarm,nanopi-r2s"))
+        self.assertTrue(model_re.match("FriendlyElec NanoPi R2S"))
+
+        self.assertEqual(p["target_architecture"], "rockchip/arm64")
+        self.assertEqual(p["hardware"]["storage_type"], "emmc")
+        self.assertEqual(p["hardware"]["ram_mb"], 1024)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

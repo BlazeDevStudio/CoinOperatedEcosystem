@@ -1,0 +1,33 @@
+{
+  "profile_id": "xiaomi-4a-gigabit",
+  "name": "Xiaomi Mi Router 4A Gigabit Edition Appliance",
+  "version": "1.0.0",
+  "target_architecture": "ramips/mt7621",
+  "detection": {
+    "board_name_pattern": ".*xiaomi,mi-router-4a-gigabit.*|.*mi-router-4a-gigabit.*",
+    "model_pattern": ".*Mi Router 4A Gigabit.*|.*Xiaomi 4A Gigabit.*"
+  },
+  "hardware": {
+    "flash_kb": 16384,
+    "ram_mb": 128,
+    "min_free_overlay_kb": 2048,
+    "cpu_cores": 2,
+    "storage_type": "nor_spi"
+  },
+  "networking": {
+    "wan_interface": "wan",
+    "lan_interface": "br-lan",
+    "switch_type": "dsa",
+    "ports": [
+      { "label": "WAN", "interface": "wan", "speed_mbps": 1000 },
+      { "label": "LAN1", "interface": "lan1", "speed_mbps": 1000 },
+      { "label": "LAN2", "interface": "lan2", "speed_mbps": 1000 }
+    ],
+    "vlan_supported": true,
+    "default_vlan_ids": {
+      "lan": 1,
+      "guest": 10,
+      "vendo": 20
+    }
+  }
+}

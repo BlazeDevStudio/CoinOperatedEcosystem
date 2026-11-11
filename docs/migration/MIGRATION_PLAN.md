@@ -13,6 +13,8 @@ The owner has determined that the software is **not distributed standalone as ba
 - **Orange Pi R1 Plus LTS SBCs** (`rockchip/arm64`, 4-core, 1GB RAM, eMMC, dual GbE)
 - **Orange Pi Zero 3 SBCs** (`sunxi/cortexa53`, 4-core, 1GB RAM, eMMC/SD, GbE + WLAN)
 - **Raspberry Pi 4 Model B SBCs** (`bcm27xx/bcm2711`, 4-core, 2GB+ RAM, eMMC/SD, GbE + WLAN)
+- **Xiaomi Mi Router 4A Gigabit Edition routers** (`ramips/mt7621`, DSA switch, 16MB flash, 128MB RAM, 1x WAN, 2x LAN)
+- **FriendlyElec NanoPi R2S micro-routers** (`rockchip/arm64`, 4-core, 1GB RAM, dual GbE)
 - **Mini PCs** (x86_64 OpenWrt/Linux appliances, Windows SoftTimer PC)
 - **Commercial routers and embedded IoT platforms**
 
@@ -47,8 +49,8 @@ Consequently, **Gate G1 (P0-1 Privacy/Licensing Conflict) and Gate G2 are RESOLV
 | WP-5 | Fix case collisions across tree | structural | G3 | case collision guard workflow | CI check passes (0 collisions) | **COMPLETE** |
 | WP-6 | SoftTimer: SetupAPI / COM split | migration | #17 review | `WindowsNativeComPlatform.cs` split | `windows-lab` & `installer-lab` CI green | **COMPLETE** |
 | WP-7 | Hardware: ESP8266/ESP32 firmwares | migration + contract | WP-4 | `Hardware/` Arduino sources | Arduino CLI compile & hardening pass | **COMPLETE** |
-| WP-8 | Shared contracts & golden vectors | integration | WP-7 | `Shared/contracts/*` | 13/13 contract & VLAN tests pass | **COMPLETE** |
-| WP-9 | Appliance profiles & packaging toolchain | feature | WP-4, WP-8 | 5 router profiles, ImageBuilder packager | 21/21 packaging and diag tests pass | **COMPLETE** |
+| WP-8 | Shared contracts & golden vectors | integration | WP-7 | `Shared/contracts/*` | 18/18 contract & VLAN tests pass | **COMPLETE** |
+| WP-9 | Appliance profiles & packaging toolchain | feature | WP-4, WP-8 | 10 router profiles, ImageBuilder packager | 25/25 packaging tests & 10/10 staging pass | **COMPLETE** |
 | WP-10 | Crash-atomic transaction redo journals (#31) | design + code | WP-4, WP-8 | two-pass redo journals in `common.sh` | 8 member + 8 voucher fault tests pass | **COMPLETE (Software)** |
 
 ## 3. Release Readiness Breakdown & Done/Remaining Checklist
