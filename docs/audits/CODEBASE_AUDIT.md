@@ -68,3 +68,9 @@ The P0-2 evidence above was measured at PR #18 head `eef173286cb6…` and is kep
 
 P0-2 is **not closed**: no power-cut/flash evidence (#34), no off-device anti-rollback witness (#43), unlocked readers can observe the apply window, create/patch/password and rental/voucher ledgers are not journaled, and no independent QA review has occurred. P0-1 (privacy/licensing decision) is unaffected and still requires the owner.
 
+## Status addendum — 2026-11-11 (P1-2 case collisions)
+
+Reproduced with `git merge-tree` simulations: the stack tip (`d537b30f…`), #17 and #19 each pass a case-collision check alone; merging the stack with #17, #19 or #18 fails with `Pisonet`↔`pisonet` and `Rental`↔`rental` (plus files below them). The colliding stack paths are 8 placeholder `README.md` files, no code. A merged-tree guard (`tools/check_case_collisions.py`, 7 tests, CI green) is on Draft PR #25 (`9ab86577bcbfd3b64f3f982f37198d731d8f13b3`). **The collision itself is not resolved**: fixing it rewrites PR #1 and rebases the 15 stacked PRs, which requires owner approval.
+
+PR #24 also now enforces manifest executable modes in CI (`3235b33bcf165305ef5b53f091f7d330bc4d46a6`), covering the actionable part of PR #14.
+
