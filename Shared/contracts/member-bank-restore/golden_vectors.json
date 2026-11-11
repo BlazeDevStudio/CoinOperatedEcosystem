@@ -1,0 +1,29 @@
+{
+  "contract": "member-bank-restore",
+  "version": "1.0",
+  "hash_algorithm": "SHA-256",
+  "vectors": [
+    {
+      "description": "Multi-file atomic commit record for member balance change and audit event",
+      "staged_files": [
+        {
+          "path": "members.tsv",
+          "content": "user01\t500\t1794409000\t0\t0\n",
+          "expected_sha256": "517ec4052bc8abf4eb7da9762e860dc0fe70d84211bca30060bc86317cf242a6"
+        },
+        {
+          "path": "member-events.tsv",
+          "content": "1794403139\tuser01\tbalance_change\t100\treceipt-001\n",
+          "expected_sha256": "3a7a80d576a69f58692a178ec129710799d8ed26e92a2b32972b8b2ef769d337"
+        },
+        {
+          "path": "member-revision",
+          "content": "42\n",
+          "expected_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+        }
+      ],
+      "commit_record_format": "VERSION=1\nmembers.tsv=517ec4052bc8abf4eb7da9762e860dc0fe70d84211bca30060bc86317cf242a6\nmember-events.tsv=3a7a80d576a69f58692a178ec129710799d8ed26e92a2b32972b8b2ef769d337\nmember-revision=084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0\n",
+      "expected_commit_sha256": "f584651b4e6fe923268e8221b34b975081602cec62ec235b8eef59eb89821d7b"
+    }
+  ]
+}

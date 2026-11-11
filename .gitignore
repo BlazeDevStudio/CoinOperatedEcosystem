@@ -20,6 +20,13 @@ obj/
 .vs/
 TestResults/
 
+# Hardware build outputs
+Hardware/dist/
+build/
+*.bin
+*.elf
+*.hex
+
 # Temporary / OS
 .DS_Store
 Thumbs.db
