@@ -1,0 +1,21 @@
+# Build outputs
+bin/
+obj/
+out/
+dist/
+*.exe
+*.msi
+*.apk
+*.bin
+*.img
+
+# Secrets and signing material - never commit
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+secrets/
