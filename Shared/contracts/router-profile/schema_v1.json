@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Router Hardware Profile Schema V1",
+  "description": "Formal schema defining target router hardware capabilities, sysinfo signatures, interface mappings, memory constraints, and VLAN/DSA topologies.",
+  "type": "object",
+  "required": [
+    "profile_id",
+    "name",
+    "version",
+    "target_architecture",
+    "detection",
+    "hardware",
+    "networking"
+  ],
+  "properties": {
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "target_architecture": {
+      "type": "string"
+    },
+    "detection": {
+      "type": "object",
+      "required": ["board_name_pattern", "model_pattern"],
+      "properties": {
+        "board_name_pattern": { "type": "string" },
+        "model_pattern": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "hardware": {
+      "type": "object",
+      "required": [
+        "flash_kb",
+        "ram_mb",
+        "min_free_overlay_kb",
+        "cpu_cores",
+        "storage_type"
+      ],
+      "properties": {
+        "flash_kb": { "type": "integer", "minimum": 8192 },
+        "ram_mb": { "type": "integer", "minimum": 64 },
+        "min_free_overlay_kb": { "type": "integer", "minimum": 1000 },
+        "cpu_cores": { "type": "integer", "minimum": 1 },
+        "storage_type": {
+          "type": "string",
+          "enum": ["nor_spi", "nand_spi", "emmc", "disk"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "networking": {
+      "type": "object",
+      "required": [
+        "wan_interface",
+        "lan_interface",
+        "switch_type",
+        "ports",
+        "vlan_supported",
+        "default_vlan_ids"
+      ],
+      "properties": {
+        "wan_interface": { "type": "string" },
+        "lan_interface": { "type": "string" },
+        "switch_type": {
+          "type": "string",
+          "enum": ["dsa", "swconfig", "generic"]
+        },
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["label", "interface", "speed_mbps"],
+            "properties": {
+              "label": { "type": "string" },
+              "interface": { "type": "string" },
+              "speed_mbps": { "type": "integer", "minimum": 10 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "vlan_supported": { "type": "boolean" },
+        "default_vlan_ids": {
+          "type": "object",
+          "required": ["lan", "guest", "vendo"],
+          "properties": {
+            "lan": { "type": "integer", "minimum": 1, "maximum": 4094 },
+            "guest": { "type": "integer", "minimum": 1, "maximum": 4094 },
+            "vendo": { "type": "integer", "minimum": 1, "maximum": 4094 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

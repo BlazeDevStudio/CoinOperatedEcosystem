@@ -38,8 +38,12 @@ class CliAgainstRealGit(unittest.TestCase):
             p = os.path.join(d, f)
             # Case-sensitive FS assumed here; skip otherwise.
             os.makedirs(os.path.dirname(p), exist_ok=True)
+<<<<<<< HEAD
             with open(p, "w", encoding="utf-8") as fp:
                 fp.write("x")
+=======
+            open(p, "w").write("x")
+>>>>>>> feature/hardware-firmware-and-shared-contracts-20261111
         run("git", "add", "-A")
         run("git", "commit", "-qm", "t")
         return d

@@ -32,12 +32,21 @@ Shared/contracts  ←  { Pisowifi, Rental, Pisonet SoftTimer, Hardware }
   - [`schema_v1.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/member-bank-restore/schema_v1.json): Schema defining atomic commit journal records (`VERSION=1`, multi-file SHA-256 manifest).
   - [`golden_vectors.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/member-bank-restore/golden_vectors.json): Reference test vectors for staged mutations, commit digests, and idempotent roll-forward recovery.
 
+### `contracts/router-profile/` (V1)
+- **Purpose:** Router hardware abstraction and isolation schema for OpenWrt deployments.
+- **Components:**
+  - [`schema_v1.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/schema_v1.json): Schema defining hardware profile constraints, sysinfo board/model matching regex, flash/RAM boundaries, and switch/VLAN interface topologies.
+  - [`profiles/ew1200g-pro.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/ew1200g-pro.json): Exact profile for Ruijie RG-EW1200G Pro v1.1 (`ramips/mt7621`, 16MB flash, 128MB RAM, DSA switch, 1x WAN, 3x LAN).
+  - [`profiles/r281.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/r281.json): Exact profile for Notion R281 (`ramips/mt7621`, 32MB flash, 128MB RAM, DSA switch, 1x WAN, 2x LAN).
+  - [`profiles/x86_64.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/x86_64.json): Exact profile for Generic x86_64 OpenWrt Appliance (`x86/64`, generic switch, 1x WAN, 1x LAN).
+
 ---
 
 ## 3. Automated Verification
 
-Run the contract verification suite:
+Run the contract verification test suites:
 ```sh
-python3 Shared/tests/test_shared_contracts.py
+python3 -m unittest discover -s Shared/tests -p 'test_*.py' -v
 ```
-Validates JSON schema syntax and verifies that all SHA-256 golden digests match mathematical calculations.
+Validates JSON schema syntax, verifies that all SHA-256 golden digests match mathematical calculations, and ensures all router hardware profiles conform to memory, flash, and VLAN topology invariants.
+

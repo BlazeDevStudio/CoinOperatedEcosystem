@@ -31,8 +31,8 @@ jobs:
       - name: Validate firmware hardening & syntax
         run: sh Hardware/tests/test_firmware_hardening.sh
 
-      - name: Validate shared contracts & golden vectors
-        run: python3 Shared/tests/test_shared_contracts.py
+      - name: Validate shared contracts & router profiles
+        run: python3 -m unittest discover -s Shared/tests -p 'test_*.py' -v
 
   esp8266:
     name: Compile ESP8266 Vendo Firmware (NO-GO)
