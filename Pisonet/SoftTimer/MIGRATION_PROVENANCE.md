@@ -63,3 +63,12 @@ The destination production `Storage.SaveState` now delegates to `SaveStateToPath
 ## LAB installer privilege and lifecycle boundary (2026-11-09)
 
 The destination NSIS preview now performs only an isolated LAB Program Files / shortcuts / registry file installation. It no longer executes canonical `--install-system-integration` / `--uninstall-system-integration`, kills processes by shared basename, modifies the common `maintenance.until`, or changes ACLs on the canonical state directory. Setup aborts when an existing installed product executable or nonempty canonical ProgramData state is detected. `InstallerLayoutGuard/validate.ps1` source-checks these forbidden patterns and the protective check. This is a source-level and NSIS compilation gate only; an installed/uninstalled Windows VM execution and full runtime identity/storage isolation remain required.
+
+## SetupAPI and Win32 P/Invoke platform boundary extraction (2026-11-11)
+
+Imported the SetupAPI / Win32 P/Invoke platform isolation from historical `BlazeDevStudio/BlazingSystems-Experiments@669e3417dc932c28c5584c13aad0ae7ad436df3b` ([PR #279](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/279), `qa/pisonet-setupapi-hygiene-20261108`) with exact Git blob SHA identity:
+- `src/BlazePisonet.SoftTimer/NativeComInterfaceTransport.cs` (`96952fc5c2425d90e29497ca8f567638142e1bd6`): separates exact-handle session ownership from raw Win32 P/Invoke interop.
+- `src/BlazePisonet.SoftTimer/WindowsNativeComPlatform.cs` (`6bac39c1d120b5ea8fde8ce6b97b32be44942957`): isolates `WindowsNativeComPlatform`, `ReadDeviceInterface`, `ReadDetailAndInstanceId`, and SetupAPI/Kernel32 P/Invoke declarations.
+- `tests/NativeComInterfaceHandleLab/NativeComInterfaceHandleLab.csproj` (`82c6805cd740667c8dbff09e1cde5d57e56adc0b`): links `WindowsNativeComPlatform.cs` alongside `NativeComInterfaceTransport.cs`.
+Physical device attestation remains unproven and exact-device paid coin admission remains disabled (**NO-GO**).
+
