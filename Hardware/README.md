@@ -19,8 +19,9 @@ This directory contains the hardened microcontroller firmwares for the **Blaze C
    - Both sketches track `lastSentNonce` and cryptographically verify `response_sig` emitted by the router `/cgi-bin/vendo` for `register` and `poll` actions:
      `HMAC/SHA256(key | action | id | nonce | ... | key)`
    - Unauthenticated, forged, or replayed responses are dropped fail-closed.
-2. **HW-P0-2 — Uncredited Coin Dispute Quarantine:**
-   - Instead of discarding uncredited coin pulses on router rejection (`"coin window expired"`, `"no active coin window"`), both sketches call `quarantinePending(reason)`, appending the uncredited coin event to `/quarantine.log` in LittleFS with timestamp, pulse count, nonce, and target.
+2. **HW-P0-2 — Uncredited Coin Dispute Quarantine & Edge Interrupt Capture:**
+   - **Edge Interrupt (ISR) Pulse Capture:** Pin polling via `digitalRead()` is replaced by an `IRAM_ATTR onCoinPulse()` interrupt attached directly to `runCoinPin` via `attachInterrupt()`. This completely decouples coin pulse counting from network latency during blocking HTTP calls (`post("poll")`), preventing lost pulses while communicating with the router. In `loop()`, accumulated pulses are latched atomically via `noInterrupts()` / `interrupts()`.
+   - **Dispute Quarantine:** If coin pulses are received outside an active session, or if the router returns a coin rejection (`"coin window expired"`, `"no active coin window"`), the sketch preserves the event to `/quarantine.log` in LittleFS with timestamp, pulse count, nonce, and target for operator reconciliation.
    - Operators can inspect and clear dispute records via `/quarantine` (GET) and `/quarantine/clear` (POST) in setup AP mode.
 3. **HW-P1-1 — Cryptographic Nonce Entropy:**
    - Nonces are generated from two 32-bit hardware RNG words (`esp_random()` on ESP32, `ESP.random()` on ESP8266), eliminating predictable timer dependencies (`micros()`).
