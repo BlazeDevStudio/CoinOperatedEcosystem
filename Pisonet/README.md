@@ -19,6 +19,10 @@ Diskless Manager (FOG/PXE/iPXE/iSCSI) is a **separately installable optional add
 
 ## Source and migration policy
 
-This folder currently documents the authorized destination. **No SoftTimer source or tested Windows installer has been migrated here by this directory-creation change.** Before source import, check the current source, branches, open PRs, provenance, and tests. Historical `BlazeDevStudio/BlazingSystems-Experiments` PR #273 is **closed and unmerged**; its branch `feature/pisonet-optional-diskless-addon-20261107` (historical HEAD `a14e8b1e0ac1006d50880efb82856ea94116e978`) is read-only reference only. Do not merge/cherry-pick wholesale. Consider only missing compatible pieces after auditing this destination.
+**Migration status (M0):** the released SoftTimer **v0.4.0** baseline is imported, byte-identical and with path history, into [`SoftTimer/`](SoftTimer/) from `BlazeDevStudio/BlazingSystems-Experiments` `main` `f4e8a891aed8af86d5fd315d28750a0ac3a7372b` (`experiment/windows/BlazePisonet-SoftTimer`). See [the migration record](../docs/migration/records/M0-pisonet-softtimer-v0.4.0-baseline.md). The imported tree is the released baseline only: **newer, unmerged SoftTimer work exists on Experiments draft branches** (ack verifier, CTS session pulse safety, native COM interface, SetupAPI hygiene) and is scheduled as separate, reviewable increments (M1-M4) in the migration plan. Do not assume `SoftTimer/` contains that work.
+
+Historical `BlazeDevStudio/BlazingSystems-Experiments` PR #273 is **closed and unmerged**; its branch `feature/pisonet-optional-diskless-addon-20261107` (historical HEAD `a14e8b1e0ac1006d50880efb82856ea94116e978`) is read-only reference only. Do not merge/cherry-pick wholesale. Consider only missing compatible pieces after auditing this destination.
+
+Windows runtime, physical USB-RS232/coin-slot and real-money accounting behavior are **not** established by this import. Status: **MIGRATING / NO-GO for production**.
 
 Do not merge critical payment/hardware changes or publish a commercial release without owner authorization and appropriate safety evidence.
