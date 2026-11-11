@@ -72,6 +72,7 @@ br_commit() {
     # barriers are bounded best-effort durability, NOT a flash power-loss proof.
     tmp=$1
     { [ -f "$tmp" ] && [ ! -L "$tmp" ]; } || { br_die 'unsafe staged file'; return 1; }
+    chmod 600 "$tmp" || { br_die 'cannot secure staged file'; return 1; }
     { [ ! -e "$BR_STATE_DIR/.pending" ] && [ ! -L "$BR_STATE_DIR/.pending" ]; } || { br_die 'unresolved pending transaction'; return 1; }
     if ! ( set -C; printf 'PENDING\n' > "$BR_STATE_DIR/.pending" ); then
         br_die 'cannot create transaction intent'; return 1

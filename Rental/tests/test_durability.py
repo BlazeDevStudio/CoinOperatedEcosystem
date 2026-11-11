@@ -153,7 +153,10 @@ class LedgerDurability(unittest.TestCase):
         self.assert_pending_denies()
 
     def test_busybox_shell_syntax(self):
-        for filename in [CLI, LIB]:
+        import shutil
+        if shutil.which('busybox') is None:
+            self.skipTest('busybox binary not installed in host PATH; sh -n verified in test_openwrt.py')
+        for filename in [CLI, LIB, CGI, ROOT / 'openwrt/install.sh']:
             self.assertEqual(subprocess.run(['busybox','sh','-n',str(filename)], capture_output=True).returncode, 0)
 
     def test_http_status_denies_pending_after_rename(self):
