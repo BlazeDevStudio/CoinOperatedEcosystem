@@ -27,7 +27,7 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | `openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh` | `058891bf2b13b59333b4247743fcccc8741bf9b4` | `058891bf2b13b59333b4247743fcccc8741bf9b4` | copied unchanged; source retained |
-| `openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `69af39052959a1d6a349851b4fbd909a9ad53aeb` | `69af39052959a1d6a349851b4fbd909a9ad53aeb` | copied unchanged; source retained |
+| `openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `69af39052959a1d6a349851b4fbd909a9ad53aeb` | `56c2fc1e9f504f9db7b5908b542c8363827ce110` | locally derived (Issue #31 member transaction journal); source retained; real-router test NOT_RUN |
 | `openwrt/rootfs/usr/lib/blazepwifi/portal.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/portal.sh` | `702bb344d2531eb046c189adebfb193ba7ca4e6e` | `702bb344d2531eb046c189adebfb193ba7ca4e6e` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/remote_apply.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/remote_apply.sh` | `ef85698211f79108e6e152c6f4ea1165d6c5f44c` | `ef85698211f79108e6e152c6f4ea1165d6c5f44c` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/rental_policy.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/rental_policy.sh` | `dcaed944f6ee7bea5d8e806c139d25c8eddeb4df` | `dcaed944f6ee7bea5d8e806c139d25c8eddeb4df` | copied unchanged; source retained |
@@ -96,13 +96,14 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 | `Pisowifi/tests/capabilities.sh` | `542c68807b29fdd67bb1220b61e343daf5db88dd` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_faults.sh` | `8e8053f709d53e78cef154ee9b6d0242075bebf7` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_fixture_smoke.sh` | `a17f2e7885087a2c30d0a8e9c8d45098f28579b3` | locally derived; source retained where applicable; CI NOT_RUN |
-| `Pisowifi/tests/run_focus.sh` | `7b97b0742e88569661d21f7c56c07bbec66352f8` | locally derived; source retained where applicable; CI NOT_RUN |
+| `Pisowifi/tests/run_focus.sh` | `fa1f4f2c6393504499d50659d8bf980caf7ff85b` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_concurrency.sh` | `f8eaa2c0bc3cd1018942fe4bed7511a65db1118d` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/admin_config_result.sh` | `975b3245d078e33faa54f22ac9fb5af0bfe49cf0` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_apply_failclosed.sh` | `e6a6af64999769d5481506e7ee64e3934f4ae909` | locally derived; source retained where applicable; CI NOT_RUN |
 
 | `Pisowifi/tests/bootstrap_and_cli_auth_guard.sh` | `1bb5aa0072084ad6f0b24e118bb07ad2b597213a` | locally authored CLI auth REQUEST_METHOD isolation and 99-blazepwifi fail-closed CSPRNG regression |
-| `Pisowifi/tests/member_crash_atomicity_red.sh` | `39d851f8cdfa425d836620efd8680a142d858bf0` | locally authored #31 expected-RED failure-injection regression; sh -n checked; full source test NOT_RUN |
+| `Pisowifi/tests/member_receipt_failure_atomicity.sh` | `19dfc3cc50e1884b30e62cf0e71a5d02f123979b` | locally authored #31 receipt-failure regression (formerly expected-RED `member_crash_atomicity_red.sh`); dash PASS, CI PENDING |
+| `Pisowifi/tests/member_txn_journal.sh` | `06ec598d8e5a0517adf25166d90eefc3ef385110` | locally authored #31 journal crash-injection suite (simulated faults only); dash PASS, CI PENDING |
 
 ## Other provenance
 

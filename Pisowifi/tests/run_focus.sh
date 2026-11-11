@@ -17,6 +17,8 @@ for test_file in \
   portal.sh \
   security.sh \
   config.sh \
+  member_receipt_failure_atomicity.sh \
+  member_txn_journal.sh \
   integration.sh
 do
   printf 'RUN %s\n' "$test_file"

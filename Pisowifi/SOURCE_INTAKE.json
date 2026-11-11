@@ -17,8 +17,8 @@
   "summary": {
     "original_rootfs_file_count": 61,
     "recovered_rootfs_file_count": 61,
-    "recovered_byte_identical_count": 49,
-    "locally_derived_files": 12,
+    "recovered_byte_identical_count": 48,
+    "locally_derived_files": 13,
     "unrecovered_rootfs_file_count": 0,
     "unchanged_original_test_count": 2
   },
@@ -131,9 +131,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/member.sh",
       "source_git_blob": "69af39052959a1d6a349851b4fbd909a9ad53aeb",
-      "destination_git_blob": "69af39052959a1d6a349851b4fbd909a9ad53aeb",
+      "destination_git_blob": "56c2fc1e9f504f9db7b5908b542c8363827ce110",
       "git_mode": "100644",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/portal.sh",
@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "7b97b0742e88569661d21f7c56c07bbec66352f8",
+      "git_blob": "fa1f4f2c6393504499d50659d8bf980caf7ff85b",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -577,8 +577,15 @@
       "hardware_evidence": false
     },
     {
-      "path": "tests/member_crash_atomicity_red.sh",
-      "git_blob": "39d851f8cdfa425d836620efd8680a142d858bf0",
+      "path": "tests/member_receipt_failure_atomicity.sh",
+      "git_blob": "19dfc3cc50e1884b30e62cf0e71a5d02f123979b",
+      "mode": "100755",
+      "github_actions_status": "PENDING_CI_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/member_txn_journal.sh",
+      "git_blob": "06ec598d8e5a0517adf25166d90eefc3ef385110",
       "mode": "100755",
       "github_actions_status": "PENDING_CI_RUN",
       "hardware_evidence": false
@@ -593,5 +600,6 @@
     "openwrt/lab-native/Makefile"
   ],
   "note_pass07": "Pass07 source lock protects config_set() cooperating writers around snapshot->commit->apply->rollback; exact old config Git SHA da6319d5136f02f3b1d474460a91ccfef62dc449 reproduced RED racing a second writer. Corrected config Git SHA 2c005528058275a4ad25d25470dd697aa5a51edd and tests config_concurrency.sh 9ebcd67fe022c28d82054c70172efaee070c57a2, config_faults.sh 48c3b75af85285cc223ef967b9a99e290ac15873 passed local POSIX sh and BusyBox ash. Admin CGI full Git SHA 87a0a78daa4fae08ae7db84b9b0ce165108a56cc; exact extracted case blob SHA 49651cf8f363a7d77c94fcdec5831e74f4a4888f passed seven local isolated arm checks in sh and BusyBox ash using new admin_config_result.sh d8c8d8fc74bcbc66f87fc9f044cb9b2dc023d2aa. Full checkout, original full CGI, real UCI, and GitHub Actions NOT RUN.",
-  "note_pass08": "2026-11-09 Pass 08: config_apply executable preflight; missing script returns clean refusal rc7 without UCI changes, lost/failed apply after commit returns uncertain live state rc8, confirmed UCI revert without false live rollback guarantee. Source config Git SHA 4535ef6993185208fb3b098842a0f8d69e71d5c7; admin CGI Git SHA 6ec03db26a43d6669c067e452f6c0098bd2c8051 and extracted exact config-arm Git SHA ca291ac70125065b5d964294bc9ea7173dd4a2c6. Exact local test blobs config_faults=8e8053f709d53e78cef154ee9b6d0242075bebf7, config_concurrency=f8eaa2c0bc3cd1018942fe4bed7511a65db1118d, config_apply_failclosed=e6a6af64999769d5481506e7ee64e3934f4ae909, admin_config_result=975b3245d078e33faa54f22ac9fb5af0bfe49cf0 all PASS under sh and BusyBox ash. 18+3+9+8 = 38 checks each shell. This is a partially reconstructed Git-blob-verified test subset, not full GitHub checkout/CI, real UCI, real firewall or router."
+  "note_pass08": "2026-11-09 Pass 08: config_apply executable preflight; missing script returns clean refusal rc7 without UCI changes, lost/failed apply after commit returns uncertain live state rc8, confirmed UCI revert without false live rollback guarantee. Source config Git SHA 4535ef6993185208fb3b098842a0f8d69e71d5c7; admin CGI Git SHA 6ec03db26a43d6669c067e452f6c0098bd2c8051 and extracted exact config-arm Git SHA ca291ac70125065b5d964294bc9ea7173dd4a2c6. Exact local test blobs config_faults=8e8053f709d53e78cef154ee9b6d0242075bebf7, config_concurrency=f8eaa2c0bc3cd1018942fe4bed7511a65db1118d, config_apply_failclosed=e6a6af64999769d5481506e7ee64e3934f4ae909, admin_config_result=975b3245d078e33faa54f22ac9fb5af0bfe49cf0 all PASS under sh and BusyBox ash. 18+3+9+8 = 38 checks each shell. This is a partially reconstructed Git-blob-verified test subset, not full GitHub checkout/CI, real UCI, real firewall or router.",
+  "note_pass09": "2026-11-11 Pass 09 (Issue #31 member journal): member.sh now stages members.tsv, member-events.tsv and member-revision and commits them through a SHA-256 commit record with roll-forward recovery under the member lock (bp_member_txn_*). Locally executed under dash only: member_receipt_failure_atomicity.sh PASS; member_txn_journal.sh 8 simulated-fault cases PASS (success, receipt failure, crash after commit record, replay idempotence, crash mid-apply, tampered stage fail-closed, uncommitted stage discard, balance_change/delete); two mutation checks (no-op recovery, no digest check) were correctly detected. Simulated faults only: NO power-cut, real flash, BusyBox ash (CI pending), or hardware evidence. paid-state-uncertain is still never auto-cleared. Issue #31 remains OPEN pending independent review, power-cut proof (#34) and an anti-rollback witness (#43)."
 }
