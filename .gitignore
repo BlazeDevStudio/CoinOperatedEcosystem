@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Hardware build outputs
+Hardware/dist/
+build/
+*.bin
+*.elf
+*.hex
+
+# Temporary / OS
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak

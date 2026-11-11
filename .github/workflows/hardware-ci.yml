@@ -1,0 +1,95 @@
+name: BlazeHardware & Shared Contracts CI
+
+on:
+  push:
+    paths:
+      - "Hardware/**"
+      - "Shared/**"
+      - ".github/workflows/hardware-ci.yml"
+  pull_request:
+    paths:
+      - "Hardware/**"
+      - "Shared/**"
+      - ".github/workflows/hardware-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Firmware Hardening & Shared Contracts Validation (NO-GO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate firmware hardening & syntax
+        run: sh Hardware/tests/test_firmware_hardening.sh
+
+      - name: Validate shared contracts & router profiles
+        run: python3 -m unittest discover -s Shared/tests -p 'test_*.py' -v
+
+  esp8266:
+    name: Compile ESP8266 Vendo Firmware (NO-GO)
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP8266 Core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266
+
+      - name: Compile BlazePwifi Vendo ESP8266
+        run: |
+          mkdir -p Hardware/dist/esp8266
+          arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --output-dir Hardware/dist/esp8266 Hardware/esp8266/BlazePwifiVendo
+          cp Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino Hardware/dist/esp8266/
+
+      - name: Upload ESP8266 Firmware Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazeHardware-esp8266-firmware
+          path: Hardware/dist/esp8266/
+
+  esp32:
+    name: Compile ESP32 Vendo Firmware (NO-GO)
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 Core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Compile BlazePwifi Vendo ESP32
+        run: |
+          mkdir -p Hardware/dist/esp32
+          arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir Hardware/dist/esp32 Hardware/esp32/BlazePwifiVendo32
+          cp Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino Hardware/dist/esp32/
+
+      - name: Upload ESP32 Firmware Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazeHardware-esp32-firmware
+          path: Hardware/dist/esp32/
