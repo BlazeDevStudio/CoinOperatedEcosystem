@@ -19,7 +19,7 @@ NO-GO FOR SHOP INSTALL
 
 ## Critical safety restrictions
 
-- **Financial NO-GO:** [Experiments #31](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/31) remains open. Legacy `members.tsv`, `member-events.tsv`, and revision writes are not one durable crash-atomic transaction. Existing uncertainty markers are quarantine controls, **not** a proof of exactly-once accounting; never auto-clear a pending or uncertain marker, reapply a coin, or return a paid ACK while state cannot be proved.
+- **Financial NO-GO:** [Experiments #31](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/31) remains open. Member balance/receipt/revision writes now commit through a journaled, roll-forward transaction (simulated-fault and CI tested only; no power-cut or hardware proof, see `docs/ISSUE_31_LEDGER_GATE.md`). Existing uncertainty markers are quarantine controls, **not** a proof of exactly-once accounting; never auto-clear a pending or uncertain marker, reapply a coin, or return a paid ACK while state cannot be proved.
 - **Rental:** independent issue #32 and Rental draft PR #19 are separate product work; do not edit those trees here.
 - **Configuration:** there is no installed live `apply-config.sh`; admin configuration must refuse until a real apply/rollback implementation and full verification exist.
 - **Anti-rollback:** no independent, protected off-disk freshness witness (#43). Do not generate or commit signing keys.
