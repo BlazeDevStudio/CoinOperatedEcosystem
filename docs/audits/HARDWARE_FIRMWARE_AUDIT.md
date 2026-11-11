@@ -82,7 +82,9 @@ Client-side remediation candidates for `HW-P0-1`, `HW-P0-2`, `HW-P1-1`, and `HW-
 2. **HW-P0-2 (Uncredited Coin Quarantine):** When the router returns a coin rejection (`"coin window expired"`, `"no active coin window"`, etc.), both sketches now invoke `quarantinePending(reason)`, appending the uncredited coin event to `/quarantine.log` in LittleFS with timestamp, pulses, nonce, and target for operator reconciliation, before clearing the active queue.
 3. **HW-P1-1 (ESP8266 Nonce Entropy):** In `BlazePwifiVendo.ino`, `freshNonce()` replaced predictable `micros()` with two 32-bit hardware RNG words from `ESP.random()`.
 4. **HW-P2-1 (Setup Form HTML Escaping):** Added `htmlEsc()` escaping `&`, `'`, `"`, `<`, and `>` for `cfg.ssid`, `cfg.server`, and `cfg.id` inputs in the temporary setup portal.
-5. **Automated Verification:** Added `experiment/openwrt/BlazePwifi/tests/v05_firmware_hardening_test.sh` asserting all four properties.
+5. **Automated Verification:** Added `experiment/openwrt/BlazePwifi/tests/v05_firmware_hardening_test.sh` asserting all four properties and verifying syntax/brace balance.
+6. **Setup Portal Quarantine Log Inspection:** Added `/quarantine` (GET) and `/quarantine/clear` (POST) endpoints in `setupPortal()` on both ESP32 and ESP8266, allowing operators to inspect and clear the uncredited coin log directly from the setup browser interface.
+7. **Arduino CLI CI Matrix Verification:** Corrected an extra closing brace in `BlazePwifiVendo32.ino` loop(); both ESP32 (`esp32:esp32@3.3.12`) and ESP8266 (`esp8266:esp8266@3.1.2`) Arduino CLI compile jobs and test suites pass 100% green in CI run `43042410732` and upload their binary release artifacts (`BlazePwifi-esp32-firmware` and `BlazePwifi-esp8266-firmware`).
 
 > [!IMPORTANT]
 > Hardware admission remains **STRICT NO-GO** pending physical hardware power-cut testing (`Experiments #34`), ISR-driven edge pulse capture verification on physical coin acceptors, anti-rollback witness integration, and formal QA review.
