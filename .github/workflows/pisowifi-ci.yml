@@ -3,8 +3,10 @@ name: Pisowifi OpenWrt Overlay & Shell Suite
 on:
   push:
     branches:
+      - main
       - "feature/pisowifi-**"
       - "cleanup/pisowifi-**"
+      - "integration/**"
     paths:
       - "Pisowifi/**"
       - ".github/workflows/pisowifi-ci.yml"
