@@ -3,14 +3,10 @@ name: Case-collision guard
 on:
   pull_request:
   push:
-<<<<<<< HEAD
     branches:
       - main
       - 'ci/**'
       - 'integration/**'
-=======
-    branches: [main]
->>>>>>> feature/hardware-firmware-and-shared-contracts-20261111
   workflow_dispatch:
 
 permissions:
