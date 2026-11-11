@@ -209,9 +209,11 @@ cat > "$T/bin/ip" <<'IP'
 echo "10.0.0.10 dev br-lan lladdr 02:00:00:00:00:01 REACHABLE"
 IP
 chmod +x "$T/bin/"*
+export PATH="$T/bin:$PATH"
+export BP_LIB="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/common.sh"
 BODY="action=redeem&device=${DEV_HEX}&code=VCH-100"
 CONTENT_LENGTH="${#BODY}"
-OUTPUT="$(printf '%s' "$BODY" | PATH="$T/bin:$PATH" BP_LIB="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/common.sh" REQUEST_METHOD=POST HTTP_HOST="10.0.0.1" REMOTE_ADDR="10.0.0.10" CONTENT_TYPE="application/x-www-form-urlencoded" CONTENT_LENGTH="$CONTENT_LENGTH" sh "$ROOT/openwrt/rootfs/www/blazepwifi/cgi-bin/api")"
+OUTPUT="$(printf '%s' "$BODY" | REQUEST_METHOD=POST HTTP_HOST="10.0.0.1" REMOTE_ADDR="10.0.0.10" CONTENT_TYPE="application/x-www-form-urlencoded" CONTENT_LENGTH="$CONTENT_LENGTH" sh "$ROOT/openwrt/rootfs/www/blazepwifi/cgi-bin/api")"
 printf '%s' "$OUTPUT" | grep -q '{"ok":true,"credit_cents":600}' || fail "CGI redeem output mismatch: $OUTPUT"
 [ "$(acc_credit "$DEV_HEX")" = 600 ] || fail "CGI redeem did not update credit: $(acc_credit "$DEV_HEX")"
 [ "$(vch_dev VCH-100)" = "$DEV_HEX" ] || fail "CGI redeem did not mark voucher used"

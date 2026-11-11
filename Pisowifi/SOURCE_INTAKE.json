@@ -592,7 +592,7 @@
     },
     {
       "path": "tests/voucher_txn_journal.sh",
-      "git_blob": "f86dd7247cdfb17f4099f6246fc7ef5c64fa0927",
+      "git_blob": "678c07e637ba062427e5a98d567c07e0d3d293aa",
       "mode": "100755",
       "github_actions_status": "PENDING_CI_RUN",
       "hardware_evidence": false
