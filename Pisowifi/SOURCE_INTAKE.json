@@ -585,7 +585,7 @@
     },
     {
       "path": "tests/member_txn_journal.sh",
-      "git_blob": "01dc9c65ae9d74eaafb403d47aebcd20edd14390",
+      "git_blob": "d04df3c6f3ada60b9fda8c8c04230dd31e37019a",
       "mode": "100755",
       "github_actions_status": "PENDING_CI_RUN",
       "hardware_evidence": false
