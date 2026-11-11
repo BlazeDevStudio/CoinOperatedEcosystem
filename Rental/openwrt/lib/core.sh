@@ -13,7 +13,10 @@ br_tx_ok() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_-]{12,64}$'; }
 br_uint_ok() { case "$1" in ''|*[!0-9]*) return 1;; esac; [ "$1" -le 4102444800 ] 2>/dev/null; }
 br_clock() {
     BR_NOW=$(date +%s) || return 1
-    br_uint_ok "$BR_NOW" && [ "$BR_NOW" -ge 1700000000 ] || br_die 'clock not synchronized'
+    if ! br_uint_ok "$BR_NOW" || [ "$BR_NOW" -lt 1700000000 ]; then
+        br_die 'clock not synchronized'
+        return 1
+    fi
 }
 br_init() {
     [ ! -L "$BR_STATE_DIR" ] || { br_die 'state directory is a symlink'; return 1; }
@@ -120,7 +123,8 @@ br_registration_locked() {
     return 1
 }
 br_registration() {
-    br_clock && br_lock || return 1
+    br_clock || return 1
+    br_lock || return 1
     if br_registration_locked; then
         br_unlock || return 1
         printf '%s\n' "$BR_OUT"
@@ -162,8 +166,12 @@ br_grant_locked() {
 }
 br_grant() {
     id=$1; seconds=$2; tx=$3
-    { br_id_ok "$id" && br_tx_ok "$tx" && br_uint_ok "$seconds" && [ "$seconds" -ge 1 ] && [ "$seconds" -le 2592000 ]; } || { br_die 'invalid grant parameters'; return 1; }
-    br_clock && br_lock || return 1
+    if ! br_id_ok "$id" || ! br_tx_ok "$tx" || ! br_uint_ok "$seconds" || [ "$seconds" -lt 1 ] || [ "$seconds" -gt 2592000 ]; then
+        br_die 'invalid grant parameters'
+        return 1
+    fi
+    br_clock || return 1
+    br_lock || return 1
     if br_grant_locked "$id" "$seconds" "$tx"; then
         br_unlock || return 1
         printf '%s\n' "$BR_OUT"
@@ -174,7 +182,9 @@ br_grant() {
 }
 br_status() {
     id=$1
-    br_id_ok "$id" && br_clock && br_check || return 1
+    br_id_ok "$id" || return 1
+    br_clock || return 1
+    br_check || return 1
     device=$(br_get_device "$id"); [ -n "$device" ] || { br_die 'unknown device'; return 1; }
     lease=$(printf '%s\n' "$device" | cut -f4)
     br_uint_ok "$lease" || { br_die 'invalid lease'; return 1; }
