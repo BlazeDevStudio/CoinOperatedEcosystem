@@ -1,0 +1,27 @@
+#!/bin/sh
+# Read-only authenticated controller API; no financial or administrative HTTP actions.
+set -eu
+LIB=${BLAZERENTAL_LIB:-/usr/lib/blazerental/core.sh}
+. "$LIB"
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n'
+fail() { printf '{"ok":false,"error":"request rejected"}\n'; exit 0; }
+[ "${REQUEST_METHOD:-}" = GET ] || fail
+query=${QUERY_STRING:-}
+[ "${#query}" -le 512 ] || fail
+param() { printf '%s' "$query" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1; }
+[ "$(param action)" = status ] || fail
+id=$(param device_id); nonce=$(param nonce); provided=$(param sig)
+br_id_ok "$id" || fail
+printf '%s' "$nonce" | grep -Eq '^[0-9a-f]{32}$' || fail
+printf '%s' "$provided" | grep -Eq '^[0-9a-f]{64}$' || fail
+br_clock >/dev/null 2>&1 && br_check >/dev/null 2>&1 || fail
+device=$(br_get_device "$id")
+[ -n "$device" ] || fail
+secret=$(printf '%s\n' "$device" | cut -f3)
+lease=$(printf '%s\n' "$device" | cut -f4)
+[ -n "$secret" ] && br_secret_ok "$secret" && br_uint_ok "$lease" || fail
+mac() { printf '%s' "$1" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:$secret" 2>/dev/null | awk '{print $NF}'; }
+expected=$(mac "v1|status|$id|$nonce") || fail
+[ "$expected" = "$provided" ] || fail
+proof=$(mac "v1|status-reply|$id|$nonce|$BR_NOW|$lease") || fail
+printf '{"ok":true,"api_version":1,"device_id":"%s","server_time":%s,"lease_until":%s,"nonce":"%s","proof":"%s"}\n' "$id" "$BR_NOW" "$lease" "$nonce" "$proof"
