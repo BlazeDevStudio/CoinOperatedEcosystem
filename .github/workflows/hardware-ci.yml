@@ -5,11 +5,13 @@ on:
     paths:
       - "Hardware/**"
       - "Shared/**"
+      - "tools/**"
       - ".github/workflows/hardware-ci.yml"
   pull_request:
     paths:
       - "Hardware/**"
       - "Shared/**"
+      - "tools/**"
       - ".github/workflows/hardware-ci.yml"
   workflow_dispatch:
 
@@ -33,6 +35,9 @@ jobs:
 
       - name: Validate shared contracts & router profiles
         run: python3 -m unittest discover -s Shared/tests -p 'test_*.py' -v
+
+      - name: Validate appliance firmware packaging & tools
+        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
 
   esp8266:
     name: Compile ESP8266 Vendo Firmware (NO-GO)

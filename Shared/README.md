@@ -39,6 +39,7 @@ Shared/contracts  ←  { Pisowifi, Rental, Pisonet SoftTimer, Hardware }
   - [`profiles/ew1200g-pro.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/ew1200g-pro.json): Exact profile for Ruijie RG-EW1200G Pro v1.1 (`ramips/mt7621`, 16MB flash, 128MB RAM, DSA switch, 1x WAN, 3x LAN).
   - [`profiles/r281.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/r281.json): Exact profile for Notion R281 (`ramips/mt7621`, 32MB flash, 128MB RAM, DSA switch, 1x WAN, 2x LAN).
   - [`profiles/orangepi-r1-plus-lts.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/orangepi-r1-plus-lts.json): Exact profile for Orange Pi R1 Plus LTS Appliance (`rockchip/arm64`, 4-core, 1GB RAM, eMMC, 2x GbE).
+  - [`profiles/orangepi-zero3.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/orangepi-zero3.json): Exact profile for Orange Pi Zero 3 Appliance (`sunxi/cortexa53`, 4-core, 1GB RAM, eMMC/SD, GbE + WLAN).
   - [`profiles/x86_64.json`](file:///home/antigravity/BlazeDevStudio/CoinOperatedEcosystem/Shared/contracts/router-profile/profiles/x86_64.json): Exact profile for Generic x86_64 OpenWrt Appliance (`x86/64`, generic switch, 1x WAN, 1x LAN).
 
 ---

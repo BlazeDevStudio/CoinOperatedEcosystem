@@ -17,6 +17,12 @@ import sys
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHARED_PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-profile", "profiles")
 DEFAULT_ROOTFS = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
+DEFAULT_RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
+
+RENTAL_PACKAGES = [
+    "openssl-util",
+    "coreutils-date"
+]
 
 RECOMMENDED_PACKAGES = [
     "nftables",
@@ -123,16 +129,19 @@ def calculate_overlay_size(staging_dir: str) -> int:
     return (total_bytes + 1023) // 1024
 
 
-def build_imagebuilder_cmd(profile: dict, files_dir: str) -> str:
+def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool = False) -> str:
     """Construct exact OpenWrt ImageBuilder command."""
     arch = profile["target_architecture"]
     profile_id = profile["profile_id"]
-    all_packages = RECOMMENDED_PACKAGES + EXCLUDED_PACKAGES
+    packages = list(RECOMMENDED_PACKAGES)
+    if include_rental:
+        packages.extend(RENTAL_PACKAGES)
+    all_packages = packages + EXCLUDED_PACKAGES
     pkg_str = " ".join(all_packages)
     return f"make image PROFILE={profile_id} PACKAGES=\"{pkg_str}\" FILES=\"{files_dir}\""
 
 
-def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str) -> dict:
+def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
     """Stage and customize the rootfs overlay for the target profile."""
     if os.path.exists(staging_dir):
         shutil.rmtree(staging_dir)
@@ -149,6 +158,31 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str) -> dict:
     os.makedirs(etc_blaze, exist_ok=True)
     with open(os.path.join(etc_blaze, "appliance_profile.json"), "w", encoding="utf-8") as f:
         json.dump(profile, f, indent=2)
+
+    # Optionally bundle BlazeRental module for unified appliance bundles
+    if include_rental:
+        if not os.path.isdir(rental_source_dir):
+            raise FileNotFoundError(f"Rental source directory not found: {rental_source_dir}")
+
+        # usr/lib/blazerental/core.sh
+        rental_lib = os.path.join(staging_dir, "usr", "lib", "blazerental")
+        os.makedirs(rental_lib, exist_ok=True)
+        shutil.copy2(os.path.join(rental_source_dir, "lib", "core.sh"), os.path.join(rental_lib, "core.sh"))
+
+        # usr/sbin/blazerentalctl
+        rental_sbin = os.path.join(staging_dir, "usr", "sbin")
+        os.makedirs(rental_sbin, exist_ok=True)
+        shutil.copy2(os.path.join(rental_source_dir, "bin", "blazerentalctl"), os.path.join(rental_sbin, "blazerentalctl"))
+
+        # www/cgi-bin/blazerental
+        rental_cgi = os.path.join(staging_dir, "www", "cgi-bin")
+        os.makedirs(rental_cgi, exist_ok=True)
+        shutil.copy2(os.path.join(rental_source_dir, "cgi-bin", "blazerental"), os.path.join(rental_cgi, "blazerental"))
+
+        # etc/blazerental
+        rental_etc = os.path.join(staging_dir, "etc", "blazerental")
+        os.makedirs(rental_etc, exist_ok=True)
+        os.chmod(rental_etc, 0o700)
 
     # Calculate overlay size and verify flash constraints
     size_kb = calculate_overlay_size(staging_dir)
@@ -169,7 +203,7 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str) -> dict:
         for f in files:
             fp = os.path.join(root, f)
             if not os.path.islink(fp):
-                # Executable for scripts, cgi-bin, init.d
+                # Executable for scripts, cgi-bin, sbin, init.d
                 if "/cgi-bin/" in fp or "/init.d/" in fp or "/usr/sbin/" in fp or fp.endswith(".sh"):
                     os.chmod(fp, 0o755)
                 else:
@@ -180,24 +214,28 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str) -> dict:
         "target_architecture": profile["target_architecture"],
         "overlay_size_kb": size_kb,
         "flash_kb": flash_kb,
+        "include_rental": include_rental,
         "staging_dir": staging_dir,
-        "imagebuilder_command": build_imagebuilder_cmd(profile, staging_dir)
+        "imagebuilder_command": build_imagebuilder_cmd(profile, staging_dir, include_rental=include_rental)
     }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Package OpenWrt appliance firmware overlay.")
-    parser.add_argument("--profile", required=True, help="Profile ID (e.g., ew1200g-pro, r281, orangepi-r1-plus-lts, x86_64) or JSON path")
+    parser.add_argument("--profile", required=True, help="Profile ID (e.g., ew1200g-pro, r281, orangepi-r1-plus-lts, orangepi-zero3, x86_64) or JSON path")
     parser.add_argument("--rootfs", default=DEFAULT_ROOTFS, help="Source rootfs directory")
+    parser.add_argument("--rental-dir", default=DEFAULT_RENTAL_DIR, help="Rental source root directory")
+    parser.add_argument("--include-rental", action="store_true", help="Bundle BlazeRental module into overlay")
     parser.add_argument("--output", required=True, help="Destination staging directory")
     args = parser.parse_args()
 
     try:
         profile = load_profile(args.profile)
-        manifest = stage_overlay(profile, args.rootfs, args.output)
+        manifest = stage_overlay(profile, args.rootfs, args.output, include_rental=args.include_rental, rental_source_dir=args.rental_dir)
         print(f"Appliance firmware staged successfully for '{manifest['profile_id']}':")
         print(f"  Target Arch:    {manifest['target_architecture']}")
         print(f"  Overlay Size:   {manifest['overlay_size_kb']} KB / {manifest['flash_kb']} KB")
+        print(f"  Include Rental: {manifest['include_rental']}")
         print(f"  Staging Dir:    {manifest['staging_dir']}")
         print(f"  ImageBuilder:   {manifest['imagebuilder_command']}")
     except Exception as e:

@@ -18,7 +18,7 @@ from package_appliance_firmware import (
 class TestPackageApplianceFirmware(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="test_appliance_")
-        self.profiles = ["ew1200g-pro", "r281", "orangepi-r1-plus-lts", "x86_64"]
+        self.profiles = ["ew1200g-pro", "r281", "orangepi-r1-plus-lts", "orangepi-zero3", "x86_64"]
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -48,13 +48,25 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("list ports 'eth1'", uci)
         self.assertIn("option device 'eth0'", uci)
 
+    def test_generate_network_uci_orangepi_zero3(self):
+        p = load_profile("orangepi-zero3")
+        uci = generate_network_uci(p)
+        self.assertIn("option name 'br-lan'", uci)
+        self.assertIn("list ports 'wlan0'", uci)
+        self.assertIn("option device 'eth0'", uci)
+
     def test_build_imagebuilder_cmd(self):
         p = load_profile("ew1200g-pro")
-        cmd = build_imagebuilder_cmd(p, "/tmp/staging")
+        cmd = build_imagebuilder_cmd(p, "/tmp/staging", include_rental=False)
         self.assertTrue(cmd.startswith("make image PROFILE=ew1200g-pro"))
         self.assertIn("nftables", cmd)
         self.assertIn("firewall4", cmd)
+        self.assertNotIn("openssl-util", cmd)
         self.assertIn("FILES=\"/tmp/staging\"", cmd)
+
+        # Rental enabled
+        cmd_rental = build_imagebuilder_cmd(p, "/tmp/staging", include_rental=True)
+        self.assertIn("openssl-util", cmd_rental)
 
     def test_stage_overlay_execution(self):
         staging_dest = os.path.join(self.temp_dir, "staging_ew1200g")
@@ -63,6 +75,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(manifest["profile_id"], "ew1200g-pro")
         self.assertGreater(manifest["overlay_size_kb"], 50)
+        self.assertFalse(manifest["include_rental"])
         self.assertTrue(os.path.isfile(os.path.join(staging_dest, "etc", "config", "network")))
         self.assertTrue(os.path.isfile(os.path.join(staging_dest, "etc", "blazepwifi", "appliance_profile.json")))
 
@@ -71,6 +84,25 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.isfile(api_path))
         mode = os.stat(api_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/api should be executable (0755)")
+
+    def test_stage_overlay_with_rental(self):
+        staging_dest = os.path.join(self.temp_dir, "staging_rental")
+        p = load_profile("orangepi-zero3")
+        manifest = stage_overlay(p, DEFAULT_ROOTFS, staging_dest, include_rental=True)
+
+        self.assertTrue(manifest["include_rental"])
+        self.assertTrue(os.path.isfile(os.path.join(staging_dest, "usr", "lib", "blazerental", "core.sh")))
+        self.assertTrue(os.path.isfile(os.path.join(staging_dest, "usr", "sbin", "blazerentalctl")))
+        self.assertTrue(os.path.isfile(os.path.join(staging_dest, "www", "cgi-bin", "blazerental")))
+        self.assertTrue(os.path.isdir(os.path.join(staging_dest, "etc", "blazerental")))
+
+        ctl_path = os.path.join(staging_dest, "usr", "sbin", "blazerentalctl")
+        mode = os.stat(ctl_path).st_mode
+        self.assertTrue(bool(mode & 0o111), "blazerentalctl must be executable (0755)")
+
+        cgi_path = os.path.join(staging_dest, "www", "cgi-bin", "blazerental")
+        mode = os.stat(cgi_path).st_mode
+        self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
     def test_flash_overflow_guard(self):
         staging_dest = os.path.join(self.temp_dir, "staging_overflow")
@@ -85,3 +117,4 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

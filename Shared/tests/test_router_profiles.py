@@ -153,6 +153,22 @@ class TestRouterProfiles(unittest.TestCase):
         self.assertEqual(p["hardware"]["storage_type"], "emmc")
         self.assertEqual(p["hardware"]["ram_mb"], 1024)
 
+    def test_orangepi_zero3_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "orangepi-zero3.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("xunlong,orangepi-zero3"))
+        self.assertTrue(board_re.match("orangepi-zero-3"))
+        self.assertTrue(model_re.match("Orange Pi Zero 3"))
+
+        self.assertEqual(p["target_architecture"], "sunxi/cortexa53")
+        self.assertEqual(p["hardware"]["storage_type"], "emmc")
+        self.assertEqual(p["hardware"]["ram_mb"], 1024)
+
 
 if __name__ == "__main__":
     unittest.main()

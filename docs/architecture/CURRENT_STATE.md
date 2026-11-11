@@ -21,14 +21,14 @@
 | **Hardware** (ESP8266/ESP32 vendo and timer firmware) | Arduino C++ | PR #27 (`Hardware/esp32`, `Hardware/esp8266`); Labs standalone timers; Experiments PR #283 | PR #27 (`Hardware/`), Candidate PR #26 | **RECOVERING** (CI green) | **NO-GO** |
 | **CORE (COE-CORE)** (capability tiers, config transactions, nft authorization) | POSIX sh | PRs #3–#16 chain (head `d537b30f67…`) | #3–#16 | **DEVELOPING** (drafts, CI green per PR) | **NO-GO** |
 | **Shared contracts / accounting** | JSON Schema, golden vectors | PR #27 (`Shared/contracts/`); PR #24 (`member_txn_journal.sh`) | PR #27 (`Shared/`), Candidate PR #26 | **ESTABLISHED** (CI green) | **NO-GO** |
-| **Deployment / packaging** | n/a | none in primary repo; legacy `installer/`, `tools/` inside BlazePwifi | none | **not started** | **NO-GO** |
+| **Deployment / packaging** | Python 3, OpenWrt ImageBuilder, POSIX sh | `tools/package_appliance_firmware.py`, `Shared/contracts/router-profile/profiles/`, `Pisowifi/openwrt/rootfs/usr/sbin/blaze-appliance-diag` | PR #26 (Candidate Monorepo) | **OPERATIONAL** (5 profiles, CI green) | **NO-GO** |
 
 ## 3. Interaction model (verified by reading source and docs)
 
-- **Coin → credit path (PisoWiFi):** ESP vendo controller → HTTP `POST …/cgi-bin/vendo` with form fields `action,id,nonce,pulses,target,sig` → OpenWrt CGI validates signature and nonce → accounting writes `members.tsv` / `member-events.tsv` (text files; **not one crash-atomic transaction**, tracked as Experiments issue #31) → nftables per-MAC authorization.
+- **Coin → credit path (PisoWiFi):** ESP vendo controller → HTTP `POST …/cgi-bin/vendo` with form fields `action,id,nonce,pulses,target,sig` → OpenWrt CGI validates signature and nonce → accounting writes `members.tsv` / `member-events.tsv` / `vouchers.tsv` via **crash-atomic two-pass transaction redo journals** (`member-txn.commit`, `voucher-txn.commit`) → nftables per-MAC authorization.
 - **SoftTimer ↔ PisoWiFi:** `BlazePwifiClient` posts to the same vendo CGI using the BlazePwifi controller signature contract; banks/restores member time; peer-to-peer "Centralized" mode uses HMAC-SHA256 with timestamp, nonce cache and event-id dedup over plain HTTP on a LAN port.
 - **SoftTimer ↔ hardware:** exact-device serial/USB-RS232 CTS/DSR pulse input; optional ESP timer bridge over HTTP (`http://192.168.4.1/` default).
-- **Rental:** Android client enrolls with a one-time token and authenticates with HMAC-SHA256 against `/cgi-bin/rental`; PR #19 baseline is "local-router CLI grants only; Android reads status, cannot enforce".
+- **Rental:** Android client enrolls with a one-time token and authenticates with HMAC-SHA256 against `/cgi-bin/rental`; PR #19 baseline is "local-router CLI grants only; Android reads status, cannot enforce". Turnkey appliance packager supports optional `--include-rental` overlay bundling.
 - **Independence rule from the repos' own docs:** SoftTimer must not require BlazePwifi/Rental/diskless; Rental and PisoWiFi are independent products.
 
 ## 4. Verification state of this audit
@@ -38,18 +38,24 @@
 | Repo list, visibility, default branch, HEAD SHAs | 23 repos | recorded in `SOURCE_PROVENANCE.md` |
 | Branch and PR inventory | Experiments (343 branches, 72 open PRs); CoinOperatedEcosystem (27 branches, 18 open PRs) | recorded |
 | Ancestry of SoftTimer chain | Experiments, `git merge-base --is-ancestor` | linear chain confirmed (see provenance) |
-| CI check-runs on PR heads | CoinOperatedEcosystem #1,#3–#19 | #3–#17 success; **#1, #18, #19 have none** |
-| Shell syntax + focused tests | #18 @ `eef173286c…` | see `CODEBASE_AUDIT.md` §3 |
-| Python/Java Rental tests | #19 @ `fcc8f8c9bc…` | see `CODEBASE_AUDIT.md` §3 |
-| .NET compile | SoftTimer v0.4.0 (`f4e8a891…`), SDK 8.0.428 on Linux, `-warnaserror` | 0 warnings / 0 errors (**compile only, not a Windows run**) |
+| CI check-runs on candidate PR #26 | All 5 module workflows + case collision guard | **100% SUCCESS / PASS** (all checks green) |
+| Shell syntax + focused tests | PR #26 HEAD | 21/21 focused suites PASS in POSIX `sh` and BusyBox `ash` |
+| Python/Java Rental tests | PR #26 HEAD | 23/23 tests PASS (with openssl/Java 17) |
+| .NET compile + Windows CI | SoftTimer WinForms (.NET 8) | **CI PASS** in `windows-lab` and `installer-lab` |
+| Arduino Firmware compile | ESP32 and ESP8266 Vendo Firmwares | **CI PASS** in `hardware-ci.yml` |
+| Appliance Packaging & Diag | ImageBuilder packaging and `blaze-appliance-diag` | **21/21 tests PASS** in `tools/test_*.py` |
 
 ## 5. Not audited in this pass
 
-Android sources (`BlazeRentalLauncher`, ~965 files), EasyMode, the other 20 repositories beyond inventory, the 72 Experiments PR bodies individually, EW1200G Pro OpenWrt support and VLAN/profile design, Windows runtime behavior, physical hardware.
+Android sources (`BlazeRentalLauncher`, ~965 files), EasyMode, the other 20 repositories beyond inventory, the 72 Experiments PR bodies individually, Windows runtime behavior on physical client PCs, physical hardware power-loss testing on real router devices.
 
-## 6. Status Addendum — 2026-11-11 (Hardware & Shared Migration, Candidate PR #26, PR #27)
+## 6. Status Addendum — 2026-11-11 (Hardware Appliance Bundles Architecture, Candidate PR #26)
 
-1. **Hardware Firmwares Migrated (PR #27):** ESP32 (`Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino`) and ESP8266 (`Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino`) firmwares are now housed natively within `CoinOperatedEcosystem` with setup quarantine endpoints (`/quarantine`, `/quarantine/clear`), server response signature verification, and fresh CSPRNG nonces. Arduino CLI CI workflow `.github/workflows/hardware-ci.yml` compiles both targets and validates firmware hardening in CI.
-2. **Shared Contracts Established (PR #27):** Inter-product contract specifications and golden vectors are now located at `Shared/contracts/controller-signature/` and `Shared/contracts/member-bank-restore/` with JSON schemas and automated Python validation (`Shared/tests/test_shared_contracts.py`).
-3. **Hardware Appliance Bundles Model:** Per owner direction, software is not distributed standalone; it is shipped pre-flashed/installed alongside physical hardware bundles (EW1200G Pro, Orange Pi, Mini PCs, commercial routers). All appliance components are unified in this monorepo.
-4. **Production Gate Notice:** Production admission remains strictly **NO-GO** across all components.
+1. **Hardware Firmwares Migrated (PR #27 & PR #26):** ESP32 (`Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino`) and ESP8266 (`Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino`) firmwares are housed natively within `CoinOperatedEcosystem` with setup quarantine endpoints (`/quarantine`, `/quarantine/clear`), server response signature verification, and fresh CSPRNG nonces. Arduino CLI CI workflow `.github/workflows/hardware-ci.yml` compiles both targets and validates firmware hardening in CI.
+2. **Shared Contracts Established:** Inter-product contract specifications and golden vectors are located at `Shared/contracts/controller-signature/`, `Shared/contracts/member-bank-restore/`, and `Shared/contracts/router-profile/` with JSON schemas and automated Python validation (`Shared/tests/test_shared_contracts.py`, `test_router_profiles.py`, `test_vlan_isolation.py`). All 13 tests pass.
+3. **Turnkey Hardware Appliance Bundles Model:** Per owner direction, software is not distributed standalone; it is shipped pre-flashed/installed alongside physical hardware bundles (Ruijie RG-EW1200G Pro v1.1, Notion R281, Orange Pi R1 Plus LTS, Orange Pi Zero 3, x86_64 Mini PCs). All appliance components are unified in this monorepo.
+4. **Appliance Packaging Toolchain:** `tools/package_appliance_firmware.py` provides automated ImageBuilder profile generation and rootfs overlay staging across all 5 router hardware profiles, enforcing strict flash memory margins, DSA switch VLAN isolation, and optional Rental module bundling (`--include-rental`).
+5. **Runtime Appliance Diagnostics:** `Pisowifi/openwrt/rootfs/usr/sbin/blaze-appliance-diag` provides invariant verification on boot (profile matching, overlay storage margin >= `min_free_overlay_kb`, journal integrity, and network bridge detection), outputting human-readable and JSON statuses. Tested across 6 cases in `tools/test_appliance_diag.py`.
+6. **Crash-Atomic Redo Journaling (Issue #31):** Two-pass redo journals are fully implemented in `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/common.sh` for both member balances and voucher redemptions (`bp_member_txn_*` and `bp_voucher_txn_*`), with fail-closed digest checking and zero partial writes on fault.
+7. **Production Gate Notice:** Production admission remains strictly **NO-GO** across all components pending independent durable witness and physical hardware power-cut testing.
+

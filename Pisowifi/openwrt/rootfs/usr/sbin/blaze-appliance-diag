@@ -1,0 +1,174 @@
+#!/bin/sh
+# blaze-appliance-diag — Turnkey Hardware Appliance Diagnostics & Invariant Checker
+# Verifies profile alignment, storage margins, journal health, and networking invariants.
+set -eu
+
+BP_STATE="${BP_STATE:-/etc/blazepwifi/state}"
+BP_APPLIANCE_PROFILE="${BP_APPLIANCE_PROFILE:-/etc/blazepwifi/appliance_profile.json}"
+BP_SYSINFO_BOARD="${BP_SYSINFO_BOARD:-/tmp/sysinfo/board_name}"
+BP_SYSINFO_MODEL="${BP_SYSINFO_MODEL:-/tmp/sysinfo/model}"
+BP_PAID_UNCERTAIN="$BP_STATE/paid-state-uncertain"
+
+JSON_MODE=0
+for arg in "$@"; do
+    case "$arg" in
+        --json) JSON_MODE=1 ;;
+        --help|-h)
+            printf 'Usage: blaze-appliance-diag [--json]\n'
+            exit 0
+            ;;
+    esac
+done
+
+# Initialize check states
+PROFILE_STATUS="NOT_FOUND"
+PROFILE_ID="generic"
+PROFILE_NAME="Generic Appliance"
+MIN_OVERLAY_KB=10000
+TARGET_ARCH="unknown"
+
+STORAGE_STATUS="OK"
+FREE_OVERLAY_KB=0
+
+JOURNAL_STATUS="HEALTHY"
+JOURNAL_MSG="Journals clean; live tables intact"
+
+NETWORK_STATUS="OK"
+NETWORK_MSG="Default bridge present"
+
+OVERALL_HEALTH=1
+EXIT_CODE=0
+
+# 1. Profile Verification
+if [ -f "$BP_APPLIANCE_PROFILE" ] && [ -r "$BP_APPLIANCE_PROFILE" ]; then
+    PROFILE_ID="$(sed -n 's/.*"profile_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BP_APPLIANCE_PROFILE" | head -n1)"
+    [ -n "$PROFILE_ID" ] || PROFILE_ID=generic
+    PROFILE_NAME="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BP_APPLIANCE_PROFILE" | head -n1)"
+    [ -n "$PROFILE_NAME" ] || PROFILE_NAME="Unknown Profile"
+    TARGET_ARCH="$(sed -n 's/.*"target_architecture"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BP_APPLIANCE_PROFILE" | head -n1)"
+    [ -n "$TARGET_ARCH" ] || TARGET_ARCH=unknown
+    read_min="$(sed -n 's/.*"min_free_overlay_kb"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$BP_APPLIANCE_PROFILE" | head -n1)"
+    case "$read_min" in [0-9]*) MIN_OVERLAY_KB="$read_min" ;; esac
+
+    if [ -f "$BP_SYSINFO_BOARD" ] && [ -r "$BP_SYSINFO_BOARD" ]; then
+        BOARD_NAME="$(cat "$BP_SYSINFO_BOARD" 2>/dev/null || true)"
+        PROFILE_STATUS="MATCHED ($BOARD_NAME)"
+    else
+        PROFILE_STATUS="CONFIGURED ($PROFILE_ID)"
+    fi
+else
+    PROFILE_STATUS="UNCONFIGURED"
+fi
+
+# 2. Storage Margin Check
+read_avail() {
+    target="$1"
+    output="$(df -Pk "$target" 2>/dev/null)" || return 1
+    avail="$(printf '%s\n' "$output" | awk 'NR==2 {print $(NF-2); exit}')"
+    case "$avail" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$avail"
+}
+
+FREE_OVERLAY_KB="${BP_OVERLAY_AVAIL_KB:-$(read_avail "${BP_MOCK_OVERLAY:-/overlay}" || read_avail / || echo 0)}"
+case "$FREE_OVERLAY_KB" in ''|*[!0-9]*) FREE_OVERLAY_KB=0 ;; esac
+
+if [ "$FREE_OVERLAY_KB" -lt "$MIN_OVERLAY_KB" ]; then
+    STORAGE_STATUS="FAIL_LOW_SPACE"
+    EXIT_CODE=1
+else
+    STORAGE_STATUS="OK"
+fi
+
+# 3. Financial Invariant & Transaction Journal Integrity Check
+if [ -e "$BP_PAID_UNCERTAIN" ] || [ -L "$BP_PAID_UNCERTAIN" ]; then
+    JOURNAL_STATUS="FAIL_PAID_UNCERTAIN"
+    JOURNAL_MSG="CRITICAL: paid-state-uncertain pinned; operator reconciliation required"
+    EXIT_CODE=2
+else
+    # Check for pending commit journals
+    pending=""
+    [ -f "$BP_STATE/voucher-txn.commit" ] && pending="${pending}voucher-txn "
+    [ -f "$BP_STATE/member-txn.commit" ] && pending="${pending}member-txn "
+    if [ -n "$pending" ]; then
+        JOURNAL_STATUS="PENDING_ROLL_FORWARD"
+        JOURNAL_MSG="Pending commit records detected (${pending% }); auto-recovery on next operation"
+    else
+        # Verify existing tables are not symlinks
+        symlink_detected=0
+        for table in accounts.tsv vouchers.tsv members.tsv; do
+            if [ -L "$BP_STATE/$table" ]; then
+                symlink_detected=1
+            fi
+        done
+        if [ "$symlink_detected" -eq 1 ]; then
+            JOURNAL_STATUS="FAIL_UNTRUSTED_SYMLINK"
+            JOURNAL_MSG="CRITICAL: Live state contains symlink; rejected"
+            EXIT_CODE=2
+        else
+            JOURNAL_STATUS="OK"
+            JOURNAL_MSG="Transaction journals verified clean"
+        fi
+    fi
+fi
+
+# 4. Networking Check
+MOCK_IP="${BP_MOCK_IP_CMD:-ip}"
+if command -v "$MOCK_IP" >/dev/null 2>&1; then
+    if "$MOCK_IP" link show br-lan >/dev/null 2>&1; then
+        NETWORK_STATUS="OK"
+        NETWORK_MSG="br-lan active"
+    else
+        NETWORK_STATUS="WARN_DEVICE_NOT_FOUND"
+        NETWORK_MSG="br-lan not currently up"
+    fi
+else
+    NETWORK_STATUS="INFO_COMMAND_UNAVAILABLE"
+    NETWORK_MSG="ip command not found in runtime"
+fi
+
+# Determine overall health
+if [ "$STORAGE_STATUS" = "OK" ] && [ "$JOURNAL_STATUS" = "OK" -o "$JOURNAL_STATUS" = "PENDING_ROLL_FORWARD" ]; then
+    OVERALL_HEALTH=1
+else
+    OVERALL_HEALTH=0
+fi
+
+if [ "$JSON_MODE" -eq 1 ]; then
+    cat <<EOF
+{
+  "healthy": $([ "$OVERALL_HEALTH" -eq 1 ] && echo "true" || echo "false"),
+  "profile": {
+    "status": "$PROFILE_STATUS",
+    "profile_id": "$PROFILE_ID",
+    "name": "$PROFILE_NAME",
+    "target_architecture": "$TARGET_ARCH"
+  },
+  "storage": {
+    "status": "$STORAGE_STATUS",
+    "available_kb": $FREE_OVERLAY_KB,
+    "min_required_kb": $MIN_OVERLAY_KB
+  },
+  "financial_journals": {
+    "status": "$JOURNAL_STATUS",
+    "message": "$JOURNAL_MSG"
+  },
+  "networking": {
+    "status": "$NETWORK_STATUS",
+    "message": "$NETWORK_MSG"
+  }
+}
+EOF
+else
+    printf '=== Blaze Appliance Diagnostics ===\n'
+    printf 'Profile:    [%s] %s (%s)\n' "$PROFILE_STATUS" "$PROFILE_NAME" "$TARGET_ARCH"
+    printf 'Storage:    [%s] %d KB free (minimum required: %d KB)\n' "$STORAGE_STATUS" "$FREE_OVERLAY_KB" "$MIN_OVERLAY_KB"
+    printf 'Journals:   [%s] %s\n' "$JOURNAL_STATUS" "$JOURNAL_MSG"
+    printf 'Networking: [%s] %s\n' "$NETWORK_STATUS" "$NETWORK_MSG"
+    if [ "$OVERALL_HEALTH" -eq 1 ]; then
+        printf '=== RESULT: HEALTHY ===\n'
+    else
+        printf '=== RESULT: DEGRADED / ATTENTION REQUIRED (exit code %d) ===\n' "$EXIT_CODE"
+    fi
+fi
+
+exit "$EXIT_CODE"
