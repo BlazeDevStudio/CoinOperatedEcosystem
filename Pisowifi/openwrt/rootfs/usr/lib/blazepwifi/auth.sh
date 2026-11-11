@@ -9,11 +9,19 @@ BP_AUDIT=${BP_AUDIT:-$BP_STATE/audit.tsv}
 
 bp_auth_cfg() {
 	v="$(bp_cfg "$1" 2>/dev/null || true)"
-	[ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"
+	if [ -n "$v" ]; then
+		printf '%s' "$v"
+	else
+		printf '%s' "$2"
+	fi
 }
 
 bp_auth_now() {
-	[ -n "${BP_AUTH_NOW:-}" ] && printf '%s\n' "$BP_AUTH_NOW" || bp_now
+	if [ -n "${BP_AUTH_NOW:-}" ]; then
+		printf '%s\n' "$BP_AUTH_NOW"
+	else
+		bp_now
+	fi
 }
 
 bp_auth_init() {

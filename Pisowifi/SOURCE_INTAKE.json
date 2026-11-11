@@ -82,7 +82,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/auth.sh",
       "source_git_blob": "ecf2f1e8af8a56a6c02c5bd28a066c587741bfc0",
-      "destination_git_blob": "3a152fec651a1d2cd24cc1c55a8ea98645bf0e24",
+      "destination_git_blob": "872385dfcd07bdd978c6c36ef166dd4130d56f84",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -96,7 +96,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/common.sh",
       "source_git_blob": "4ccb10777b08f541d092f7c2c2d2aad4d2f6562e",
-      "destination_git_blob": "eaf6e0ea4c4fa10e912b9a8d971e64acbe7bacef",
+      "destination_git_blob": "8c8024888cdc4a405da2af7798905a3ea56244dc",
       "git_mode": "100644",
       "status": "derived_cleanup_review_required_real_router_test"
     },
