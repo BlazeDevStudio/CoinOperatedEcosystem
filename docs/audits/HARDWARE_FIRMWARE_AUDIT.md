@@ -71,3 +71,18 @@
    - Do not call `clearPending()` on `"coin window expired"` / `"no active coin window"`; transition the controller into a held/quarantined state or report an uncredited-coin dispute event to the router so operator reconciliation can credit or refund the coin.
 3. **ISR-Driven Coin Pulse Capture:**
    - Replace main-loop `digitalRead(runCoinPin)` polling with an `IRAM_ATTR` GPIO interrupt handler using atomic pulse-edge timestamps, decoupling physical pulse capture from `HTTPClient` network latency.
+
+---
+
+## 4. Status Addendum — 2026-11-11 (`Experiments PR #283`)
+
+Client-side remediation candidates for `HW-P0-1`, `HW-P0-2`, `HW-P1-1`, and `HW-P2-1` have been implemented and verified on branch `cleanup/esp-firmware-hardening-and-quarantine-20261111` under **Draft PR #283** in `BlazeDevStudio/BlazingSystems-Experiments`:
+
+1. **HW-P0-1 (Response Signature Verification):** `BlazePwifiVendo32.ino` and `BlazePwifiVendo.ino` now capture `lastSentNonce` and cryptographically verify `response_sig` for `register` and `poll` against `hexDigest(key|action|id|nonce|...)` matching the server-side signatures emitted by OpenWrt `/cgi-bin/vendo` (PR #24). Unauthenticated or mismatched replies are ignored.
+2. **HW-P0-2 (Uncredited Coin Quarantine):** When the router returns a coin rejection (`"coin window expired"`, `"no active coin window"`, etc.), both sketches now invoke `quarantinePending(reason)`, appending the uncredited coin event to `/quarantine.log` in LittleFS with timestamp, pulses, nonce, and target for operator reconciliation, before clearing the active queue.
+3. **HW-P1-1 (ESP8266 Nonce Entropy):** In `BlazePwifiVendo.ino`, `freshNonce()` replaced predictable `micros()` with two 32-bit hardware RNG words from `ESP.random()`.
+4. **HW-P2-1 (Setup Form HTML Escaping):** Added `htmlEsc()` escaping `&`, `'`, `"`, `<`, and `>` for `cfg.ssid`, `cfg.server`, and `cfg.id` inputs in the temporary setup portal.
+5. **Automated Verification:** Added `experiment/openwrt/BlazePwifi/tests/v05_firmware_hardening_test.sh` asserting all four properties.
+
+> [!IMPORTANT]
+> Hardware admission remains **STRICT NO-GO** pending physical hardware power-cut testing (`Experiments #34`), ISR-driven edge pulse capture verification on physical coin acceptors, anti-rollback witness integration, and formal QA review.
