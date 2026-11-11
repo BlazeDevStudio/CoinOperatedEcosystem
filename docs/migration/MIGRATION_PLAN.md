@@ -33,7 +33,7 @@ Principle: **recover and review what the owner already drafted; do not re-import
 | WP-7 | Hardware: inventory ESP8266/ESP32 sources and the DENY-only CORE auth PRs (#252/#254); define the vendo protocol spec with test vectors | migration + contract | WP-4 | `Hardware/protocols/` + vectors | vector tests in shell and C#/C++ host builds |
 | WP-8 | Shared contracts: controller signature and member bank/restore, with golden vectors consumed by PisoWiFi, SoftTimer, firmware | integration | WP-7 | `Shared/contracts/*` | each implementation passes the same vectors |
 | WP-9 | EW1200G Pro profile + netns-based VLAN/profile tests (no hardware claims) | feature | WP-4 | `Pisowifi/profiles/` | namespace test results; physical compatibility **NOT claimed** |
-| WP-10 | Financial invariants (#31): design and regression tests before code | design | WP-4, WP-8 | invariant spec + tests | RED test turns green only via a real fix |
+| WP-10 | Financial invariants (#31): design and regression tests before code | design | WP-4, WP-8 | invariant spec + tests | RED test turns green only via a real fix. **Status 2026-11-11:** candidate fix on Draft PR #24 (journaled commit); CI green; NOT accepted — power-cut proof (#34), witness (#43) and QA review outstanding |
 
 ## 3. SoftTimer increments still to review (Experiments, linear chain)
 

@@ -61,3 +61,10 @@ Environment limits: no OpenWrt, no real `nft`, no BusyBox, no Windows host, no h
 ## 5. Code changed by this audit
 
 None. This PR adds documents only. (A SoftTimer baseline import PR #20 was opened and then closed as a duplicate of #17 before merge; see `SOURCE_PROVENANCE.md`.)
+
+## Status addendum — 2026-11-11 (P0-2 / Experiments #31)
+
+The P0-2 evidence above was measured at PR #18 head `eef173286cb6…` and is kept unchanged as the historical baseline. A fix candidate now exists on Draft PR #24 (`cleanup/pisowifi-ci-and-cli-auth-hardening-20261111`, head `1ffa4b17d29e916a073d611387ab06bc51c496ab`): `members.tsv`, `member-events.tsv` and `member-revision` are committed through a SHA-256 commit record with roll-forward recovery under the member lock. The former RED test is now `member_receipt_failure_atomicity.sh` and passes; `member_txn_journal.sh` adds 8 simulated-fault cases. GitHub Actions passes under POSIX sh and BusyBox ash.
+
+P0-2 is **not closed**: no power-cut/flash evidence (#34), no off-device anti-rollback witness (#43), unlocked readers can observe the apply window, create/patch/password and rental/voucher ledgers are not journaled, and no independent QA review has occurred. P0-1 (privacy/licensing decision) is unaffected and still requires the owner.
+
