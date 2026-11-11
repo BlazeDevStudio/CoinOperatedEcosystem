@@ -41,7 +41,33 @@ IP
 
 cat > "$T/bin/nft" <<'NFT'
 #!/bin/sh
-exit 0
+macs="${BP_RUN}/nft_macs"
+[ -f "$macs" ] || : > "$macs"
+mac="$(printf '%s' "${6:-}" | tr -d '{} ' | tr 'A-F' 'a-f')"
+case "$1 $2" in
+  'add element')
+    grep -Fqx "$mac" "$macs" 2>/dev/null || printf '%s\n' "$mac" >> "$macs"
+    ;;
+  'get element')
+    grep -Fqx "$mac" "$macs" 2>/dev/null
+    ;;
+  'delete element')
+    grep -Fqx "$mac" "$macs" 2>/dev/null || exit 1
+    grep -Fvx "$mac" "$macs" > "$macs.next" || true
+    mv "$macs.next" "$macs"
+    ;;
+  'list set')
+    printf 'table inet blazepwifi {\n set auth_macs {\n  type ether_addr\n  elements = {\n'
+    sed 's/^/   /;s/$/,/' "$macs"
+    printf '  }\n }\n}\n'
+    ;;
+  'flush set')
+    : > "$macs"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 NFT
 
 chmod +x "$T/bin/"*
