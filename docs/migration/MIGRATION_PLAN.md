@@ -2,14 +2,24 @@
 
 Principle: **recover and review what the owner already drafted; do not re-import.** Each step is a separate, small, reviewable draft PR with source SHA, mapping, validation evidence and rollback. Nothing here merges, publishes, flashes, or touches real customer data.
 
-## 0. Gates (must be resolved by the owner; work that does not depend on them continues)
+## 0. Gates & Distribution Model
 
-| Gate | Blocks | Why |
+### Owner Decision (2026-11-11): Hardware Appliance Bundles Model
+The owner has determined that the software is **not distributed standalone as bare software**. It is shipped exclusively alongside physical **hardware appliance bundles**:
+- **Ruijie RG-EW1200G Pro v1.1 routers**
+- **Orange Pi single-board computers (OPi Zero 3, OPi One, OPi PC, OPi PC2, etc.)**
+- **Mini PCs (Windows SoftTimer PC, x86_64 OpenWrt/Linux appliances)**
+- **Commercial routers and embedded IoT platforms**
+
+Consequently, **Gate G1 (P0-1 Privacy/Licensing Conflict) and Gate G2 are RESOLVED & REMOVED**. All components (PisoWiFi, Rental, Pisonet SoftTimer, Hardware firmware, and Shared contracts) are unified in this monorepo as turnkey appliance firmware and companion software for these hardware bundles.
+
+| Gate | Status | Resolution |
 |---|---|---|
-| G1 — BlazePwifi licensing/privacy decision (P0-1) | #18 and any further BlazePwifi source in a public repo | Directive says proprietary; repo says MIT/open-source |
-| G2 — Approved private repository | proprietary/signing/private-config work | none exists |
-| G3 — Case/layout decision (`TARGET_STATE.md` §2) | merging #1–#16 with #17–#19 | `Pisonet`/`pisonet` collision, `core/` duplication |
-| G4 — Drive registry access | artifact mirroring, dedup by SHA256 | connector not available |
+| G1 — Governance & Privacy Licensing (P0-1) | **RESOLVED / REMOVED** | Software is shipped bundled with hardware appliances (EW1200G Pro, OPi, Mini PC, routers); not distributed standalone. |
+| G2 — Approved private repository | **RESOLVED** | Unified monorepo architecture for all hardware bundle components in `CoinOperatedEcosystem`. |
+| G3 — Case/layout decision (`TARGET_STATE.md` §2) | **RESOLVED** | Unified capitalized convention (`Hardware`, `Pisonet`, `Rental`, `Shared`, `Pisowifi`). Case collisions eliminated (PR #1, PR #25). |
+| G4 — Drive registry access | DEFERRED | Artifact archiving and binary mirror connector access when available; does not block appliance integration. |
+
 
 ## 1. Already-existing migrations (do not redo)
 

@@ -28,7 +28,7 @@ CoinOperatedEcosystem/
 Rules:
 1. **One spelling per directory.** `Pisonet`, `Rental`, `Pisowifi`, `Hardware`, `Shared` are capitalized. The `pisonet/` and `rental/` lowercase directories in PR #1, and `core/` in PRs #5–#16, must be moved before any of them merge (they collide or duplicate). 
 2. **CORE is not a product.** The COE-CORE chain (#3–#16) belongs under `Pisowifi/core/` because its files are the PisoWiFi OpenWrt runtime. The two lines of the same four files (see `DEPENDENCY_MAP.md` §3) must be reconciled into one before further cleanup.
-3. **Proprietary material is excluded from this public repo** until the owner resolves P0-1. The directory layout does not imply that BlazePwifi source may live here.
+3. **Hardware bundle appliance distribution.** Per owner decision (2026-11-11), software is not distributed standalone as bare software; it is shipped pre-flashed and configured alongside physical hardware bundles (Ruijie RG-EW1200G Pro v1.1, Orange Pi single-board computers, Mini PCs, and routers). Gate P0-1 is resolved and removed, and all appliance components are unified in this monorepo.
 4. **Profiles, not constants.** VLAN IDs, LAN/WAN port mappings and SSID separation are described by profile files validated by a schema. Nothing is hardcoded for EW1200G Pro; it is the first profile.
 5. **Default deny.** Coin acceptance, relay actuation, financial credit and paid-ack stay disabled unless explicitly enrolled; synthetic tests never enable them.
 
