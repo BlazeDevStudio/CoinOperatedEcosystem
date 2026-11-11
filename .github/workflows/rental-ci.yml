@@ -1,0 +1,58 @@
+name: BlazeRental Standalone CI
+
+on:
+  pull_request:
+    paths:
+      - 'Rental/**'
+      - '.github/workflows/rental-ci.yml'
+  push:
+    branches:
+      - main
+      - 'rental/**'
+      - 'cleanup/rental-*'
+      - 'integration/**'
+    paths:
+      - 'Rental/**'
+      - '.github/workflows/rental-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rental-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-rental:
+    name: Verify BlazeRental OpenWrt & Java Protocol
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record exact commit SHA under test
+        run: |
+          echo "Testing commit: $(git rev-parse HEAD)"
+
+      - name: Install BusyBox & ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends busybox-static shellcheck
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Static POSIX & BusyBox ash syntax checks
+        run: |
+          for f in Rental/openwrt/bin/blazerentalctl Rental/openwrt/cgi-bin/blazerental Rental/openwrt/lib/core.sh Rental/openwrt/install.sh; do
+            sh -n "$f"
+            busybox sh -n "$f"
+            shellcheck -s sh -S error "$f"
+          done
+
+      - name: Run OpenWrt, durability, and Java HMAC unit/integration tests
+        run: |
+          python3 -m unittest discover -s Rental/tests -v

@@ -1,0 +1,181 @@
+name: BlazePisonet SoftTimer Windows synthetic CI
+
+on:
+  pull_request:
+    paths:
+      - 'Pisonet/SoftTimer/**'
+      - '.github/workflows/pisonet-softtimer-windows.yml'
+  push:
+    branches:
+      - main
+      - 'pisonet/**'
+      - 'cleanup/pisonet-*'
+      - 'integration/**'
+    paths:
+      - 'Pisonet/SoftTimer/**'
+      - '.github/workflows/pisonet-softtimer-windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-lab:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: Pisonet/SoftTimer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build actual app and watchdog
+        run: |
+          dotnet restore ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'App restore failed' }
+          dotnet build ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'App build failed' }
+          dotnet build ./src/BlazePisonet.SoftTimer.Watchdog/BlazePisonet.SoftTimer.Watchdog.csproj -c Release -warnaserror
+          if ($LASTEXITCODE -ne 0) { throw 'Watchdog build failed' }
+      - name: Shipped timer math regression
+        run: |
+          dotnet run --no-build --project ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -- --verify-timer-math
+          if ($LASTEXITCODE -ne 0) { throw 'Timer math verification failed' }
+      - name: Same-owned-handle native COM source test
+        run: |
+          dotnet run --project ./tests/NativeComInterfaceHandleLab/NativeComInterfaceHandleLab.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Native COM case failed' }
+      - name: Source-linked serial fault admission gate
+        run: |
+          dotnet run --project ./tests/NativeSerialPinFaultLab/NativeSerialPinFaultLab.csproj -c Release -- --safety-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Serial fault safety gate failed' }
+      - name: Source-linked stale coin-event ownership gate
+        run: |
+          dotnet run --project ./tests/NativeCoinEventOwnershipGuard/NativeCoinEventOwnershipGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Coin event ownership gate failed' }
+      - name: Source-linked paid-time state recovery corruption guard
+        run: |
+          dotnet run --project ./tests/StateRecoveryGuard/StateRecoveryGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Paid-state recovery guard failed' }
+      - name: Source-linked timer credit disk-failure and duplicate guard
+        run: |
+          dotnet run --project ./tests/TimerCreditCommitGuard/TimerCreditCommitGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Timer credit commit guard failed' }
+      - name: Source-linked member time banking restoration and transfer financial guard
+        run: |
+          dotnet run --project ./tests/MemberTimeCommitGuard/MemberTimeCommitGuard.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Member time persistence guard failed' }
+      - name: Publish unsigned Windows x64 lab diagnostic build
+        run: |
+          dotnet publish ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o ./lab-output
+          if ($LASTEXITCODE -ne 0) { throw 'Lab publish failed' }
+      - name: Upload LAB-only artifact (not a customer installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazePisonet-SoftTimer-Win64-UNSIGNED-LAB
+          path: Pisonet/SoftTimer/lab-output/
+          if-no-files-found: error
+          retention-days: 7
+
+  installer-lab:
+    needs: windows-lab
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: Pisonet/SoftTimer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish isolated self-contained app and watchdog payloads
+        run: |
+          dotnet publish ./src/BlazePisonet.SoftTimer/BlazePisonet.SoftTimer.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./out/bundle
+          if ($LASTEXITCODE -ne 0) { throw 'App publish failed' }
+          dotnet publish ./src/BlazePisonet.SoftTimer.Watchdog/BlazePisonet.SoftTimer.Watchdog.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./out/bundle
+          if ($LASTEXITCODE -ne 0) { throw 'Watchdog publish failed' }
+          foreach ($file in @('BlazePisonet.SoftTimer.exe', 'BlazePisonet.SoftTimer.Watchdog.exe')) {
+            if (-not (Test-Path "./out/bundle/$file")) { throw "Missing payload: $file" }
+          }
+      - name: Produce genuine self-contained lab EXEs and a blocked partial ZIP
+        run: |
+          & ./build-local.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone publish command failed' }
+          $publish = Join-Path (Get-Location) 'out/lab-publish'
+          $stage = Join-Path (Get-Location) 'out/softtimer-blocked-lab'
+          $target = Join-Path $stage 'SoftTimer'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          $names = @('BlazePisonet.SoftTimer.exe', 'BlazePisonet.SoftTimer.Watchdog.exe')
+          $sums = @()
+          foreach ($name in $names) {
+            $source = Join-Path $publish $name
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Get-Item -LiteralPath $source).Length -le 0) { throw "Missing or empty executable: $name" }
+            $dest = Join-Path $target $name
+            Copy-Item -LiteralPath $source -Destination $dest -ErrorAction Stop
+            $item = Get-Item -LiteralPath $dest
+            $hash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+            $sums += "$hash  SoftTimer/$name"
+            Write-Host "LAB_PAYLOAD $name BYTES $($item.Length) SHA256 $hash"
+          }
+          @(
+            'NO-GO FOR SHOP INSTALL. Spare-machine lab inspection only; never install on a counter taking customer money.',
+            'Only the two Windows self-contained unsigned executables built successfully. This ZIP is not the requested full BlazeCoin installer.',
+            'On an isolated spare Windows PC: run SoftTimer/BlazePisonet.SoftTimer.exe for the application and SoftTimer/BlazePisonet.SoftTimer.Watchdog.exe for its separate watchdog.',
+            'Do not connect a coin acceptor or authorize payments. Physical serial identity, persistence and anti-rollback remain unapproved.'
+          ) | Set-Content -LiteralPath (Join-Path $stage 'INSTALL.txt') -Encoding utf8
+          @(
+            'NO-GO — BLOCKED PARTIAL BUNDLE',
+            'Router image NOT BUILT: Pisowifi draft has only a rootfs overlay and no documented exact shop board/ImageBuilder profile.',
+            'Rental APK NOT BUILT: Rental/android lacks ./gradlew; no APK or existing signing setup confirmed.',
+            'ESP8266 binaries NOT BUILT: both Labs READMEs omit an exact board/FQBN; the sketch cannot be compiled against a guessed target.',
+            'No router sysupgrade, adb install or esptool flash command is issued for nonexistent binaries.',
+            'Experiments issues #31 #32 #34 #43 #164 #177 remain OPEN; payment admission stays denied.'
+          ) | Set-Content -LiteralPath (Join-Path $stage 'BUILD_FAILED.txt') -Encoding utf8
+          foreach ($file in @('INSTALL.txt', 'BUILD_FAILED.txt')) {
+            $h = (Get-FileHash -LiteralPath (Join-Path $stage $file) -Algorithm SHA256).Hash.ToLowerInvariant()
+            $sums += "$h  $file"
+          }
+          $sums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS') -Encoding ascii
+          $zip = Join-Path (Get-Location) 'out/BlazeCoin-SoftTimer-NO-GO-20261109.zip'
+          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal -ErrorAction Stop
+          $archive = Get-Item -LiteralPath $zip
+          if ($archive.Length -le 0) { throw 'Missing/empty partial lab ZIP' }
+          $digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "PARTIAL_ZIP $($archive.Name) BYTES $($archive.Length) SHA256 $digest STATUS BLOCKED"
+      - name: Upload Windows-only blocked lab ZIP (not a full install bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazeCoin-SoftTimer-NO-GO-20261109
+          path: Pisonet/SoftTimer/out/BlazeCoin-SoftTimer-NO-GO-20261109.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Verify literal NSIS installation layout before packaging
+        run: |
+          & ./tests/InstallerLayoutGuard/validate.ps1
+      - name: Compile NSIS unsigned lab-only installer (do NOT install)
+        run: |
+          $tool = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          $exe = if ($tool) { $tool.Source } else { Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe' }
+          if (-not (Test-Path $exe)) {
+            choco install nsis --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'NSIS tooling installation failed' }
+          }
+          if (-not (Test-Path $exe)) { throw 'makensis.exe missing' }
+          Push-Location ./installer
+          & $exe /V2 'BlazePisonet-SoftTimer.nsi'
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) { throw "NSIS compilation failed: $rc" }
+          if (-not (Test-Path ./out/BlazePisonet-SoftTimer-Setup-v0.4.0-LAB.exe)) { throw 'LAB installer missing' }
+      - name: Upload unsigned LAB installer — NOT customer ready
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlazePisonet-SoftTimer-Setup-win-x64-UNSIGNED-LAB
+          path: Pisonet/SoftTimer/out/BlazePisonet-SoftTimer-Setup-v0.4.0-LAB.exe
+          if-no-files-found: error
+          retention-days: 7
