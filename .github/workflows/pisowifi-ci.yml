@@ -54,6 +54,22 @@ jobs:
               if actual != expected:
                   sys.exit(f"MISMATCH in SOURCE_INTAKE.json derived_tests {entry['path']}: expected {expected}, got {actual}")
 
+          # PR #14 intent: executable bits are part of the contract. A script that
+          # loses 100755 (or a manifest that drifts) must fail CI, not ship silently.
+          modes = {}
+          for line in subprocess.check_output(["git", "ls-files", "-s", str(root)], text=True).splitlines():
+              meta, path = line.split("\t", 1)
+              modes[path] = meta.split()[0]
+          for section in ("runtime", "tests"):
+              for entry in data.get(section, []):
+                  actual = modes.get(f"Pisowifi/{entry['path']}")
+                  if actual != entry["git_mode"]:
+                      sys.exit(f"MODE MISMATCH {section} {entry['path']}: expected {entry['git_mode']}, got {actual}")
+          for entry in data.get("derived_tests", []):
+              actual = modes.get(f"Pisowifi/{entry['path']}")
+              if actual != entry["mode"]:
+                  sys.exit(f"MODE MISMATCH derived_tests {entry['path']}: expected {entry['mode']}, got {actual}")
+
           md = (root / "MIGRATION_MAP.md").read_text()
           for m in re.finditer(r"^\|\s*`[^`]+`\s*\|\s*`Pisowifi/([^`]+)`\s*\|\s*`[0-9a-f]{40}`\s*\|\s*`([0-9a-f]{40})`", md, re.M):
               rel, expected = m.groups()
@@ -61,7 +77,7 @@ jobs:
               if actual != expected:
                   sys.exit(f"MISMATCH in MIGRATION_MAP.md {rel}: expected {expected}, got {actual}")
 
-          print("Verified all SOURCE_INTAKE.json and MIGRATION_MAP.md Git blob SHAs.")
+          print("Verified all SOURCE_INTAKE.json and MIGRATION_MAP.md Git blob SHAs and executable modes.")
           PY
 
       - name: POSIX sh and BusyBox ash syntax check across all Pisowifi scripts
