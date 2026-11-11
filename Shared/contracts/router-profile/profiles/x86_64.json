@@ -1,0 +1,32 @@
+{
+  "profile_id": "x86_64",
+  "name": "Generic x86_64 OpenWrt Appliance",
+  "version": "1.0.0",
+  "target_architecture": "x86/64",
+  "detection": {
+    "board_name_pattern": ".*x86.*|.*generic.*",
+    "model_pattern": ".*PC.*|.*QEMU.*|.*Virtual.*|.*Standard.*"
+  },
+  "hardware": {
+    "flash_kb": 1048576,
+    "ram_mb": 512,
+    "min_free_overlay_kb": 50000,
+    "cpu_cores": 2,
+    "storage_type": "disk"
+  },
+  "networking": {
+    "wan_interface": "eth0",
+    "lan_interface": "br-lan",
+    "switch_type": "generic",
+    "ports": [
+      { "label": "WAN", "interface": "eth0", "speed_mbps": 1000 },
+      { "label": "LAN1", "interface": "eth1", "speed_mbps": 1000 }
+    ],
+    "vlan_supported": true,
+    "default_vlan_ids": {
+      "lan": 1,
+      "guest": 10,
+      "vendo": 20
+    }
+  }
+}

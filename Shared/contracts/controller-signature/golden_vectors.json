@@ -1,0 +1,48 @@
+{
+  "contract": "controller-signature",
+  "version": "1.0",
+  "hash_algorithm": "SHA-256",
+  "vectors": [
+    {
+      "description": "Vendo registration request and signed router response",
+      "secret_key": "blaze-secret-key-9999",
+      "action": "register",
+      "vendo_id": "vendo-01",
+      "request_nonce": "a1b2c3d4e5f60718",
+      "pulses": "0",
+      "target": "",
+      "expected_request_base": "blaze-secret-key-9999|register|vendo-01|a1b2c3d4e5f60718|0||blaze-secret-key-9999",
+      "expected_request_sig": "43a76685bd5604e35825cf526a2cc23d79652cfdcf8abfb833fe9808343b404a",
+      "server_time": 1794403139,
+      "expected_response_base": "blaze-secret-key-9999|register|vendo-01|a1b2c3d4e5f60718|1794403139|blaze-secret-key-9999",
+      "expected_response_sig": "3f9bb4addee0f58b7df294fc3f282287f1f94ed0244f3eecc4a5722de451dad4"
+    },
+    {
+      "description": "Vendo poll response with active coin acceptance window",
+      "secret_key": "blaze-secret-key-9999",
+      "action": "poll",
+      "vendo_id": "vendo-01",
+      "request_nonce": "f0e1d2c3b4a59687",
+      "pulses": "0",
+      "target": "",
+      "insert": 1,
+      "target_nonce": "target-session-nonce-4321",
+      "expires": 1794403260,
+      "expected_request_base": "blaze-secret-key-9999|poll|vendo-01|f0e1d2c3b4a59687|0||blaze-secret-key-9999",
+      "expected_request_sig": "73c5b97cf7c7d351bec224a44cf25e502423ead7cc6fec042d8d837fef77069f",
+      "expected_response_base": "blaze-secret-key-9999|poll|vendo-01|f0e1d2c3b4a59687|1|target-session-nonce-4321|1794403260|blaze-secret-key-9999",
+      "expected_response_sig": "0f49af0dfa2a1dee898e84d261df226e1d3251f909d1775d3dca4084e27151f1"
+    },
+    {
+      "description": "Vendo coin credit submission",
+      "secret_key": "blaze-secret-key-9999",
+      "action": "coin",
+      "vendo_id": "vendo-01",
+      "request_nonce": "1122334455667788",
+      "pulses": "5",
+      "target": "target-session-nonce-4321",
+      "expected_request_base": "blaze-secret-key-9999|coin|vendo-01|1122334455667788|5|target-session-nonce-4321|blaze-secret-key-9999",
+      "expected_request_sig": "57029547f84165173ef18a01108b694b6a1f1ea25947dfea3dfe73e89d2d40b4"
+    }
+  ]
+}

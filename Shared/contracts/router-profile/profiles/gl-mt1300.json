@@ -1,0 +1,33 @@
+{
+  "profile_id": "gl-mt1300",
+  "name": "GL.iNet GL-MT1300 (Beryl) Appliance",
+  "version": "1.0.0",
+  "target_architecture": "ramips/mt7621",
+  "detection": {
+    "board_name_pattern": ".*glinet,gl-mt1300.*",
+    "model_pattern": ".*GL.iNet GL-MT1300.*"
+  },
+  "hardware": {
+    "flash_kb": 32768,
+    "ram_mb": 256,
+    "min_free_overlay_kb": 8192,
+    "cpu_cores": 2,
+    "storage_type": "nand_spi"
+  },
+  "networking": {
+    "wan_interface": "wan",
+    "lan_interface": "br-lan",
+    "switch_type": "dsa",
+    "ports": [
+      { "label": "WAN", "interface": "wan", "speed_mbps": 1000 },
+      { "label": "LAN1", "interface": "lan1", "speed_mbps": 1000 },
+      { "label": "LAN2", "interface": "lan2", "speed_mbps": 1000 }
+    ],
+    "vlan_supported": true,
+    "default_vlan_ids": {
+      "lan": 1,
+      "guest": 10,
+      "vendo": 20
+    }
+  }
+}

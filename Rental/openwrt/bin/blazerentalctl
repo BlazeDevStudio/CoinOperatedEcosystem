@@ -1,0 +1,13 @@
+#!/bin/sh
+# Local administrator CLI. Do not expose grant/register via uHTTPd.
+set -eu
+LIB=${BLAZERENTAL_LIB:-/usr/lib/blazerental/core.sh}
+. "$LIB"
+cmd=${1:-}
+case "$cmd" in
+    init) [ "$#" -eq 1 ] || exit 2; br_init ;;
+    register) [ "$#" -eq 1 ] || exit 2; br_registration ;;
+    grant) [ "$#" -eq 4 ] || exit 2; br_grant "$2" "$3" "$4" ;;
+    status) [ "$#" -eq 2 ] || exit 2; br_status "$2" ;;
+    *) printf 'Usage: blazerentalctl init|register|grant DEVICE_ID SECONDS TX_ID|status DEVICE_ID\n' >&2; exit 2 ;;
+esac

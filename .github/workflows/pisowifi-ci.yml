@@ -1,0 +1,128 @@
+name: Pisowifi OpenWrt Overlay & Shell Suite
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/pisowifi-**"
+      - "cleanup/pisowifi-**"
+      - "integration/**"
+    paths:
+      - "Pisowifi/**"
+      - ".github/workflows/pisowifi-ci.yml"
+  pull_request:
+    paths:
+      - "Pisowifi/**"
+      - ".github/workflows/pisowifi-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pisowifi-verification:
+    name: OpenWrt POSIX sh, BusyBox ash, Provenance & Mocked Suite (NO-GO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install BusyBox static shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends busybox-static
+
+      - name: Verify SOURCE_INTAKE.json and MIGRATION_MAP.md blob SHAs
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, pathlib, re, sys
+
+          root = pathlib.Path("Pisowifi")
+          data = json.loads((root / "SOURCE_INTAKE.json").read_text())
+
+          def git_blob(rel_path):
+              return subprocess.check_output(["git", "hash-object", str(root / rel_path)], text=True).strip()
+
+          for section in ("runtime", "tests"):
+              for entry in data.get(section, []):
+                  actual = git_blob(entry["path"])
+                  expected = entry["destination_git_blob"]
+                  if actual != expected:
+                      sys.exit(f"MISMATCH in SOURCE_INTAKE.json {section} {entry['path']}: expected {expected}, got {actual}")
+
+          for entry in data.get("derived_tests", []):
+              actual = git_blob(entry["path"])
+              expected = entry["git_blob"]
+              if actual != expected:
+                  sys.exit(f"MISMATCH in SOURCE_INTAKE.json derived_tests {entry['path']}: expected {expected}, got {actual}")
+
+          # PR #14 intent: executable bits are part of the contract. A script that
+          # loses 100755 (or a manifest that drifts) must fail CI, not ship silently.
+          modes = {}
+          for line in subprocess.check_output(["git", "ls-files", "-s", str(root)], text=True).splitlines():
+              meta, path = line.split("\t", 1)
+              modes[path] = meta.split()[0]
+          for section in ("runtime", "tests"):
+              for entry in data.get(section, []):
+                  actual = modes.get(f"Pisowifi/{entry['path']}")
+                  if actual != entry["git_mode"]:
+                      sys.exit(f"MODE MISMATCH {section} {entry['path']}: expected {entry['git_mode']}, got {actual}")
+          for entry in data.get("derived_tests", []):
+              actual = modes.get(f"Pisowifi/{entry['path']}")
+              if actual != entry["mode"]:
+                  sys.exit(f"MODE MISMATCH derived_tests {entry['path']}: expected {entry['mode']}, got {actual}")
+
+          md = (root / "MIGRATION_MAP.md").read_text()
+          for m in re.finditer(r"^\|\s*`[^`]+`\s*\|\s*`Pisowifi/([^`]+)`\s*\|\s*`[0-9a-f]{40}`\s*\|\s*`([0-9a-f]{40})`", md, re.M):
+              rel, expected = m.groups()
+              actual = git_blob(rel)
+              if actual != expected:
+                  sys.exit(f"MISMATCH in MIGRATION_MAP.md {rel}: expected {expected}, got {actual}")
+
+          print("Verified all SOURCE_INTAKE.json and MIGRATION_MAP.md Git blob SHAs and executable modes.")
+          PY
+
+      - name: POSIX sh and BusyBox ash syntax check across all Pisowifi scripts
+        run: |
+          set -eu
+          for script in \
+            Pisowifi/openwrt/rootfs/etc/init.d/* \
+            Pisowifi/openwrt/rootfs/etc/uci-defaults/* \
+            Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/*.sh \
+            Pisowifi/openwrt/rootfs/usr/sbin/* \
+            Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/* \
+            Pisowifi/tests/*.sh
+          do
+            sh -n "$script"
+            busybox sh -n "$script"
+          done
+
+      - name: Execute full PisoWiFi mocked test suite under POSIX sh
+        run: sh Pisowifi/tests/run_focus.sh
+
+      - name: Execute UCI/nft/config/auth suites under BusyBox ash
+        run: |
+          set -eu
+          for suite in \
+            nft_atomic_setup.sh \
+            nft_shutdown_guard.sh \
+            nft_membership_failclosed.sh \
+            nft_account_binding_guard.sh \
+            config_faults.sh \
+            config_apply_failclosed.sh \
+            config_concurrency.sh \
+            admin_config_result.sh \
+            config_fixture_smoke.sh \
+            bootstrap_and_cli_auth_guard.sh
+          do
+            printf 'BUSY_ASH RUN %s\n' "$suite"
+            busybox sh "Pisowifi/tests/$suite"
+          done
+
+      - name: Execute Issue #31 member journal suites under BusyBox ash
+        run: |
+          set -eu
+          for suite in member_receipt_failure_atomicity.sh member_txn_journal.sh voucher_txn_journal.sh; do
+            printf 'BUSY_ASH RUN %s\n' "$suite"
+            busybox sh "Pisowifi/tests/$suite"
+          done

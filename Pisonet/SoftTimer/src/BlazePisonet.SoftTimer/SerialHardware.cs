@@ -1,0 +1,613 @@
+using System.IO.Ports;
+using System.Management;
+using System.Text.RegularExpressions;
+
+namespace BlazePisonet.SoftTimer;
+
+public sealed record SerialDeviceInfo(
+    string PortName,
+    string FriendlyName,
+    string Manufacturer,
+    string PnpDeviceId,
+    string Vid,
+    string Pid,
+    string UsbSerial)
+{
+    public string Display => string.IsNullOrWhiteSpace(FriendlyName) ? PortName : $"{FriendlyName} · {PortName}";
+    public bool IsUsb => PnpDeviceId.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase);
+}
+
+public static class SerialDiscovery
+{
+    private static readonly Regex PortRegex = new(@"\((COM\d+)\)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex VidRegex = new(@"VID_([0-9A-F]{4})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex PidRegex = new(@"PID_([0-9A-F]{4})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public static IReadOnlyList<SerialDeviceInfo> Enumerate()
+    {
+        var result = new Dictionary<string, SerialDeviceInfo>(StringComparer.OrdinalIgnoreCase);
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                using var searcher = new ManagementObjectSearcher("SELECT Name,Manufacturer,PNPDeviceID,DeviceID FROM Win32_PnPEntity WHERE Name LIKE '%(COM%' ");
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    var name = Convert.ToString(obj["Name"]) ?? string.Empty;
+                    var match = PortRegex.Match(name);
+                    if (!match.Success) continue;
+                    var port = match.Groups[1].Value.ToUpperInvariant();
+                    var pnp = Convert.ToString(obj["PNPDeviceID"]) ?? Convert.ToString(obj["DeviceID"]) ?? string.Empty;
+                    var manufacturer = Convert.ToString(obj["Manufacturer"]) ?? string.Empty;
+                    var vid = VidRegex.Match(pnp).Groups[1].Value.ToUpperInvariant();
+                    var pid = PidRegex.Match(pnp).Groups[1].Value.ToUpperInvariant();
+                    var usbSerial = ExtractUsbSerial(pnp);
+                    result[port] = new SerialDeviceInfo(port, name.Replace($"({port})", "", StringComparison.OrdinalIgnoreCase).Trim(), manufacturer, pnp, vid, pid, usbSerial);
+                }
+            }
+            catch (Exception ex)
+            {
+                Storage.Log("Serial WMI enumeration failed: " + ex.Message);
+            }
+        }
+
+        foreach (var port in SerialPort.GetPortNames())
+        {
+            if (!result.ContainsKey(port))
+                result[port] = new SerialDeviceInfo(port, "Serial Port", string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
+        }
+
+        return result.Values.OrderBy(d => PortNumber(d.PortName)).ThenBy(d => d.PortName).ToList();
+    }
+
+    public static SerialDeviceInfo? Resolve(AppConfig config, IReadOnlyList<SerialDeviceInfo>? devices = null)
+    {
+        devices ??= Enumerate();
+        if (devices.Count == 0) return null;
+
+        return config.SerialSelection switch
+        {
+            SerialSelectionMode.ExactDevice => ResolveExact(config, devices),
+            SerialSelectionMode.DeviceFamily => devices.FirstOrDefault(d =>
+                !string.IsNullOrWhiteSpace(config.PreferredVid) &&
+                d.Vid.Equals(config.PreferredVid, StringComparison.OrdinalIgnoreCase) &&
+                d.Pid.Equals(config.PreferredPid, StringComparison.OrdinalIgnoreCase)),
+            SerialSelectionMode.ManualPort => devices.FirstOrDefault(d => d.PortName.Equals(config.ManualComPort, StringComparison.OrdinalIgnoreCase)),
+            SerialSelectionMode.LegacyCom1 => devices.FirstOrDefault(d => d.PortName.Equals("COM1", StringComparison.OrdinalIgnoreCase)),
+            SerialSelectionMode.AnyAvailable => devices.FirstOrDefault(),
+            SerialSelectionMode.AutoCompatible => devices.FirstOrDefault(d => d.IsUsb) ?? devices.FirstOrDefault(),
+            _ => devices.FirstOrDefault()
+        };
+    }
+
+    private static SerialDeviceInfo? ResolveExact(AppConfig config, IReadOnlyList<SerialDeviceInfo> devices)
+    {
+        // A Windows COM number is not a permanent device identity. It may be
+        // reassigned to a different coin adapter after unplug or reboot.
+        // Never silently promote LastKnownComPort into an ExactDevice match.
+        if (!string.IsNullOrWhiteSpace(config.PreferredPnpDeviceId))
+        {
+            var matches = devices.Where(d =>
+                    !string.IsNullOrWhiteSpace(d.PnpDeviceId) &&
+                    d.PnpDeviceId.Equals(config.PreferredPnpDeviceId, StringComparison.OrdinalIgnoreCase))
+                .Take(2).ToArray();
+            if (matches.Length > 1) return null; // conflicting identities
+            if (matches.Length == 1)
+            {
+                var candidate = matches[0];
+                if (!string.IsNullOrWhiteSpace(config.PreferredVid) &&
+                    !candidate.Vid.Equals(config.PreferredVid, StringComparison.OrdinalIgnoreCase)) return null;
+                if (!string.IsNullOrWhiteSpace(config.PreferredPid) &&
+                    !candidate.Pid.Equals(config.PreferredPid, StringComparison.OrdinalIgnoreCase)) return null;
+                return candidate;
+            }
+        }
+
+        // A USB serial can remain stable across COM renumbering, but only when
+        // qualified by BOTH vendor and product IDs and observed exactly once.
+        // Unscoped, ambiguous and Windows location-generated IDs are unsafe.
+        if (!string.IsNullOrWhiteSpace(config.PreferredUsbSerial) &&
+            !config.PreferredUsbSerial.Contains('&') &&
+            !string.IsNullOrWhiteSpace(config.PreferredVid) &&
+            !string.IsNullOrWhiteSpace(config.PreferredPid))
+        {
+            var matches = devices.Where(d =>
+                    d.IsUsb && !string.IsNullOrWhiteSpace(d.UsbSerial) &&
+                    !d.UsbSerial.Contains('&') &&
+                    d.UsbSerial.Equals(config.PreferredUsbSerial, StringComparison.OrdinalIgnoreCase) &&
+                    d.Vid.Equals(config.PreferredVid, StringComparison.OrdinalIgnoreCase) &&
+                    d.Pid.Equals(config.PreferredPid, StringComparison.OrdinalIgnoreCase))
+                .Take(2).ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        }
+
+        // Identity-free legacy profiles must be explicitly rebound by the
+        // operator or deliberately switched to the separate ManualPort mode.
+        return null;
+    }
+
+    public static void BindExactDevice(AppConfig config, SerialDeviceInfo device)
+    {
+        config.SerialSelection = SerialSelectionMode.ExactDevice;
+        config.PreferredPnpDeviceId = device.PnpDeviceId;
+        config.PreferredVid = device.Vid;
+        config.PreferredPid = device.Pid;
+        config.PreferredUsbSerial = device.UsbSerial;
+        config.PreferredFriendlyName = device.FriendlyName;
+        config.LastKnownComPort = device.PortName;
+        config.ManualComPort = device.PortName;
+    }
+
+    private static string ExtractUsbSerial(string pnp)
+    {
+        if (!pnp.StartsWith("USB\\", StringComparison.OrdinalIgnoreCase)) return string.Empty;
+        var parts = pnp.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        // An instance such as 5&ABCDEF&0&2 encodes a Windows USB location,
+        // not a transportable adapter serial. Never truncate it to "5".
+        var instance = parts.Length >= 3 ? parts[^1] : string.Empty;
+        return instance.Contains('&') ? string.Empty : instance;
+    }
+
+    private static int PortNumber(string port)
+    {
+        var digits = new string(port.Where(char.IsDigit).ToArray());
+        return int.TryParse(digits, out var n) ? n : int.MaxValue;
+    }
+}
+
+// An immutable in-process acceptance fact; not proof of Win32 opened-HANDLE
+// identity or financial authorization. Constructor and source identity are
+// internal so a consumer cannot construct an arbitrary accepted coin.
+public sealed class SerialCoinAcceptance
+{
+    internal SerialPort Source { get; }
+    internal SerialCoinAcceptance(
+        SerialPort source, long sessionEpoch, long eventSequence,
+        SerialDeviceInfo device, DateTimeOffset acceptedUtc, int widthMs)
+    {
+        Source = source;
+        SessionEpoch = sessionEpoch;
+        EventSequence = eventSequence;
+        Device = device;
+        AcceptedUtc = acceptedUtc;
+        PulseWidthMs = widthMs;
+    }
+
+    public long SessionEpoch { get; }
+    public long EventSequence { get; }
+    public SerialDeviceInfo Device { get; }
+    public DateTimeOffset AcceptedUtc { get; }
+    public int PulseWidthMs { get; }
+}
+
+public sealed class SerialHardware : IDisposable
+{
+    private readonly object _gate = new();
+    // Only accessed under _gate. Invalidates callbacks from retired sessions.
+    private long _sessionEpoch;
+    private long _eventSequence;
+    // Limited to unclaimed synchronous notifications; cleared on reconnect.
+    private readonly HashSet<SerialCoinAcceptance> _unclaimedCoins = new();
+    private SerialPort? _port;
+    // Only a verified ExactDevice same-opened-handle session can authorize
+    // monetary claims. Legacy callbacks remain diagnostic-only.
+    private bool _openedHandleVerified;
+    private AppConfig? _config;
+    private bool _lastCoinActive;
+    // After a failed/unknown status sample, wait for a verified idle level
+    // before arming another pulse. A missing modem read is NEVER a low level.
+    private bool _requireVerifiedIdle = true;
+    private DateTimeOffset? _pulseStarted;
+    private DateTimeOffset _lastAccepted = DateTimeOffset.MinValue;
+
+    public SerialDeviceInfo? ConnectedDevice { get; private set; }
+    public bool IsConnected => _port?.IsOpen == true;
+    public event Action<string>? ConnectionChanged;
+    // Legacy diagnostic notification is not trusted for monetary decisions.
+    public event Action? CoinPulseAccepted;
+    // Application money handling MUST consume this one-time, original-session
+    // event with TryClaimCoin before touching timer/central routing.
+    public event Action<SerialCoinAcceptance>? CoinPulseAcceptedWithContext;
+    public event Action? SignalChanged;
+
+    public bool Connect(AppConfig config)
+    {
+        lock (_gate)
+        {
+            DisconnectInternal();
+            _config = config;
+            var devices = SerialDiscovery.Enumerate();
+            var selected = SerialDiscovery.Resolve(config, devices);
+            if (selected is null)
+            {
+                ConnectionChanged?.Invoke("No matching serial device found");
+                return false;
+            }
+
+            SerialPort? candidate = null;
+            try
+            {
+                candidate = new SerialPort(selected.PortName, Math.Clamp(config.SerialBaudRate, 300, 115200), Parity.None, 8, StopBits.One)
+                {
+                    Handshake = Handshake.None,
+                    DtrEnable = config.DtrEnabled,
+                    RtsEnable = config.RtsEnabled,
+                    ReadTimeout = 250,
+                    WriteTimeout = 250
+                };
+                candidate.PinChanged += OnPinChanged;
+                candidate.ErrorReceived += (_, e) => Storage.Log($"Serial error {selected.PortName}: {e.EventType}");
+                candidate.Open();
+                // ExactDevice's WMI/COM lookup is only a selection hint. Never
+                // admit paid CTS/RI events until the SAME opened handle carries
+                // a verified original PnP identity. A second WMI lookup, COM
+                // number or cached identity cannot satisfy this requirement.
+                if (config.SerialSelection == SerialSelectionMode.ExactDevice &&
+                    !OpenedSerialHandleIdentity.TryVerify(candidate, selected, out var identityFailure))
+                {
+                    Storage.Log($"Unverifiable opened COM handle {selected.PortName}: {identityFailure}");
+                    throw new InvalidOperationException(
+                        "Opened serial adapter identity cannot be proved; coin capture denied");
+                }
+                _port = candidate;
+                _openedHandleVerified =
+                    config.SerialSelection == SerialSelectionMode.ExactDevice;
+                ConnectedDevice = selected;
+                config.LastKnownComPort = selected.PortName;
+                if (config.SerialSelection == SerialSelectionMode.ExactDevice && string.IsNullOrWhiteSpace(config.PreferredPnpDeviceId))
+                    SerialDiscovery.BindExactDevice(config, selected);
+                _pulseStarted = null;
+                _lastAccepted = DateTimeOffset.MinValue;
+                _lastCoinActive = false;
+                _requireVerifiedIdle = false;
+                if (config.CoinInputSignal != ModemSignal.RingIndicator)
+                {
+                    if (!TryReadCoinActive(config, out var initialActive))
+                    {
+                        Storage.Log($"Serial coin input {selected.PortName}: no trusted status at connection");
+                        DisconnectInternal();
+                        ConnectionChanged?.Invoke("Serial coin input unavailable; cannot arm pulse capture");
+                        return false;
+                    }
+                    _lastCoinActive = initialActive;
+                    // If connected while an asserted pulse is in progress,
+                    // do not infer its beginning or credit an incomplete coin.
+                    _requireVerifiedIdle = initialActive;
+                }
+                ConnectionChanged?.Invoke($"Connected to {selected.Display}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // Open() may throw before _port is assigned. That provisional
+                // SerialPort and its PinChanged subscription are still ours.
+                // Never leave a failed-open adapter object observing callbacks.
+                if (candidate is not null && !ReferenceEquals(candidate, _port))
+                {
+                    try { candidate.PinChanged -= OnPinChanged; } catch { }
+                    try { if (candidate.IsOpen) candidate.Close(); } catch { }
+                    try { candidate.Dispose(); } catch { }
+                }
+                if (_port is null)
+                {
+                    _config = null;
+                    _pulseStarted = null;
+                    _lastCoinActive = false;
+                    _requireVerifiedIdle = true;
+                }
+                Storage.Log($"Serial open failed for {selected.PortName}: {ex.Message}");
+                ConnectedDevice = null;
+                ConnectionChanged?.Invoke($"Could not open {selected.PortName}: {ex.Message}");
+                return false;
+            }
+        }
+    }
+
+    public bool TryReconnect(AppConfig config)
+    {
+        if (IsConnected) return true;
+        return Connect(config);
+    }
+
+    // External-board lock enforcement must distinguish a verified LOW from
+    // an unknown/faulted sample. A false bool returned on error looks like
+    // ACTIVE to an active-low board and must never authorize Windows unlock.
+    public bool TryGetSignal(ModemSignal signal, out bool level)
+    {
+        lock (_gate)
+        {
+            level = false;
+            if (_port?.IsOpen != true) return false;
+            try
+            {
+                switch (signal)
+                {
+                    case ModemSignal.Dsr: level = _port.DsrHolding; return true;
+                    case ModemSignal.Cts: level = _port.CtsHolding; return true;
+                    case ModemSignal.CarrierDetect: level = _port.CDHolding; return true;
+                    default: return false; // Ring is not a measurable level.
+                }
+            }
+            catch (Exception ex)
+            {
+                Storage.Log("External board modem sample invalid: " + ex.Message);
+                return false;
+            }
+        }
+    }
+
+    // Historical UI-only helper. Do not use for access-control decisions.
+    public bool GetSignal(ModemSignal signal) =>
+        TryGetSignal(signal, out var level) && level;
+
+    public void SetDtr(bool enabled)
+    {
+        lock (_gate) if (_port?.IsOpen == true) _port.DtrEnable = enabled;
+    }
+
+    public void SetRts(bool enabled)
+    {
+        lock (_gate) if (_port?.IsOpen == true) _port.RtsEnable = enabled;
+    }
+
+    // Unlike GetSignal (a read-only UI API returning false on failure), paid
+    // pulse capture needs a tri-state result: valid high/low OR unknown.
+    // Unknown, detached or throwing modem status must never become an edge.
+    private bool TryReadCoinActive(
+        AppConfig cfg, out bool active,
+        SerialPort? expectedSource = null, long? expectedEpoch = null)
+    {
+        active = false;
+        lock (_gate)
+        {
+            var port = _port;
+            if (port?.IsOpen != true) return false;
+            // Never read a replacement port on behalf of an earlier callback.
+            // Connect's initial level sample intentionally has no owner argument.
+            if (expectedSource is not null &&
+                (expectedEpoch != _sessionEpoch ||
+                 !ReferenceEquals(expectedSource, port) ||
+                 !ReferenceEquals(cfg, _config)))
+                return false;
+            try
+            {
+                bool raw;
+                switch (cfg.CoinInputSignal)
+                {
+                    case ModemSignal.Dsr:
+                        raw = port.DsrHolding;
+                        break;
+                    case ModemSignal.Cts:
+                        raw = port.CtsHolding;
+                        break;
+                    case ModemSignal.CarrierDetect:
+                        raw = port.CDHolding;
+                        break;
+                    default:
+                        return false; // Ring is an unmeasured event, not a level.
+                }
+                active = cfg.CoinInputActiveHigh ? raw : !raw;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Storage.Log("Serial coin status read failed (capture disarmed): " + ex.Message);
+                return false;
+            }
+        }
+    }
+
+    // Must hold _gate. Managed callback ownership is NOT opened OS HANDLE proof.
+    private bool IsCurrentCallbackLocked(
+        object? sender, SerialPort source, AppConfig cfg, long epoch)
+    {
+        if (epoch != _sessionEpoch ||
+            !ReferenceEquals(sender, source) ||
+            !ReferenceEquals(source, _port) ||
+            !ReferenceEquals(cfg, _config))
+            return false;
+
+        try { return source.IsOpen; }
+        catch { return false; }
+    }
+
+    // Read-only admission check for a previously claimed original event.
+    // Guards post-await continuation from reconnect; NOT opened OS HANDLE proof.
+    public bool IsCoinSessionCurrent(SerialCoinAcceptance accepted)
+    {
+        if (accepted is null) return false;
+        lock (_gate)
+        {
+            return _openedHandleVerified &&
+                accepted.SessionEpoch == _sessionEpoch &&
+                ReferenceEquals(accepted.Source, _port) &&
+                _port?.IsOpen == true;
+        }
+    }
+
+    // Check+consume under _gate. A pending notification whose port/session has
+    // been replaced cannot be claimed, even if a subscriber is delayed.
+    public bool TryClaimCoin(SerialCoinAcceptance accepted)
+    {
+        if (accepted is null) return false;
+        lock (_gate)
+        {
+            if (!_unclaimedCoins.Remove(accepted))
+                return false;
+            return _openedHandleVerified &&
+                accepted.SessionEpoch == _sessionEpoch &&
+                ReferenceEquals(accepted.Source, _port) &&
+                _port?.IsOpen == true;
+        }
+    }
+
+    // No user callback executes under _gate. A reconnecting subscriber
+    // invalidates later claims using the original epoch/source from capture.
+    private void DispatchCapturedCoin(SerialCoinAcceptance? accepted)
+    {
+        if (accepted is null) return;
+        try
+        {
+            CoinPulseAcceptedWithContext?.Invoke(accepted);
+            CoinPulseAccepted?.Invoke();
+        }
+        finally
+        {
+            lock (_gate) _unclaimedCoins.Remove(accepted);
+        }
+    }
+
+    private void OnPinChanged(object? sender, SerialPinChangedEventArgs e)
+    {
+        AppConfig cfg;
+        SerialPort source;
+        long epoch;
+
+        lock (_gate)
+        {
+            if (_config is not { } currentCfg ||
+                _port is not { } currentPort ||
+                !ReferenceEquals(sender, currentPort))
+                return;
+
+            cfg = currentCfg;
+            source = currentPort;
+            epoch = _sessionEpoch;
+
+            if (!IsCurrentCallbackLocked(sender, source, cfg, epoch))
+            {
+                // Only the currently owned closed port can disarm its pulse.
+                _pulseStarted = null;
+                _requireVerifiedIdle = true;
+                return;
+            }
+        }
+
+        // Subscribers may synchronously reconnect; no lock during notification.
+        SignalChanged?.Invoke();
+
+        lock (_gate)
+        {
+            if (!IsCurrentCallbackLocked(sender, source, cfg, epoch))
+                return;
+        }
+
+        if (cfg.CoinInputSignal == ModemSignal.RingIndicator)
+        {
+            if (e.EventType != SerialPinChange.Ring) return;
+            SerialCoinAcceptance? accepted;
+            lock (_gate)
+            {
+                if (!IsCurrentCallbackLocked(sender, source, cfg, epoch))
+                    return;
+
+                // RI still has no measured width and no physical approval.
+                accepted = CaptureCoinIfDebouncedLocked(
+                    cfg, Math.Max(cfg.MinimumPulseMs, 1));
+            }
+            DispatchCapturedCoin(accepted);
+            return;
+        }
+
+        // Exact #219 test-only instrumentation anchor: hook after CTS read.
+        if (!TryReadCoinActive(cfg, out var active, source, epoch))
+        {
+            lock (_gate)
+            {
+                if (!IsCurrentCallbackLocked(sender, source, cfg, epoch))
+                    return; // Old A failure must not disarm new B's valid pulse.
+                _pulseStarted = null;
+                _lastCoinActive = false;
+                _requireVerifiedIdle = true;
+            }
+            return;
+        }
+
+        // Commit sampled pulse state only to the same managed session.
+        // Capture an immutable event under lock; deliver it OUTSIDE the lock.
+        SerialCoinAcceptance? acceptedCoin = null;
+        lock (_gate)
+        {
+            if (!IsCurrentCallbackLocked(sender, source, cfg, epoch))
+                return;
+
+            if (_requireVerifiedIdle)
+            {
+                _pulseStarted = null;
+                _lastCoinActive = active;
+                if (!active) _requireVerifiedIdle = false;
+                return;
+            }
+
+            if (active == _lastCoinActive) return;
+            _lastCoinActive = active;
+
+            if (active)
+            {
+                _pulseStarted = DateTimeOffset.UtcNow;
+            }
+            else if (_pulseStarted is { } started)
+            {
+                var width = (int)Math.Max(
+                    0, (DateTimeOffset.UtcNow - started).TotalMilliseconds);
+                _pulseStarted = null;
+
+                acceptedCoin = CaptureCoinIfDebouncedLocked(cfg, width);
+            }
+        }
+
+        DispatchCapturedCoin(acceptedCoin);
+    }
+
+    // Requires _gate. This only captures metadata and reserves a one-time
+    // claim. It does not call listeners or grant financial authorization.
+    private SerialCoinAcceptance? CaptureCoinIfDebouncedLocked(
+        AppConfig cfg, int widthMs)
+    {
+        if (_port?.IsOpen != true || _requireVerifiedIdle ||
+            ConnectedDevice is not { } device)
+            return null;
+        var now = DateTimeOffset.UtcNow;
+        if ((now - _lastAccepted).TotalMilliseconds < Math.Max(10, cfg.DebounceMs)) return null;
+        if (widthMs < Math.Max(1, cfg.MinimumPulseMs)) return null;
+        if (cfg.MaximumPulseMs > 0 && widthMs > cfg.MaximumPulseMs) return null;
+        _lastAccepted = now;
+        var accepted = new SerialCoinAcceptance(
+            _port, _sessionEpoch, ++_eventSequence, device, now, widthMs);
+        _unclaimedCoins.Add(accepted);
+        Storage.Log($"Coin pulse accepted on {device.PortName} ({widthMs} ms)");
+        return accepted;
+    }
+
+    private bool IsSignalActive(ModemSignal signal, bool activeHigh)
+    {
+        var raw = GetSignal(signal);
+        return activeHigh ? raw : !raw;
+    }
+
+    public void Disconnect()
+    {
+        lock (_gate) DisconnectInternal();
+    }
+
+    private void DisconnectInternal()
+    {
+        unchecked { _sessionEpoch++; }
+        _openedHandleVerified = false;
+        _unclaimedCoins.Clear();
+        if (_port is not null)
+        {
+            try { _port.PinChanged -= OnPinChanged; } catch { }
+            try { if (_port.IsOpen) _port.Close(); } catch { }
+            try { _port.Dispose(); } catch { }
+        }
+        _port = null;
+        _config = null;
+        _pulseStarted = null;
+        _lastCoinActive = false;
+        _requireVerifiedIdle = true;
+        ConnectedDevice = null;
+    }
+
+    public void Dispose() => Disconnect();
+}

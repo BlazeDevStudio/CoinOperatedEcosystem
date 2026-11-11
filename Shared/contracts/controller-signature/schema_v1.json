@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ControllerSignatureContractV1",
+  "description": "Signed mutual authentication protocol between OpenWrt router and ESP32/ESP8266 coin vendo controller",
+  "type": "object",
+  "properties": {
+    "request": {
+      "type": "object",
+      "required": ["action", "id", "nonce", "sig"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["register", "poll", "coin"]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,32}$"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{16}$"
+        },
+        "pulses": {
+          "type": "string",
+          "pattern": "^[0-9]{1,4}$"
+        },
+        "target": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["ok"],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "server_time": {
+          "type": "integer"
+        },
+        "response_sig": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "insert": {
+          "type": "boolean"
+        },
+        "target_nonce": {
+          "type": "string"
+        },
+        "expires": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}
