@@ -88,7 +88,6 @@ Client-side remediation candidates for `HW-P0-1`, `HW-P0-2`, `HW-P1-1`, and `HW-
 
 > [!IMPORTANT]
 > Hardware admission remains **STRICT NO-GO** pending physical hardware power-cut testing (`Experiments #34`), ISR-driven edge pulse capture verification on physical coin acceptors, anti-rollback witness integration, and formal QA review.
-
 ## 5. Status Addendum — 2026-11-11 (`CoinOperatedEcosystem PR #27`)
 
 The hardened ESP32 and ESP8266 firmwares and inter-product contracts have been migrated directly into `CoinOperatedEcosystem` under **Draft PR #27** (`feature/hardware-firmware-and-shared-contracts-20261111`):
