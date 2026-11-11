@@ -321,7 +321,7 @@ bp_auth_logout() {
 case "${1:-}" in
 --set-password|--set-bootstrap)
 	[ "$#" -eq 4 ] || { echo "usage: $0 --set-password|--set-bootstrap USER ROLE PASSWORD" >&2; exit 2; }
-	mode="$1"; . "${BP_LIB:-/usr/lib/blazepwifi/common.sh}"
+	mode="$1"; REQUEST_METHOD=GET; export REQUEST_METHOD; . "${BP_LIB:-/usr/lib/blazepwifi/common.sh}"
 	bp_auth_init
 	bp_auth_lock || { echo "authentication state busy" >&2; exit 1; }
 	must=0; [ "$mode" = "--set-bootstrap" ] && must=1

@@ -20,6 +20,7 @@ start_service() {
   [ -r /usr/lib/blazepwifi/common.sh ] || return 0
   [ -r /usr/lib/blazepwifi/console_ops.sh ] || return 0
   [ -r /usr/lib/blazepwifi/remote_apply.sh ] || return 0
+  REQUEST_METHOD=GET; export REQUEST_METHOD
   . /usr/lib/blazepwifi/common.sh
   . /usr/lib/blazepwifi/console_ops.sh
   . /usr/lib/blazepwifi/remote_apply.sh

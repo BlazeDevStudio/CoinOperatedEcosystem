@@ -1,4 +1,5 @@
 #!/bin/sh
+REQUEST_METHOD=GET; export REQUEST_METHOD
 . "${BP_LIB:-/usr/lib/blazepwifi/common.sh}"
 
 setup_nft() {
