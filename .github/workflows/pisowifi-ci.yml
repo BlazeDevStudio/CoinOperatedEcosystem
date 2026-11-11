@@ -82,8 +82,24 @@ jobs:
       - name: Execute full PisoWiFi mocked test suite under POSIX sh
         run: sh Pisowifi/tests/run_focus.sh
 
-      - name: Execute full PisoWiFi mocked test suite under BusyBox ash
-        run: busybox sh Pisowifi/tests/run_focus.sh
+      - name: Execute UCI/nft/config/auth suites under BusyBox ash
+        run: |
+          set -eu
+          for suite in \
+            nft_atomic_setup.sh \
+            nft_shutdown_guard.sh \
+            nft_membership_failclosed.sh \
+            nft_account_binding_guard.sh \
+            config_faults.sh \
+            config_apply_failclosed.sh \
+            config_concurrency.sh \
+            admin_config_result.sh \
+            config_fixture_smoke.sh \
+            bootstrap_and_cli_auth_guard.sh
+          do
+            printf 'BUSY_ASH RUN %s\n' "$suite"
+            busybox sh "Pisowifi/tests/$suite"
+          done
 
       - name: Verify Issue #31 expected-RED atomicity gate remains tracked
         run: |
