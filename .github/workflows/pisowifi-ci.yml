@@ -1,0 +1,96 @@
+name: Pisowifi OpenWrt Overlay & Shell Suite
+
+on:
+  push:
+    branches:
+      - "feature/pisowifi-**"
+      - "cleanup/pisowifi-**"
+    paths:
+      - "Pisowifi/**"
+      - ".github/workflows/pisowifi-ci.yml"
+  pull_request:
+    paths:
+      - "Pisowifi/**"
+      - ".github/workflows/pisowifi-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pisowifi-verification:
+    name: OpenWrt POSIX sh, BusyBox ash, Provenance & Mocked Suite (NO-GO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install BusyBox static shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends busybox-static
+
+      - name: Verify SOURCE_INTAKE.json and MIGRATION_MAP.md blob SHAs
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, pathlib, re, sys
+
+          root = pathlib.Path("Pisowifi")
+          data = json.loads((root / "SOURCE_INTAKE.json").read_text())
+
+          def git_blob(rel_path):
+              return subprocess.check_output(["git", "hash-object", str(root / rel_path)], text=True).strip()
+
+          for section in ("runtime", "tests"):
+              for entry in data.get(section, []):
+                  actual = git_blob(entry["path"])
+                  expected = entry["destination_git_blob"]
+                  if actual != expected:
+                      sys.exit(f"MISMATCH in SOURCE_INTAKE.json {section} {entry['path']}: expected {expected}, got {actual}")
+
+          for entry in data.get("derived_tests", []):
+              actual = git_blob(entry["path"])
+              expected = entry["git_blob"]
+              if actual != expected:
+                  sys.exit(f"MISMATCH in SOURCE_INTAKE.json derived_tests {entry['path']}: expected {expected}, got {actual}")
+
+          md = (root / "MIGRATION_MAP.md").read_text()
+          for m in re.finditer(r"^\|\s*`[^`]+`\s*\|\s*`Pisowifi/([^`]+)`\s*\|\s*`[0-9a-f]{40}`\s*\|\s*`([0-9a-f]{40})`", md, re.M):
+              rel, expected = m.groups()
+              actual = git_blob(rel)
+              if actual != expected:
+                  sys.exit(f"MISMATCH in MIGRATION_MAP.md {rel}: expected {expected}, got {actual}")
+
+          print("Verified all SOURCE_INTAKE.json and MIGRATION_MAP.md Git blob SHAs.")
+          PY
+
+      - name: POSIX sh and BusyBox ash syntax check across all Pisowifi scripts
+        run: |
+          set -eu
+          for script in \
+            Pisowifi/openwrt/rootfs/etc/init.d/* \
+            Pisowifi/openwrt/rootfs/etc/uci-defaults/* \
+            Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/*.sh \
+            Pisowifi/openwrt/rootfs/usr/sbin/* \
+            Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/* \
+            Pisowifi/tests/*.sh
+          do
+            sh -n "$script"
+            busybox sh -n "$script"
+          done
+
+      - name: Execute full PisoWiFi mocked test suite under POSIX sh
+        run: sh Pisowifi/tests/run_focus.sh
+
+      - name: Execute full PisoWiFi mocked test suite under BusyBox ash
+        run: busybox sh Pisowifi/tests/run_focus.sh
+
+      - name: Verify Issue #31 expected-RED atomicity gate remains tracked
+        run: |
+          set +e
+          out="$(sh Pisowifi/tests/member_crash_atomicity_red.sh 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          test "$rc" -ne 0
+          printf '%s\n' "$out" | grep -q "RED:.*issue #31 remains open"
