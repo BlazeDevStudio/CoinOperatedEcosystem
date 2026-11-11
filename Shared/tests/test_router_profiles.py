@@ -137,6 +137,22 @@ class TestRouterProfiles(unittest.TestCase):
         self.assertEqual(p["target_architecture"], "x86/64")
         self.assertEqual(p["hardware"]["storage_type"], "disk")
 
+    def test_orangepi_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "orangepi-r1-plus-lts.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("xunlong,orangepi-r1-plus-lts"))
+        self.assertTrue(board_re.match("orangepi-r1-plus"))
+        self.assertTrue(model_re.match("Xunlong Orange Pi R1 Plus LTS"))
+
+        self.assertEqual(p["target_architecture"], "rockchip/arm64")
+        self.assertEqual(p["hardware"]["storage_type"], "emmc")
+        self.assertEqual(p["hardware"]["ram_mb"], 1024)
+
 
 if __name__ == "__main__":
     unittest.main()

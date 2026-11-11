@@ -312,15 +312,19 @@ case "$action" in
       bp_unlock
       bp_fail "paid state uncertain or accounting busy"
     fi
-    if ! bp_account_write "$device" "$newcredit" "$expiry" "$remaining" "$paused" "$ps" "$mac" "$ipaddr" "$newevents"; then
+    v_now="$(bp_now 2>/dev/null || date +%s)"
+    if ! bp_voucher_txn_begin ||
+       ! bp_account_build "$BP_VOUCHER_TXN_ACCOUNTS" "$device" "$newcredit" "$expiry" "$remaining" "$paused" "$ps" "$mac" "$ipaddr" "$newevents" ||
+       ! bp_voucher_build "$BP_VOUCHER_TXN_VOUCHERS" "$code" "$device" "$v_now"; then
+      bp_voucher_txn_clear_stage
       bp_paid_abort
       bp_unlock
       bp_fail "paid account write failed; operator reconciliation required"
     fi
-    if ! bp_voucher_mark_used "$code" "$device"; then
+    if ! bp_voucher_txn_commit; then
       bp_paid_abort
       bp_unlock
-      bp_fail "paid voucher record failed; operator reconciliation required"
+      bp_fail "paid account write failed; operator reconciliation required"
     fi
     if ! bp_paid_commit; then
       bp_unlock

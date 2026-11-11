@@ -4,6 +4,9 @@ BP_STATE=${BP_STATE:-/etc/blazepwifi/state}
 BP_RUN=${BP_RUN:-/tmp/blazepwifi}
 BP_ACCOUNTS="$BP_STATE/accounts.tsv"
 BP_VOUCHERS="$BP_STATE/vouchers.tsv"
+BP_VOUCHER_TXN_COMMIT="$BP_STATE/voucher-txn.commit"
+BP_VOUCHER_TXN_ACCOUNTS="$BP_STATE/.voucher-txn.accounts"
+BP_VOUCHER_TXN_VOUCHERS="$BP_STATE/.voucher-txn.vouchers"
 BP_VENDOS="$BP_RUN/vendos.tsv"
 BP_TARGET_DIR="$BP_STATE/targets"
 BP_LEGACY_CREDITS="$BP_STATE/credits.tsv"
@@ -39,6 +42,11 @@ bp_lock() {
 	if ! flock -w 10 9; then
 		exec 9>&-
 		return 1
+	fi
+	[ ! -e "$BP_PAID_UNCERTAIN" ] && [ ! -L "$BP_PAID_UNCERTAIN" ] || return 0
+	if ! bp_voucher_txn_recover; then
+		bp_unlock
+		return 8
 	fi
 }
 bp_unlock() {
@@ -188,11 +196,8 @@ bp_account_field() {
 	awk -F '\t' -v d="$d" -v n="$n" '$1==d {print $n; exit}' "$BP_ACCOUNTS"
 }
 
-bp_account_write() {
-	d="$1"; credit="$2"; expiry="$3"; remaining="$4"; paused="$5"; pause_started="$6"; mac="$7"; ipaddr="$8"; events="$9"
-	# This is a materialized paid-credit store. Never replace it from a
-	# symlink, a partially decoded source, or a duplicated account ID. Keep
-	# the old bytes for manual reconciliation if any source row is corrupt.
+bp_account_build() {
+	dest="$1"; d="$2"; credit="$3"; expiry="$4"; remaining="$5"; paused="$6"; pause_started="$7"; mac="$8"; ipaddr="$9"; events="${10}"
 	[ -f "$BP_ACCOUNTS" ] && [ ! -L "$BP_ACCOUNTS" ] || return 8
 	printf '%s\n' "$d" | LC_ALL=C grep -Eq '^[A-Za-z0-9_.:-]{2,96}$' || return 8
 	for v in "$credit" "$expiry" "$remaining" "$pause_started"; do
@@ -201,16 +206,11 @@ bp_account_write() {
 	  esac
 	done
 	case "$paused" in 0|1) ;; *) return 8;; esac
-	# Future v2 migration MUST use authenticated structured records. Current
-	# v1 caller strings cannot contain a TSV row separator or line break.
 	for field in "$mac" "$ipaddr" "$events"; do
 	  case "$field" in *"$(printf '\t')"*|*"
 "*) return 8;; esac
 	done
-	tmp="$BP_STATE/.accounts.$(bp_tmp_suffix)"
 	umask 077
-	# Exit nonzero even if a duplicated target is found after writing part
-	# of the temporary snapshot. No rename is allowed on any such error.
 	if ! awk -F '\t' -v OFS='\t' -v d="$d" -v c="$credit" -v e="$expiry" -v r="$remaining" -v p="$paused" -v ps="$pause_started" -v m="$mac" -v ip="$ipaddr" -v ev="$events" '
 		BEGIN {found=0; malformed=0}
 		{
@@ -225,23 +225,18 @@ bp_account_write() {
 		  if (malformed || found>1) exit 8
 		  if (!found) print d,c,e,r,p,ps,m,ip,ev
 		}
-	' "$BP_ACCOUNTS" > "$tmp"; then
-		rm -f "$tmp" 2>/dev/null || true
+	' "$BP_ACCOUNTS" > "$dest"; then
+		rm -f "$dest" 2>/dev/null || true
 		return 8
 	fi
-	if ! chmod 600 "$tmp" || ! mv "$tmp" "$BP_ACCOUNTS"; then
-		rm -f "$tmp" 2>/dev/null || true
-		return 8
-	fi
-	bp_durable_sync || return 8
+	chmod 600 "$dest" || return 8
 	return 0
 }
 
-bp_voucher_mark_used() {
-	v_code="$1"; v_dev="$2"; v_time="$(bp_now 2>/dev/null || date +%s)"
+bp_voucher_build() {
+	dest="$1"; v_code="$2"; v_dev="$3"; v_time="$4"
 	[ -f "$BP_VOUCHERS" ] && [ ! -L "$BP_VOUCHERS" ] || return 8
 	printf '%s\n' "$v_code" | LC_ALL=C grep -Eq '^[A-Za-z0-9-]{4,32}$' || return 8
-	v_tmp="$BP_STATE/.vouchers.$(bp_tmp_suffix)"
 	umask 077
 	if ! awk -F '\t' -v OFS='\t' -v c="$v_code" -v d="$v_dev" -v t="$v_time" '
 		BEGIN {found=0; malformed=0}
@@ -259,16 +254,121 @@ bp_voucher_mark_used() {
 		END {
 			if (malformed || found!=1) exit 8
 		}
-	' "$BP_VOUCHERS" > "$v_tmp"; then
+	' "$BP_VOUCHERS" > "$dest"; then
+		rm -f "$dest" 2>/dev/null || true
+		return 8
+	fi
+	chmod 600 "$dest" || return 8
+	return 0
+}
+
+bp_account_write() {
+	d="$1"; credit="$2"; expiry="$3"; remaining="$4"; paused="$5"; pause_started="$6"; mac="$7"; ipaddr="$8"; events="$9"
+	tmp="$BP_STATE/.accounts.$(bp_tmp_suffix)"
+	if ! bp_account_build "$tmp" "$d" "$credit" "$expiry" "$remaining" "$paused" "$pause_started" "$mac" "$ipaddr" "$events"; then
+		rm -f "$tmp" 2>/dev/null || true
+		return 8
+	fi
+	if ! mv "$tmp" "$BP_ACCOUNTS"; then
+		rm -f "$tmp" 2>/dev/null || true
+		return 8
+	fi
+	bp_durable_sync || return 8
+	return 0
+}
+
+bp_voucher_mark_used() {
+	v_code="$1"; v_dev="$2"; v_time="$(bp_now 2>/dev/null || date +%s)"
+	v_tmp="$BP_STATE/.vouchers.$(bp_tmp_suffix)"
+	if ! bp_voucher_build "$v_tmp" "$v_code" "$v_dev" "$v_time"; then
 		rm -f "$v_tmp" 2>/dev/null || true
 		return 8
 	fi
-	if ! chmod 600 "$v_tmp" || ! mv "$v_tmp" "$BP_VOUCHERS"; then
+	if ! mv "$v_tmp" "$BP_VOUCHERS"; then
 		rm -f "$v_tmp" 2>/dev/null || true
 		return 8
 	fi
 	bp_durable_sync || return 8
 	return 0
+}
+
+bp_voucher_txn_clear_stage() {
+	rm -f "$BP_VOUCHER_TXN_ACCOUNTS" "$BP_VOUCHER_TXN_VOUCHERS" 2>/dev/null || true
+}
+
+bp_voucher_txn_begin() {
+	[ ! -e "$BP_VOUCHER_TXN_COMMIT" ] && [ ! -L "$BP_VOUCHER_TXN_COMMIT" ] || return 8
+	bp_voucher_txn_clear_stage
+}
+
+bp_voucher_txn_apply() {
+	[ -f "$BP_VOUCHER_TXN_COMMIT" ] && [ ! -L "$BP_VOUCHER_TXN_COMMIT" ] || return 8
+	_v_end="$(awk -F '\t' '$1=="END" {c++} END {print c+0}' "$BP_VOUCHER_TXN_COMMIT")"
+	[ "$_v_end" -eq 1 ] || return 8
+	_v_exp_acc="$(awk -F '\t' '$1=="accounts" {print $2; n++} END {if (n!=1) exit 1}' "$BP_VOUCHER_TXN_COMMIT")" || return 8
+	_v_exp_vch="$(awk -F '\t' '$1=="vouchers" {print $2; n++} END {if (n!=1) exit 1}' "$BP_VOUCHER_TXN_COMMIT")" || return 8
+	case "$_v_exp_acc" in *[!0-9a-f]*|'') return 8;; esac
+	case "$_v_exp_vch" in *[!0-9a-f]*|'') return 8;; esac
+	[ "${#_v_exp_acc}" -eq 64 ] && [ "${#_v_exp_vch}" -eq 64 ] || return 8
+
+	# Pass 1: verify both accounts and vouchers match commit record before moving any files
+	for _vk in accounts vouchers; do
+		case "$_vk" in
+			accounts) _v_stg="$BP_VOUCHER_TXN_ACCOUNTS"; _v_liv="$BP_ACCOUNTS"; _v_exp="$_v_exp_acc";;
+			vouchers) _v_stg="$BP_VOUCHER_TXN_VOUCHERS"; _v_liv="$BP_VOUCHERS"; _v_exp="$_v_exp_vch";;
+		esac
+		if [ -e "$_v_stg" ] || [ -L "$_v_stg" ]; then
+			[ -f "$_v_stg" ] && [ ! -L "$_v_stg" ] || return 8
+			[ "$(bp_sha256 < "$_v_stg")" = "$_v_exp" ] || return 8
+		else
+			[ -f "$_v_liv" ] && [ ! -L "$_v_liv" ] || return 8
+			[ "$(bp_sha256 < "$_v_liv" 2>/dev/null)" = "$_v_exp" ] || return 8
+		fi
+	done
+
+	# Pass 2: apply verified staged files
+	for _vk in accounts vouchers; do
+		case "$_vk" in
+			accounts) _v_stg="$BP_VOUCHER_TXN_ACCOUNTS"; _v_liv="$BP_ACCOUNTS";;
+			vouchers) _v_stg="$BP_VOUCHER_TXN_VOUCHERS"; _v_liv="$BP_VOUCHERS";;
+		esac
+		if [ -e "$_v_stg" ] || [ -L "$_v_stg" ]; then
+			chmod 600 "$_v_stg" || return 8
+			mv "$_v_stg" "$_v_liv" || return 8
+		fi
+	done
+
+	bp_durable_sync || return 8
+	rm -f "$BP_VOUCHER_TXN_COMMIT" || return 8
+	bp_durable_sync || return 8
+	return 0
+}
+
+bp_voucher_txn_recover() {
+	if [ -e "$BP_VOUCHER_TXN_COMMIT" ] || [ -L "$BP_VOUCHER_TXN_COMMIT" ]; then
+		bp_voucher_txn_apply
+		return $?
+	fi
+	bp_voucher_txn_clear_stage
+	return 0
+}
+
+bp_voucher_txn_commit() {
+	[ -f "$BP_VOUCHER_TXN_ACCOUNTS" ] && [ -f "$BP_VOUCHER_TXN_VOUCHERS" ] || { bp_voucher_txn_clear_stage; return 8; }
+	umask 077
+	_v_tmp="$BP_STATE/.voucher-txn.commit.$(bp_tmp_suffix)"
+	_h_acc="$(bp_sha256 < "$BP_VOUCHER_TXN_ACCOUNTS")"
+	_h_vch="$(bp_sha256 < "$BP_VOUCHER_TXN_VOUCHERS")"
+	if ! printf 'accounts\t%s\nvouchers\t%s\nEND\tcommit\n' "$_h_acc" "$_h_vch" > "$_v_tmp" ||
+	   ! chmod 600 "$_v_tmp" ||
+	   ! mv "$_v_tmp" "$BP_VOUCHER_TXN_COMMIT"; then
+		rm -f "$_v_tmp" 2>/dev/null || true
+		bp_voucher_txn_clear_stage
+		return 8
+	fi
+	bp_durable_sync || return 8
+	bp_voucher_txn_apply
+	return $?
 }
 
 # Legacy MAC financial source is NOT a v2 migration. Do not silently

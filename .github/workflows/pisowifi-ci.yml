@@ -122,7 +122,7 @@ jobs:
       - name: Execute Issue #31 member journal suites under BusyBox ash
         run: |
           set -eu
-          for suite in member_receipt_failure_atomicity.sh member_txn_journal.sh; do
+          for suite in member_receipt_failure_atomicity.sh member_txn_journal.sh voucher_txn_journal.sh; do
             printf 'BUSY_ASH RUN %s\n' "$suite"
             busybox sh "Pisowifi/tests/$suite"
           done

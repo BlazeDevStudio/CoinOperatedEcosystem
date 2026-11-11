@@ -96,7 +96,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/common.sh",
       "source_git_blob": "4ccb10777b08f541d092f7c2c2d2aad4d2f6562e",
-      "destination_git_blob": "8c8024888cdc4a405da2af7798905a3ea56244dc",
+      "destination_git_blob": "ae00667da26c68c9e44a54a941887191029afc11",
       "git_mode": "100644",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -327,7 +327,7 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/api",
       "source_git_blob": "a59c0080c04cdb6bd8fd830b623bdc62640fb6a5",
-      "destination_git_blob": "87ea59a5721ff94329eefaa97adc5922b473da07",
+      "destination_git_blob": "fabbd6fb28a34c162fb40403aec2a40d6fe1a65b",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "fa1f4f2c6393504499d50659d8bf980caf7ff85b",
+      "git_blob": "2b7b861ec63cf811d18d0e63b11a65efd1bec0e9",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -586,6 +586,13 @@
     {
       "path": "tests/member_txn_journal.sh",
       "git_blob": "d04df3c6f3ada60b9fda8c8c04230dd31e37019a",
+      "mode": "100755",
+      "github_actions_status": "PENDING_CI_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/voucher_txn_journal.sh",
+      "git_blob": "f86dd7247cdfb17f4099f6246fc7ef5c64fa0927",
       "mode": "100755",
       "github_actions_status": "PENDING_CI_RUN",
       "hardware_evidence": false
