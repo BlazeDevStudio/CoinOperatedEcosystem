@@ -1,0 +1,72 @@
+name: Pisonet SoftTimer CI
+
+# Verification only. This workflow never publishes releases, signs binaries,
+# uploads installers, or reads secrets. Release automation from the historical
+# Experiments repository was intentionally NOT migrated (see
+# docs/migration/records/M0-pisonet-softtimer-v0.4.0-baseline.md).
+
+on:
+  pull_request:
+    paths:
+      - 'Pisonet/SoftTimer/**'
+      - '.github/workflows/pisonet-softtimer-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Pisonet/SoftTimer/**'
+      - '.github/workflows/pisonet-softtimer-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pisonet-softtimer-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_DIR: Pisonet/SoftTimer
+
+jobs:
+  build-windows:
+    name: Build (Windows x64, warnings as errors)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record exact commit under test
+        shell: pwsh
+        run: |
+          "Commit under test: $env:GITHUB_SHA"
+          git rev-parse HEAD
+
+      # SDK version is pinned by Pisonet/SoftTimer/global.json.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: Pisonet/SoftTimer/global.json
+
+      - name: Show SDK
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          dotnet --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Restore (win-x64)
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          foreach ($p in 'BlazePisonet.SoftTimer','BlazePisonet.SoftTimer.Watchdog') {
+            dotnet restore "src/$p/$p.csproj" -r win-x64
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Build (Release, warnings as errors)
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          foreach ($p in 'BlazePisonet.SoftTimer','BlazePisonet.SoftTimer.Watchdog') {
+            dotnet build "src/$p/$p.csproj" -c Release -r win-x64 --no-restore -warnaserror
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
