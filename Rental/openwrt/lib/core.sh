@@ -56,11 +56,17 @@ br_lock() {
         i=$((i+1)); [ "$i" -lt 5 ] || { br_die 'state locked; refusing operation'; return 1; }
         sleep 1
     done
-    trap 'rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || :; exit 130' 1 2 3 15
+    printf 'L:%s ' "$$" >> "$BR_STATE_DIR/.trace" 2>/dev/null || :
+    trap 'printf "T:%s " "$$" >> "$BR_STATE_DIR/.trace" 2>/dev/null || :; rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || :; exit 130' 1 2 3 15
 }
 br_unlock() {
     trap - 1 2 3 15
-    rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || { br_die 'unlock failed'; return 1; }
+    printf 'U:%s:%s ' "$$" "${1:-0}" >> "$BR_STATE_DIR/.trace" 2>/dev/null || :
+    err=$(rmdir "$BR_STATE_DIR/.lock" 2>&1) || {
+        trc=$(cat "$BR_STATE_DIR/.trace" 2>/dev/null || :)
+        br_die "unlock failed (${1:-0}): $err [trace: $trc]"
+        return 1
+    }
 }
 br_get_device() { awk -F '\t' -v id="$1" '$1=="D" && $2==id {print;exit}' "$BR_DB"; }
 br_get_receipt() { awk -F '\t' -v id="$1" '$1=="R" && $2==id {print;exit}' "$BR_DB"; }
@@ -112,11 +118,11 @@ br_registration_locked() {
 br_registration() {
     br_clock && br_lock || return 1
     if br_registration_locked; then
-        br_unlock || return 1
+        br_unlock ok || return 1
         printf '%s\n' "$BR_OUT"
         return 0
     fi
-    br_unlock || :
+    br_unlock err || :
     return 1
 }
 br_grant_locked() {
@@ -155,11 +161,11 @@ br_grant() {
     { br_id_ok "$id" && br_tx_ok "$tx" && br_uint_ok "$seconds" && [ "$seconds" -ge 1 ] && [ "$seconds" -le 2592000 ]; } || { br_die 'invalid grant parameters'; return 1; }
     br_clock && br_lock || return 1
     if br_grant_locked "$id" "$seconds" "$tx"; then
-        br_unlock || return 1
+        br_unlock ok || return 1
         printf '%s\n' "$BR_OUT"
         return 0
     fi
-    br_unlock || :
+    br_unlock err || :
     return 1
 }
 br_status() {
