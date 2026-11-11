@@ -25,14 +25,26 @@ static const uint32_t PENDING_MAGIC=0x42504332;
 Config cfg;
 Preferences prefs;
 WebServer web(80);
-bool insertMode=false, lastCoin=false, pendingReady=false, fsReady=false;
+bool insertMode=false, pendingReady=false, fsReady=false;
 bool controllerEnabled=true, coinEnabled=true, relayEnabled=true, ledEnabled=true, setupApOn=false;
 bool runCoinActiveLow=true, runRelayActiveHigh=true, runLedActiveHigh=true;
 uint32_t lastPoll=0, lastEdge=0, lastSend=0, configuredApSince=0;
 uint8_t pendingPulses=0;
-int runCoinPin=27, runLedPin=2, runRelayPin=26, maxWifiRetries=6, wifiFailures=0, remoteRevision=0;
+int runCoinPin=-1, runLedPin=2, runRelayPin=26, maxWifiRetries=6, wifiFailures=0, remoteRevision=0;
 uint16_t runDebounceMs=40, runPulseGroupMs=400;
 String activeTarget, pendingTarget, pendingNonce, setupApName;
+
+// HW-P0-2: Edge interrupt coin pulse capture decoupled from network polling latency
+volatile uint32_t isrPulses=0;
+volatile uint32_t isrLastPulseMs=0;
+
+void IRAM_ATTR onCoinPulse(){
+  uint32_t now=millis();
+  if(now-isrLastPulseMs>=runDebounceMs){
+    isrPulses++;
+    isrLastPulseMs=now;
+  }
+}
 
 String hexDigest(const String &s){
   unsigned char out[32]; char buf[65];
@@ -185,11 +197,14 @@ int jsonInt(const String &r,const String &k,int def){
 }
 
 void configureRuntimePins(int coinPin,int relayPin,int ledPin){
+  if(runCoinPin>=0) detachInterrupt(digitalPinToInterrupt(runCoinPin));
   if(runLedPin!=ledPin) writeLogical(runLedPin,false,runLedActiveHigh);
   if(runRelayPin!=relayPin) writeLogical(runRelayPin,false,runRelayActiveHigh);
   runCoinPin=coinPin; runRelayPin=relayPin; runLedPin=ledPin;
-  pinMode(runCoinPin,INPUT_PULLUP); pinMode(runRelayPin,OUTPUT); pinMode(runLedPin,OUTPUT);
+  pinMode(runCoinPin,runCoinActiveLow?INPUT_PULLUP:INPUT);
+  pinMode(runRelayPin,OUTPUT); pinMode(runLedPin,OUTPUT);
   writeLogical(runRelayPin,false,runRelayActiveHigh); writeLogical(runLedPin,false,runLedActiveHigh);
+  if(runCoinPin>=0) attachInterrupt(digitalPinToInterrupt(runCoinPin),onCoinPulse,runCoinActiveLow?FALLING:RISING);
 }
 
 void applyRemoteConfig(const String &r){
@@ -321,10 +336,9 @@ void setup(){
   Serial.begin(115200); loadConfig();
   fsReady=LittleFS.begin(true); if(fsReady) loadPending();
   else Serial.println("CRITICAL: LittleFS unavailable; relay remains disabled.");
-  runCoinPin=cfg.coinPin; runLedPin=cfg.insertLedPin; runRelayPin=cfg.relayPin;
   runCoinActiveLow=cfg.coinActiveLow; runRelayActiveHigh=cfg.relayActiveHigh; runLedActiveHigh=cfg.ledActiveHigh;
   runDebounceMs=cfg.coinDebounceMs; runPulseGroupMs=cfg.pulseGroupMs;
-  configureRuntimePins(runCoinPin,runRelayPin,runLedPin);
+  configureRuntimePins(cfg.coinPin,cfg.relayPin,cfg.insertLedPin);
   setupPortal(); connectSta();
 }
 
@@ -355,16 +369,31 @@ void loop(){
     applyOutputs(); lastPoll=millis();
   }
 
-  bool raw=digitalRead(runCoinPin);
-  bool active=runCoinActiveLow?!raw:raw;
-  if(insertMode && fsReady && activeTarget.length() && !pendingReady && active && !lastCoin && millis()-lastEdge>runDebounceMs){
-    if(pendingPulses==0){ pendingNonce=freshNonce(); pendingTarget=activeTarget; }
-    if(pendingTarget==activeTarget && pendingPulses<20){
-      pendingPulses++; lastEdge=millis();
-      if(!savePending()){ fsReady=false; pendingReady=true; Serial.println("CRITICAL: pending journal write failed; relay disabled."); }
+  uint32_t pulses=0, pulseEdgeMs=0;
+  noInterrupts();
+  pulses=isrPulses; pulseEdgeMs=isrLastPulseMs; isrPulses=0;
+  interrupts();
+
+  if(pulses>0){
+    if(insertMode && fsReady && activeTarget.length() && !pendingReady){
+      if(pendingPulses==0){ pendingNonce=freshNonce(); pendingTarget=activeTarget; }
+      if(pendingTarget==activeTarget){
+        uint8_t added=(pendingPulses+pulses<=20)?(uint8_t)pulses:(20-pendingPulses);
+        pendingPulses+=added; lastEdge=pulseEdgeMs;
+        if(!savePending()){ fsReady=false; pendingReady=true; Serial.println("CRITICAL: pending journal write failed; relay disabled."); }
+      }
+    } else {
+      Serial.println("WARNING: uncredited coin pulses received outside active session ("+String(pulses)+" pulses)");
+      if(fsReady){
+        File q=LittleFS.open("/quarantine.log","a");
+        if(q){
+          q.printf("TIME=%lu PULSES=%lu NONCE=none TARGET=none REASON=uncredited_outside_session\n",
+                   (unsigned long)millis(),(unsigned long)pulses);
+          q.flush(); q.close();
+        }
+      }
     }
   }
-  lastCoin=active;
   if(pendingPulses && !pendingReady && millis()-lastEdge>runPulseGroupMs){ pendingReady=true; lastSend=0; applyOutputs(); }
   if(pendingPulses && pendingReady && WiFi.status()==WL_CONNECTED && (lastSend==0 || millis()-lastSend>900)){
     String r=post("coin",String(pendingPulses),pendingTarget,pendingNonce); lastSend=millis();

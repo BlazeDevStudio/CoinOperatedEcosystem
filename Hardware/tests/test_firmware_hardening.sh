@@ -35,6 +35,12 @@ for f in "$E6" "$E32"; do
   grep -q '"/quarantine"' "$f" || { echo "Missing /quarantine route in $f" >&2; exit 1; }
   grep -q '"/quarantine/clear"' "$f" || { echo "Missing /quarantine/clear route in $f" >&2; exit 1; }
 
+  # 3b. Edge Interrupt Coin Pulse Capture (HW-P0-2 remediation)
+  grep -q 'onCoinPulse' "$f" || { echo "Missing onCoinPulse ISR in $f" >&2; exit 1; }
+  grep -q 'attachInterrupt' "$f" || { echo "Missing attachInterrupt in $f" >&2; exit 1; }
+  grep -q 'detachInterrupt' "$f" || { echo "Missing detachInterrupt in $f" >&2; exit 1; }
+  grep -q 'noInterrupts' "$f" || { echo "Missing noInterrupts atomic pulse latch in $f" >&2; exit 1; }
+
   # 4. Syntax & Brace Balancing Check
   python3 - "$f" <<'PY'
 import sys
