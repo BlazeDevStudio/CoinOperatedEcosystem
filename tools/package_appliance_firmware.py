@@ -220,12 +220,50 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
     }
 
 
+def generate_build_script(manifest: dict, script_path: str) -> None:
+    """Emit an executable shell script to run ImageBuilder and generate SHA-256 release checksums."""
+    profile_id = manifest["profile_id"]
+    target_arch = manifest["target_architecture"]
+    cmd = manifest["imagebuilder_command"]
+    staging_dir = os.path.abspath(manifest["staging_dir"])
+    target_prefix = target_arch.split("/")[0]
+
+    content = f"""#!/bin/sh
+# Auto-generated OpenWrt ImageBuilder wrapper for {profile_id} ({target_arch})
+set -eu
+
+BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
+if [ ! -f "$BUILD_DIR/Makefile" ]; then
+    echo "ERROR: ImageBuilder Makefile not found in $BUILD_DIR" >&2
+    echo "Set OPENWRT_IMAGEBUILDER_DIR to the extracted OpenWrt ImageBuilder root." >&2
+    exit 1
+fi
+
+echo "=== Building Appliance Firmware for {profile_id} ==="
+cd "$BUILD_DIR"
+{cmd}
+
+echo "=== Verifying Built Firmware Binaries & Generating Manifest ==="
+BIN_DIR="$BUILD_DIR/bin/targets/{target_prefix}"
+if [ -d "$BIN_DIR" ]; then
+    find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$BUILD_DIR/RELEASE_MANIFEST.sha256"
+    echo "Release manifest written to $BUILD_DIR/RELEASE_MANIFEST.sha256"
+    cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
+fi
+echo "Appliance build completed successfully."
+"""
+    with open(script_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.chmod(script_path, 0o755)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Package OpenWrt appliance firmware overlay.")
-    parser.add_argument("--profile", required=True, help="Profile ID (e.g., ew1200g-pro, r281, orangepi-r1-plus-lts, orangepi-zero3, x86_64) or JSON path")
+    parser.add_argument("--profile", required=True, help="Profile ID (e.g., ew1200g-pro, r281, orangepi-r1-plus-lts, orangepi-zero3, archer-c6-v3, gl-mt1300, raspberrypi-4b, x86_64) or JSON path")
     parser.add_argument("--rootfs", default=DEFAULT_ROOTFS, help="Source rootfs directory")
     parser.add_argument("--rental-dir", default=DEFAULT_RENTAL_DIR, help="Rental source root directory")
     parser.add_argument("--include-rental", action="store_true", help="Bundle BlazeRental module into overlay")
+    parser.add_argument("--emit-build-script", help="Path to write ImageBuilder runner shell script")
     parser.add_argument("--output", required=True, help="Destination staging directory")
     args = parser.parse_args()
 
@@ -238,6 +276,10 @@ def main():
         print(f"  Include Rental: {manifest['include_rental']}")
         print(f"  Staging Dir:    {manifest['staging_dir']}")
         print(f"  ImageBuilder:   {manifest['imagebuilder_command']}")
+
+        if args.emit_build_script:
+            generate_build_script(manifest, args.emit_build_script)
+            print(f"  Build Script:   {args.emit_build_script}")
     except Exception as e:
         print(f"Error packaging appliance firmware: {e}", file=sys.stderr)
         sys.exit(1)
@@ -245,3 +287,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

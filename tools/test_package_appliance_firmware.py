@@ -11,6 +11,7 @@ from package_appliance_firmware import (
     generate_network_uci,
     stage_overlay,
     build_imagebuilder_cmd,
+    generate_build_script,
     DEFAULT_ROOTFS
 )
 
@@ -18,7 +19,16 @@ from package_appliance_firmware import (
 class TestPackageApplianceFirmware(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="test_appliance_")
-        self.profiles = ["ew1200g-pro", "r281", "orangepi-r1-plus-lts", "orangepi-zero3", "x86_64"]
+        self.profiles = [
+            "ew1200g-pro",
+            "r281",
+            "orangepi-r1-plus-lts",
+            "orangepi-zero3",
+            "archer-c6-v3",
+            "gl-mt1300",
+            "raspberrypi-4b",
+            "x86_64"
+        ]
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -114,7 +124,31 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             stage_overlay(p, DEFAULT_ROOTFS, staging_dest)
         self.assertIn("exceeds flash budget", str(ctx.exception))
 
+    def test_generate_network_uci_archer_c6(self):
+        p = load_profile("archer-c6-v3")
+        uci = generate_network_uci(p)
+        self.assertIn("option name 'br-lan'", uci)
+        self.assertIn("option vlan_filtering '1'", uci)
+        self.assertIn("list ports 'lan1 lan2 lan3 lan4'", uci)
+        self.assertIn("option device 'wan'", uci)
+
+    def test_generate_build_script(self):
+        p = load_profile("gl-mt1300")
+        manifest = stage_overlay(p, DEFAULT_ROOTFS, os.path.join(self.temp_dir, "staging_gl"))
+        script_path = os.path.join(self.temp_dir, "build_gl.sh")
+        generate_build_script(manifest, script_path)
+
+        self.assertTrue(os.path.isfile(script_path))
+        mode = os.stat(script_path).st_mode
+        self.assertTrue(bool(mode & 0o111), "Build script must be executable (0755)")
+
+        with open(script_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("make image PROFILE=gl-mt1300", content)
+        self.assertIn("RELEASE_MANIFEST.sha256", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

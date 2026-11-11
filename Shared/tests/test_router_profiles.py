@@ -169,6 +169,53 @@ class TestRouterProfiles(unittest.TestCase):
         self.assertEqual(p["hardware"]["storage_type"], "emmc")
         self.assertEqual(p["hardware"]["ram_mb"], 1024)
 
+    def test_archer_c6_v3_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "archer-c6-v3.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("tplink,archer-c6-v3"))
+        self.assertTrue(board_re.match("tplink,archer-a6-v3"))
+        self.assertTrue(model_re.match("TP-Link Archer C6 v3"))
+
+        self.assertEqual(p["target_architecture"], "ramips/mt7621")
+        self.assertEqual(p["hardware"]["storage_type"], "nor_spi")
+        self.assertEqual(p["hardware"]["ram_mb"], 128)
+
+    def test_gl_mt1300_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "gl-mt1300.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("glinet,gl-mt1300"))
+        self.assertTrue(model_re.match("GL.iNet GL-MT1300"))
+
+        self.assertEqual(p["target_architecture"], "ramips/mt7621")
+        self.assertEqual(p["hardware"]["storage_type"], "nand_spi")
+        self.assertEqual(p["hardware"]["ram_mb"], 256)
+
+    def test_raspberrypi_4b_sysinfo_detection(self):
+        path = os.path.join(PROFILES_DIR, "raspberrypi-4b.json")
+        with open(path, "r", encoding="utf-8") as f:
+            p = json.load(f)
+
+        board_re = re.compile(p["detection"]["board_name_pattern"], re.IGNORECASE)
+        model_re = re.compile(p["detection"]["model_pattern"], re.IGNORECASE)
+
+        self.assertTrue(board_re.match("raspberrypi,4-model-b"))
+        self.assertTrue(model_re.match("Raspberry Pi 4 Model B"))
+
+        self.assertEqual(p["target_architecture"], "bcm27xx/bcm2711")
+        self.assertEqual(p["hardware"]["storage_type"], "emmc")
+        self.assertEqual(p["hardware"]["ram_mb"], 2048)
+
 
 if __name__ == "__main__":
     unittest.main()
+

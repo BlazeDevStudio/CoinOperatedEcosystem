@@ -1,0 +1,32 @@
+{
+  "profile_id": "raspberrypi-4b",
+  "name": "Raspberry Pi 4 Model B Appliance",
+  "version": "1.0.0",
+  "target_architecture": "bcm27xx/bcm2711",
+  "detection": {
+    "board_name_pattern": ".*raspberrypi,4-model-b.*",
+    "model_pattern": ".*Raspberry Pi 4 Model B.*"
+  },
+  "hardware": {
+    "flash_kb": 8388608,
+    "ram_mb": 2048,
+    "min_free_overlay_kb": 100000,
+    "cpu_cores": 4,
+    "storage_type": "emmc"
+  },
+  "networking": {
+    "wan_interface": "eth0",
+    "lan_interface": "br-lan",
+    "switch_type": "generic",
+    "ports": [
+      { "label": "GbE", "interface": "eth0", "speed_mbps": 1000 },
+      { "label": "WLAN", "interface": "wlan0", "speed_mbps": 433 }
+    ],
+    "vlan_supported": true,
+    "default_vlan_ids": {
+      "lan": 1,
+      "guest": 10,
+      "vendo": 20
+    }
+  }
+}

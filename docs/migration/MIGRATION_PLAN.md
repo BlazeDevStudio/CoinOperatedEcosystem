@@ -8,8 +8,11 @@ Principle: **recover and review what the owner already drafted; do not re-import
 The owner has determined that the software is **not distributed standalone as bare software**. It is shipped exclusively alongside physical **hardware appliance bundles**:
 - **Ruijie RG-EW1200G Pro v1.1 routers** (`ramips/mt7621`, DSA switch, 16MB flash, 128MB RAM)
 - **Notion R281 routers** (`ramips/mt7621`, DSA switch, 32MB flash, 128MB RAM)
+- **TP-Link Archer C6 v3 / A6 v3 routers** (`ramips/mt7621`, DSA switch, 16MB flash, 128MB RAM, 4x GbE LAN)
+- **GL.iNet GL-MT1300 Beryl embedded appliances** (`ramips/mt7621`, DSA switch, 32MB flash, 256MB RAM)
 - **Orange Pi R1 Plus LTS SBCs** (`rockchip/arm64`, 4-core, 1GB RAM, eMMC, dual GbE)
 - **Orange Pi Zero 3 SBCs** (`sunxi/cortexa53`, 4-core, 1GB RAM, eMMC/SD, GbE + WLAN)
+- **Raspberry Pi 4 Model B SBCs** (`bcm27xx/bcm2711`, 4-core, 2GB+ RAM, eMMC/SD, GbE + WLAN)
 - **Mini PCs** (x86_64 OpenWrt/Linux appliances, Windows SoftTimer PC)
 - **Commercial routers and embedded IoT platforms**
 
