@@ -32,6 +32,17 @@ struct Config {
   uint8_t coinActiveLow;
 };
 
+struct PendingRecord {
+  uint32_t magic;
+  uint8_t pulses;
+  char nonce[17];
+  char target[33];
+  uint32_t checksum;
+};
+const uint32_t PENDING_MAGIC=0x42504331;
+uint32_t pendingChecksum(const PendingRecord &r);
+bool readPendingFile(const char *path, PendingRecord &r);
+
 Config cfg;
 ESP8266WebServer web(80);
 const uint32_t MAGIC_V1=0x42505731;
@@ -63,14 +74,7 @@ void IRAM_ATTR onCoinPulse(){
   }
 }
 
-struct PendingRecord {
-  uint32_t magic;
-  uint8_t pulses;
-  char nonce[17];
-  char target[33];
-  uint32_t checksum;
-};
-const uint32_t PENDING_MAGIC=0x42504331;
+
 
 String hexDigest(const String &s){
   br_sha256_context c; uint8_t out[32]; char buf[65];
