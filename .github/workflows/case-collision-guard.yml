@@ -1,0 +1,23 @@
+name: Case-collision guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  case-collisions:
+    name: No case-insensitive path collisions in merged tree
+    runs-on: ubuntu-latest
+    steps:
+      # On pull_request this checks out the MERGE commit, so a collision between
+      # this branch and the base branch is detected before it can land.
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: python3 tools/test_check_case_collisions.py -v
+      - name: Check merged tree
+        run: python3 tools/check_case_collisions.py HEAD
