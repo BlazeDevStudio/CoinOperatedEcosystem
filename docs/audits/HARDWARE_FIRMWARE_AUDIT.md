@@ -88,3 +88,11 @@ Client-side remediation candidates for `HW-P0-1`, `HW-P0-2`, `HW-P1-1`, and `HW-
 
 > [!IMPORTANT]
 > Hardware admission remains **STRICT NO-GO** pending physical hardware power-cut testing (`Experiments #34`), ISR-driven edge pulse capture verification on physical coin acceptors, anti-rollback witness integration, and formal QA review.
+
+## 5. Status Addendum — 2026-11-11 (`CoinOperatedEcosystem PR #27`)
+
+The hardened ESP32 and ESP8266 firmwares and inter-product contracts have been migrated directly into `CoinOperatedEcosystem` under **Draft PR #27** (`feature/hardware-firmware-and-shared-contracts-20261111`):
+1. **Repository Layout:** Housed under `Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino` and `Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino`, alongside `Hardware/tests/test_firmware_hardening.sh` and pinout documentation in `Hardware/README.md`.
+2. **Shared Contracts:** Established `Shared/contracts/controller-signature/` and `Shared/contracts/member-bank-restore/` containing JSON Schemas and golden test vectors for inter-product protocol compliance, validated by `Shared/tests/test_shared_contracts.py`.
+3. **Reproducible Hardware CI:** Added `.github/workflows/hardware-ci.yml` running contract validation and compiling both sketches through Arduino CLI (`esp8266:esp8266:nodemcuv2` and `esp32:esp32:esp32`). Verified 100% PASS in CI run `43050741196` with binary artifacts uploaded.
+4. **Candidate Integration:** Merged into Candidate PR #26 on branch `integration/ecosystem-nonproprietary-candidate-20261111`. Production hardware flashing remains strictly NO-GO.

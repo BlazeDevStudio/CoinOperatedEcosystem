@@ -18,9 +18,9 @@
 | **Blaze PisoWiFi** (OpenWrt captive portal, vouchers, sessions, coin vendo API) | POSIX sh/BusyBox CGI, uhttpd, UCI, nftables | Historical: Experiments `blazepwifi-v0.6.0-audit-foundation` (not `main`). Recovery: PR #18 `feature/pisowifi-cleanup-stabilization` @ `eef173286cb6cc1320f0f9e234a7b7cc701424a3` | #18 (`Pisowifi/`), plus overlapping CORE chain #3–#16 (`core/openwrt/`) | **CLEANUP / RECOVERING** | **NO-GO** |
 | **BlazeRental** (OpenWrt rental server + Android status controller) | POSIX sh + openssl HMAC; Java/Android | Experiments `experiment/openwrt/Rental-Server-Standalone` (v0.1.2, R281-pinned) and `BlazePwifi/android/BlazeRental*`; recovery: PR #19 @ `fcc8f8c9bc2fa50666aa7c5e94e48137fa01b379` | #19 (`Rental/`) | **RECOVERING** (preview) | **NO-GO** |
 | **BlazePisonet SoftTimer** (Windows coin-operated PC timer) | C# .NET 8 WinForms, serial CTS/DSR, NSIS | Released v0.4.0 = Experiments `main`; newer = linear draft chain ending at PR #255/#279; baseline of that chain in PR #17 @ `24e9cfa02e…` | #17 (`Pisonet/SoftTimer/`) | **MIGRATING** | **NO-GO** |
-| **Hardware** (ESP8266/ESP32 vendo and timer firmware) | Arduino C++ | Experiments `BlazePwifi/esp8266`, `esp32`; Labs `embedded/blaze-pisonet-timer-public`, `blaze-pisonet-universal`; Forked-Projects `nrsuite-*` branches; Experiments PRs #252/#254 (ESP32 CORE auth, DENY-only) | none here | **RECOVERING** | **NO-GO** |
+| **Hardware** (ESP8266/ESP32 vendo and timer firmware) | Arduino C++ | PR #27 (`Hardware/esp32`, `Hardware/esp8266`); Labs standalone timers; Experiments PR #283 | PR #27 (`Hardware/`), Candidate PR #26 | **RECOVERING** (CI green) | **NO-GO** |
 | **CORE (COE-CORE)** (capability tiers, config transactions, nft authorization) | POSIX sh | PRs #3–#16 chain (head `d537b30f67…`) | #3–#16 | **DEVELOPING** (drafts, CI green per PR) | **NO-GO** |
-| **Shared contracts / accounting** | n/a | none (placeholder READMEs only; branches `Contracts`, `Controllers`, `Core`, `Integration-Tests`, `Pisonet`, `Rental` are empty at the initial commit) | none | **not started** | **NO-GO** |
+| **Shared contracts / accounting** | JSON Schema, golden vectors | PR #27 (`Shared/contracts/`); PR #24 (`member_txn_journal.sh`) | PR #27 (`Shared/`), Candidate PR #26 | **ESTABLISHED** (CI green) | **NO-GO** |
 | **Deployment / packaging** | n/a | none in primary repo; legacy `installer/`, `tools/` inside BlazePwifi | none | **not started** | **NO-GO** |
 
 ## 3. Interaction model (verified by reading source and docs)
@@ -45,4 +45,11 @@
 
 ## 5. Not audited in this pass
 
-Android sources (`BlazeRentalLauncher`, ~965 files), ESP firmware bodies, EasyMode, the other 20 repositories beyond inventory, the 72 Experiments PR bodies individually, EW1200G Pro OpenWrt support and VLAN/profile design, Windows runtime behavior, physical hardware.
+Android sources (`BlazeRentalLauncher`, ~965 files), EasyMode, the other 20 repositories beyond inventory, the 72 Experiments PR bodies individually, EW1200G Pro OpenWrt support and VLAN/profile design, Windows runtime behavior, physical hardware.
+
+## 6. Status Addendum — 2026-11-11 (Hardware & Shared Migration, Candidate PR #26, PR #27)
+
+1. **Hardware Firmwares Migrated (PR #27):** ESP32 (`Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino`) and ESP8266 (`Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino`) firmwares are now housed natively within `CoinOperatedEcosystem` with setup quarantine endpoints (`/quarantine`, `/quarantine/clear`), server response signature verification, and fresh CSPRNG nonces. Arduino CLI CI workflow `.github/workflows/hardware-ci.yml` compiles both targets and validates firmware hardening in CI.
+2. **Shared Contracts Established (PR #27):** Inter-product contract specifications and golden vectors are now located at `Shared/contracts/controller-signature/` and `Shared/contracts/member-bank-restore/` with JSON schemas and automated Python validation (`Shared/tests/test_shared_contracts.py`).
+3. **Non-Proprietary Integration Candidate (PR #26):** Combines `docs/`, `Rental/`, `Pisonet/SoftTimer/`, `Hardware/`, `Shared/`, and `tools/` into a single unified candidate tree on branch `integration/ecosystem-nonproprietary-candidate-20261111` targeting `main`. Proprietary `Pisowifi/` remains held on Draft PR #18 / PR #24 in accordance with the P0-1 privacy boundary.
+4. **Production Gate Notice:** Production admission remains strictly **NO-GO** across all components.
