@@ -41,7 +41,33 @@ IP
 
 cat > "$T/bin/nft" <<'NFT'
 #!/bin/sh
-exit 0
+macs="${BP_RUN}/nft_macs"
+[ -f "$macs" ] || : > "$macs"
+mac="$(printf '%s' "${6:-}" | tr -d '{} ' | tr 'A-F' 'a-f')"
+case "$1 $2" in
+  'add element')
+    grep -Fqx "$mac" "$macs" 2>/dev/null || printf '%s\n' "$mac" >> "$macs"
+    ;;
+  'get element')
+    grep -Fqx "$mac" "$macs" 2>/dev/null
+    ;;
+  'delete element')
+    grep -Fqx "$mac" "$macs" 2>/dev/null || exit 1
+    grep -Fvx "$mac" "$macs" > "$macs.next" || true
+    mv "$macs.next" "$macs"
+    ;;
+  'list set')
+    printf 'table inet blazepwifi {\n set auth_macs {\n  type ether_addr\n  elements = {\n'
+    sed 's/^/   /;s/$/,/' "$macs"
+    printf '  }\n }\n}\n'
+    ;;
+  'flush set')
+    : > "$macs"
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 NFT
 
 chmod +x "$T/bin/"*
@@ -75,6 +101,7 @@ REGSIG="$(printf 'vendokey|register|vendo-01|%s|0||vendokey' "$REGNONCE" | sha25
 OUT="$(printf 'action=register&id=vendo-01&nonce=%s&pulses=0&target=&sig=%s' "$REGNONCE" "$REGSIG" | sh "$VENDO")"
 echo "integration: register vendo-01 => $(printf '%s' "$OUT" | tr '\n' ' ')"
 echo "$OUT" | grep -q '"ok":true'
+echo "$OUT" | grep -q '"response_sig":'
 
 OUT="$(printf 'action=vendos' | sh "$API")"
 echo "integration: vendos => $(printf '%s' "$OUT" | tr '\n' ' ')"
@@ -85,6 +112,7 @@ REG2NONCE=0203040506070809
 REG2SIG="$(printf 'vendokey|register|vendo-02|%s|0||vendokey' "$REG2NONCE" | sha256sum | awk '{print $1}')"
 OUT="$(printf 'action=register&id=vendo-02&nonce=%s&pulses=0&target=&sig=%s' "$REG2NONCE" "$REG2SIG" | sh "$VENDO")"
 echo "$OUT" | grep -q '"ok":true'
+echo "$OUT" | grep -q '"response_sig":'
 
 OUT="$(printf 'action=me&device=%s' "$DEVICE" | sh "$API")"
 echo "$OUT" | grep -q '"credit_cents":0'
@@ -151,10 +179,12 @@ BODY="action=coin&id=vendo-01&nonce=$EVENT&pulses=1&target=$TARGET&sig=$SIG"
 OUT="$(printf '%s' "$BODY" | sh "$VENDO")"
 echo "$OUT" | grep -q '"credited_cents":100'
 echo "$OUT" | grep -q '"duplicate":false'
+echo "$OUT" | grep -q '"response_sig":'
 
 OUT="$(printf '%s' "$BODY" | sh "$VENDO")"
 echo "$OUT" | grep -q '"duplicate":true'
 echo "$OUT" | grep -q '"credited_cents":0'
+echo "$OUT" | grep -q '"response_sig":'
 
 OUT="$(printf 'action=me&device=%s' "$DEVICE" | sh "$API")"
 echo "$OUT" | grep -q '"credit_cents":100'
@@ -204,6 +234,7 @@ echo "integration: session rotation ok"
 printf 'TESTCODE\t250\n' > "$T/state/vouchers.tsv"
 OUT="$(printf 'action=redeem&device=%s&code=TESTCODE' "$DEVICE" | sh "$API")"
 echo "$OUT" | grep -q '"credit_cents":250'
+[ "$(awk -F '\t' '$1=="TESTCODE" && NF>=3 && $3!="" {print 1}' "$T/state/vouchers.tsv")" = 1 ]
 
 export TEST_IP=10.0.0.4 TEST_MAC=02:aa:bb:cc:dd:ee REMOTE_ADDR=10.0.0.4
 OUT="$(printf 'action=redeem&device=%s&code=TESTCODE' "$DEVICE2" | sh "$API")"

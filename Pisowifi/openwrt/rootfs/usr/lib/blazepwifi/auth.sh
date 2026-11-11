@@ -9,11 +9,19 @@ BP_AUDIT=${BP_AUDIT:-$BP_STATE/audit.tsv}
 
 bp_auth_cfg() {
 	v="$(bp_cfg "$1" 2>/dev/null || true)"
-	[ -n "$v" ] && printf '%s' "$v" || printf '%s' "$2"
+	if [ -n "$v" ]; then
+		printf '%s' "$v"
+	else
+		printf '%s' "$2"
+	fi
 }
 
 bp_auth_now() {
-	[ -n "${BP_AUTH_NOW:-}" ] && printf '%s\n' "$BP_AUTH_NOW" || bp_now
+	if [ -n "${BP_AUTH_NOW:-}" ]; then
+		printf '%s\n' "$BP_AUTH_NOW"
+	else
+		bp_now
+	fi
 }
 
 bp_auth_init() {
@@ -321,7 +329,7 @@ bp_auth_logout() {
 case "${1:-}" in
 --set-password|--set-bootstrap)
 	[ "$#" -eq 4 ] || { echo "usage: $0 --set-password|--set-bootstrap USER ROLE PASSWORD" >&2; exit 2; }
-	mode="$1"; . "${BP_LIB:-/usr/lib/blazepwifi/common.sh}"
+	mode="$1"; REQUEST_METHOD=GET; export REQUEST_METHOD; . "${BP_LIB:-/usr/lib/blazepwifi/common.sh}"
 	bp_auth_init
 	bp_auth_lock || { echo "authentication state busy" >&2; exit 1; }
 	must=0; [ "$mode" = "--set-bootstrap" ] && must=1

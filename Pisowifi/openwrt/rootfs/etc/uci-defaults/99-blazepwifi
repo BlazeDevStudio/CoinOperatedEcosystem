@@ -1,10 +1,12 @@
 #!/bin/sh
 randhex(){
 	bytes="${1:-18}"
-	out="$(hexdump -n "$bytes" -e '1/1 "%02x"' /dev/urandom 2>/dev/null || true)"
-	[ "${#out}" -ge $((bytes*2)) ] || out="$(od -An -N "$bytes" -tx1 /dev/urandom 2>/dev/null | tr -d ' \n' || true)"
-	[ "${#out}" -ge $((bytes*2)) ] || out="$(printf '%s|%s' "$(date +%s)" "$$" | sha256sum | awk '{print $1}')"
-	printf '%s' "$out" | cut -c1-$((bytes*2))
+	len=$((bytes*2))
+	out="$(hexdump -n "$bytes" -e '1/1 "%02x"' "${BP_URANDOM:-/dev/urandom}" 2>/dev/null || true)"
+	[ "${#out}" -ge "$len" ] || out="$(od -An -N "$bytes" -tx1 "${BP_URANDOM:-/dev/urandom}" 2>/dev/null | tr -d ' \n' || true)"
+	out="$(printf '%s' "$out" | cut -c1-"$len")"
+	[ "${#out}" -eq "$len" ] && printf '%s' "$out" | LC_ALL=C grep -Eq '^[0-9a-f]+$' || return 8
+	printf '%s' "$out"
 }
 ensure_opt(){ key="$1"; value="$2"; uci -q get "blazepwifi.main.$key" >/dev/null 2>&1 || uci set "blazepwifi.main.$key=$value"; }
 
@@ -56,14 +58,19 @@ chmod 700 /etc/blazepwifi /etc/blazepwifi/state /tmp/blazepwifi
 
 OLD_ADMIN="$(uci -q get blazepwifi.main.admin_key || true)"
 VENDO="$(uci -q get blazepwifi.main.vendo_key || true)"
-[ -n "$VENDO" ] && [ "$VENDO" != CHANGE_ME ] || uci set blazepwifi.main.vendo_key="$(randhex 18)"
+if [ -z "$VENDO" ] || [ "$VENDO" = CHANGE_ME ]; then
+	VENDO="$(randhex 18)" || exit 8
+	uci set blazepwifi.main.vendo_key="$VENDO"
+fi
 
 if ! grep -q '^admin	' /etc/blazepwifi/state/admin-users.tsv 2>/dev/null; then
 	BOOTSTRAP="$OLD_ADMIN"
-	[ -n "$BOOTSTRAP" ] && [ "$BOOTSTRAP" != CHANGE_ME ] || BOOTSTRAP="$(randhex 12)"
-	BP_LIB=/usr/lib/blazepwifi/common.sh /usr/lib/blazepwifi/auth.sh --set-bootstrap admin admin "$BOOTSTRAP"
-	printf '%s\n' "$BOOTSTRAP" > /etc/blazepwifi/INITIAL_ADMIN_PASSWORD
-	chmod 600 /etc/blazepwifi/INITIAL_ADMIN_PASSWORD
+	if [ -z "$BOOTSTRAP" ] || [ "$BOOTSTRAP" = CHANGE_ME ]; then
+		BOOTSTRAP="$(randhex 12)" || exit 8
+	fi
+	BP_LIB=/usr/lib/blazepwifi/common.sh /usr/lib/blazepwifi/auth.sh --set-bootstrap admin admin "$BOOTSTRAP" || exit 8
+	printf '%s\n' "$BOOTSTRAP" > /etc/blazepwifi/INITIAL_ADMIN_PASSWORD || exit 8
+	chmod 600 /etc/blazepwifi/INITIAL_ADMIN_PASSWORD || exit 8
 fi
 uci -q delete blazepwifi.main.admin_key || true
 uci commit blazepwifi

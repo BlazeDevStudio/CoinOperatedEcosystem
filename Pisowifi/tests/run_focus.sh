@@ -12,7 +12,14 @@ for test_file in \
   config_apply_failclosed.sh \
   config_concurrency.sh \
   admin_config_result.sh \
-  config_fixture_smoke.sh
+  config_fixture_smoke.sh \
+  bootstrap_and_cli_auth_guard.sh \
+  portal.sh \
+  security.sh \
+  config.sh \
+  member_receipt_failure_atomicity.sh \
+  member_txn_journal.sh \
+  integration.sh
 do
   printf 'RUN %s\n' "$test_file"
   sh "$ROOT/tests/$test_file"

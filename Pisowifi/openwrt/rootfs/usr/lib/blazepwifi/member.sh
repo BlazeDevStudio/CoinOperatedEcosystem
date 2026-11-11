@@ -24,6 +24,9 @@ bp_member_lock() {
   mkdir -p "$BP_RUN"
   exec 7>"$BP_RUN/member.lock"
   flock -w 10 7 || { exec 7>&-; return 1; }
+  # Issue #31: finish (or discard) any interrupted journaled transaction
+  # before anyone reads or mutates member state. Unrecoverable => fail closed.
+  bp_member_txn_recover || { bp_member_unlock; return 8; }
   # A prior uncertain paid mutation requires explicit reconciliation.
   [ ! -e "$BP_STATE/paid-state-uncertain" ] || { bp_member_unlock; return 9; }
 }
@@ -98,6 +101,135 @@ bp_member_next_revision() {
   printf '%s' "$next"
 }
 
+# ---------------------------------------------------------------------------
+# Issue #31 member transaction journal (redo log).
+#
+# members.tsv, member-events.tsv and member-revision are three files, so no
+# single rename can update them atomically. Instead a mutation:
+#   1. stages the complete NEW version of all three beside the live files;
+#   2. writes member-txn.commit (SHA-256 of each staged file) via tmp+rename.
+#      THAT rename is the commit point;
+#   3. renames the staged files over the live ones, then removes the record.
+# A crash before step 2 leaves the live files untouched (stale stage files are
+# discarded). A crash after step 2 is rolled FORWARD by bp_member_txn_recover
+# the next time the member lock is taken, so a balance can never advance
+# without its receipt and revision, nor vice versa. Recovery never clears
+# paid-state-uncertain: reconciliation stays an authorized operator action.
+# The caller MUST hold bp_member_lock. Power-cut durability of rename/sync on
+# the real flash filesystem is NOT proven here (Experiments #34).
+# ---------------------------------------------------------------------------
+BP_MEMBER_TXN_COMMIT="$BP_STATE/member-txn.commit"
+BP_MEMBER_TXN_MEMBERS="$BP_STATE/member-txn.members.new"
+BP_MEMBER_TXN_EVENTS="$BP_STATE/member-txn.events.new"
+BP_MEMBER_TXN_REVISION="$BP_STATE/member-txn.revision.new"
+
+# Validate the current revision and return old+1 WITHOUT writing it; the new
+# value only becomes live inside the journaled commit.
+bp_member_peek_revision() {
+  old="$(bp_member_revision_strict)" || return 8
+  printf '%s' "$((old+1))"
+}
+
+bp_member_txn_clear_stage() {
+  rm -f "$BP_MEMBER_TXN_MEMBERS" "$BP_MEMBER_TXN_EVENTS" "$BP_MEMBER_TXN_REVISION" 2>/dev/null || true
+}
+
+# Start a transaction: refuse an unrecovered commit record, discard stale
+# stage files, and pre-seed the staged receipt file from the live one.
+bp_member_txn_begin() {
+  [ ! -e "$BP_MEMBER_TXN_COMMIT" ] && [ ! -L "$BP_MEMBER_TXN_COMMIT" ] || return 8
+  bp_member_txn_clear_stage
+  umask 077
+  cp "$BP_MEMBER_EVENTS" "$BP_MEMBER_TXN_EVENTS" || return 8
+  chmod 600 "$BP_MEMBER_TXN_EVENTS" || return 8
+}
+
+# Append a receipt to the STAGED receipt file by reusing bp_member_event_record
+# (history trimming, capacity rules and its failure semantics) with the
+# receipt path temporarily redirected.
+bp_member_txn_receipt() {
+  _txn_live_events="$BP_MEMBER_EVENTS"
+  BP_MEMBER_EVENTS="$BP_MEMBER_TXN_EVENTS"
+  bp_member_event_record "$@"
+  _txn_rc=$?
+  BP_MEMBER_EVENTS="$_txn_live_events"
+  return "$_txn_rc"
+}
+
+# Apply (or finish applying) a commit record. Idempotent: each file is either
+# still staged (verify digest, rename) or already live (verify digest).
+# Anything unexpected is a hard failure; the record is kept for the operator.
+bp_member_txn_apply() {
+  [ -f "$BP_MEMBER_TXN_COMMIT" ] && [ ! -L "$BP_MEMBER_TXN_COMMIT" ] || return 8
+  _a_end="$(awk -F '\t' '$1=="END" {c++} END {print c+0}' "$BP_MEMBER_TXN_COMMIT")"
+  [ "$_a_end" = 1 ] || return 8
+  for _a_kind in members events revision; do
+    case "$_a_kind" in
+      members) _a_stage="$BP_MEMBER_TXN_MEMBERS"; _a_live="$BP_MEMBERS";;
+      events) _a_stage="$BP_MEMBER_TXN_EVENTS"; _a_live="$BP_MEMBER_EVENTS";;
+      revision) _a_stage="$BP_MEMBER_TXN_REVISION"; _a_live="$BP_MEMBER_REVISION";;
+    esac
+    _a_want="$(awk -F '\t' -v k="$_a_kind" '$1==k {print $2; n++} END {if (n!=1) exit 1}' "$BP_MEMBER_TXN_COMMIT")" || return 8
+    case "$_a_want" in *[!0-9a-f]*|'') return 8;; esac
+    [ "${#_a_want}" -eq 64 ] || return 8
+    if [ -e "$_a_stage" ] || [ -L "$_a_stage" ]; then
+      [ -f "$_a_stage" ] && [ ! -L "$_a_stage" ] || return 8
+      [ "$(bp_sha256 < "$_a_stage")" = "$_a_want" ] || return 8
+      chmod 600 "$_a_stage" || return 8
+      mv "$_a_stage" "$_a_live" || return 8
+    else
+      [ "$(bp_sha256 < "$_a_live" 2>/dev/null)" = "$_a_want" ] || return 8
+    fi
+  done
+  bp_durable_sync || return 8
+  rm -f "$BP_MEMBER_TXN_COMMIT" || return 8
+  bp_durable_sync || return 8
+}
+
+# Crash recovery, run under the member lock. Commit record present: roll
+# forward. Absent: any stage files belong to an uncommitted transaction and
+# are discarded (live files were never touched).
+bp_member_txn_recover() {
+  if [ -e "$BP_MEMBER_TXN_COMMIT" ] || [ -L "$BP_MEMBER_TXN_COMMIT" ]; then
+    bp_member_txn_apply
+    return $?
+  fi
+  bp_member_txn_clear_stage
+  return 0
+}
+
+# Commit a staged transaction. $1 is the new revision. members and events
+# must already be staged; the revision stage file is written here.
+bp_member_txn_commit() {
+  _c_rev="$1"
+  case "$_c_rev" in ''|*[!0-9]*) bp_member_txn_clear_stage; return 8;; esac
+  [ -f "$BP_MEMBER_TXN_MEMBERS" ] && [ -f "$BP_MEMBER_TXN_EVENTS" ] || { bp_member_txn_clear_stage; return 8; }
+  umask 077
+  if ! printf '%s\n' "$_c_rev" > "$BP_MEMBER_TXN_REVISION" ||
+     ! chmod 600 "$BP_MEMBER_TXN_REVISION"; then
+    bp_member_txn_clear_stage; return 8
+  fi
+  _c_tmp="$BP_STATE/.member-txn.commit.$(bp_tmp_suffix)"
+  if ! printf 'members\t%s\nevents\t%s\nrevision\t%s\nEND\t%s\n' \
+        "$(bp_sha256 < "$BP_MEMBER_TXN_MEMBERS")" \
+        "$(bp_sha256 < "$BP_MEMBER_TXN_EVENTS")" \
+        "$(bp_sha256 < "$BP_MEMBER_TXN_REVISION")" \
+        "$_c_rev" > "$_c_tmp" ||
+     ! chmod 600 "$_c_tmp" ||
+     ! bp_durable_sync; then
+    rm -f "$_c_tmp" 2>/dev/null || true
+    bp_member_txn_clear_stage
+    return 8
+  fi
+  # Commit point. If this rename fails nothing is live yet.
+  if ! mv "$_c_tmp" "$BP_MEMBER_TXN_COMMIT"; then
+    rm -f "$_c_tmp" 2>/dev/null || true
+    bp_member_txn_clear_stage
+    return 8
+  fi
+  bp_member_txn_apply
+}
+
 bp_member_line() {
   awk -F '\t' -v u="$1" '$1==u {print; exit}' "$BP_MEMBERS"
 }
@@ -146,7 +278,10 @@ bp_member_verify_password() {
 
 # Fields:
 # username label enabled scheme salt hash rounds banked_seconds revision updated source
-bp_member_write() {
+# Build the replacement member file at $1 (a private staging path) from
+# $BP_MEMBERS with one row replaced/appended. Never touches $BP_MEMBERS.
+bp_member_build() {
+  out="$1"; shift
   user="$1"; label="$2"; enabled="$3"; scheme="$4"; salt="$5"; hash="$6"; rounds="$7"; banked="$8"; revision="$9"
   shift 9
   updated="$1"; source="$2"
@@ -156,7 +291,6 @@ bp_member_write() {
   # existing malformed/duplicated record rather than truncating balances.
   [ -f "$BP_MEMBERS" ] && [ ! -L "$BP_MEMBERS" ] || return 8
   case "$banked:$revision" in *[!0-9:]*|'') return 8;; esac
-  tmp="$BP_STATE/.members.$(bp_tmp_suffix)"
   umask 077
   if ! awk -F '\t' -v u="$user" '
     NF!=11 || $1 !~ /^[A-Za-z0-9_.-]+$/ ||
@@ -164,16 +298,22 @@ bp_member_write() {
     $1==u {same++; next}
     {print}
     END {if (bad || same>1) exit 7}
-  ' "$BP_MEMBERS" > "$tmp"; then
-    rm -f "$tmp" 2>/dev/null || true
+  ' "$BP_MEMBERS" > "$out"; then
+    rm -f "$out" 2>/dev/null || true
     return 8
   fi
   if ! printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$user" "$(bp_member_clean "$label")" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$revision" "$updated" "$(bp_member_clean "$source")" >> "$tmp"; then
-    rm -f "$tmp" 2>/dev/null || true
+      "$user" "$(bp_member_clean "$label")" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$revision" "$updated" "$(bp_member_clean "$source")" >> "$out"; then
+    rm -f "$out" 2>/dev/null || true
     return 8
   fi
-  if ! chmod 600 "$tmp" || ! mv "$tmp" "$BP_MEMBERS"; then
+  chmod 600 "$out" || { rm -f "$out" 2>/dev/null || true; return 8; }
+}
+
+bp_member_write() {
+  tmp="$BP_STATE/.members.$(bp_tmp_suffix)"
+  bp_member_build "$tmp" "$@" || return 8
+  if ! mv "$tmp" "$BP_MEMBERS"; then
     rm -f "$tmp" 2>/dev/null || true
     return 8
   fi
@@ -193,12 +333,14 @@ bp_member_create() {
   hash="$(printf '%s' "$verifier" | cut -f3)"
   rounds="$(printf '%s' "$verifier" | cut -f4)"
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" 1 "$scheme" "$salt" "$hash" "$rounds" 0 "$rev" "$now" "$source" ||
-     ! bp_member_event_record "admin:$rev:$user" "$now" "$user" create 0 0 "$source" ""; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" 1 "$scheme" "$salt" "$hash" "$rounds" 0 "$rev" "$now" "$source" ||
+     ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" create 0 0 "$source" ""; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }
@@ -221,12 +363,14 @@ bp_member_patch() {
   case "$enabled" in 0|1) ;; *) return 2;; esac
   label="$(bp_member_clean "$label")"
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
-     ! bp_member_event_record "admin:$rev:$user" "$now" "$user" patch 0 "$banked" "$source" ""; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
+     ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" patch 0 "$banked" "$source" ""; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }
@@ -246,12 +390,14 @@ bp_member_set_password() {
   hash="$(printf '%s' "$verifier" | cut -f3)"
   rounds="$(printf '%s' "$verifier" | cut -f4)"
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
-     ! bp_member_event_record "admin:$rev:$user" "$now" "$user" password_reset 0 "$banked" "$source" ""; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
+     ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" password_reset 0 "$banked" "$source" ""; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }
@@ -463,20 +609,22 @@ bp_member_balance_change() {
     *) return 2 ;;
   esac
 
-  # A durable quarantine marker precedes the balance change. If receipt
-  # append or filesystem synchronization fails, leave it set and refuse ACK.
-  # This protects retries by halting payments; real crash-atomic v2 WAL is
-  # still required before public release.
+  # A durable quarantine marker precedes the balance change. Balance row,
+  # receipt and revision are staged first and then committed as ONE journaled
+  # transaction (bp_member_txn_commit). The marker is still retained on any
+  # failure; it is only cleared by bp_paid_commit after a complete commit.
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$new" "$rev" "$now" "$source"; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$new" "$rev" "$now" "$source"; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
   [ -n "$event_id" ] || event_id="admin:$rev:$user"
-  if ! bp_member_event_record "$event_id" "$now" "$user" "$mode" "$delta" "$result" "$source" "$new"; then
-    bp_paid_abort; return 8
+  if ! bp_member_txn_receipt "$event_id" "$now" "$user" "$mode" "$delta" "$result" "$source" "$new"; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s\t%s\n' "$result" "$rev"
 }
@@ -530,33 +678,31 @@ bp_member_transfer() {
   [ "$tbank" -le $((2147483647-seconds)) ] || return 8
 
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
   newf=$((fbank-seconds)); newt=$((tbank+seconds))
 
-  # A transfer must never expose a half-debited member file. Build both
-  # modified rows in a private snapshot, then replace members.tsv in one rename.
-  # The caller holds bp_member_lock; a separate transaction journal remains
-  # necessary to make the event receipt and retry semantics crash-atomic.
-  tmp="$BP_STATE/.member-transfer.$(bp_tmp_suffix)"
+  # Issue #31: nothing under $BP_STATE changes until members, receipt and
+  # revision are ALL staged. They are then committed as one journaled
+  # transaction (bp_member_txn_commit); a failure before the commit record
+  # leaves the live files byte-for-byte untouched.
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
   if ! awk -F '\t' -v OFS='\t' -v f="$from" -v t="$to" \
       -v fb="$newf" -v tb="$newt" -v r="$rev" -v ts="$now" -v src="$source" '
       $1==f { $8=fb; $9=r; $10=ts; $11=src; fc++ }
       $1==t { $8=tb; $9=r; $10=ts; $11=src; tc++ }
       { print }
       END { if (fc!=1 || tc!=1) exit 4 }
-    ' "$BP_MEMBERS" > "$tmp"; then
-    rm -f "$tmp"; bp_paid_abort; return 8
+    ' "$BP_MEMBERS" > "$BP_MEMBER_TXN_MEMBERS" ||
+     ! chmod 600 "$BP_MEMBER_TXN_MEMBERS"; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
-  if ! chmod 600 "$tmp" || ! mv "$tmp" "$BP_MEMBERS"; then
-    rm -f "$tmp"; bp_paid_abort; return 8
-  fi
-  if ! bp_durable_sync; then bp_paid_abort; return 8; fi
 
   [ -n "$event_id" ] || event_id="admin:$rev:$from>$to"
-  if ! bp_member_event_record "$event_id" "$now" "$from" transfer "-$seconds" "$seconds" "$source" "$newf:$to:$newt"; then
-    bp_paid_abort; return 8
+  if ! bp_member_txn_receipt "$event_id" "$now" "$from" transfer "-$seconds" "$seconds" "$source" "$newf:$to:$newt"; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s\t%s\n' "$seconds" "$rev"
 }
@@ -576,27 +722,29 @@ bp_member_delete() {
   # contact. A deletion must never silently destroy a positive balance.
   case "$banked" in ''|*[!0-9]*) return 7;; esac
   [ "$banked" -eq 0 ] 2>/dev/null || return 6
-  # Build and commit deletion+event under the paid-state quarantine.
-  # This is conservative v1 containment, NOT a v2 crash-atomic journal.
+  # Stage deletion + receipt + revision, then commit them as ONE journaled
+  # transaction (see bp_member_txn_commit). The quarantine marker is still
+  # pinned first and is never auto-cleared on failure.
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  tmp="$BP_STATE/.members.$(bp_tmp_suffix)"
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
   if ! awk -F '\t' -v u="$user" '
     $1==u {deleted++; next}
     {print}
     END {if (deleted!=1) exit 1}
-  ' "$BP_MEMBERS" > "$tmp" ||
-     ! chmod 600 "$tmp" ||
-     ! mv "$tmp" "$BP_MEMBERS"; then
-    rm -f "$tmp" 2>/dev/null || true
+  ' "$BP_MEMBERS" > "$BP_MEMBER_TXN_MEMBERS" ||
+     ! chmod 600 "$BP_MEMBER_TXN_MEMBERS"; then
+    bp_member_txn_clear_stage
     bp_paid_abort
     return 8
   fi
-  if ! bp_member_event_record "admin:$rev:$user" "$now" "$user" delete 0 0 "$source" ""; then
+  if ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" delete 0 0 "$source" ""; then
+    bp_member_txn_clear_stage
     bp_paid_abort
     return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }

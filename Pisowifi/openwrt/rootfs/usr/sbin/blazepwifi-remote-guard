@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+REQUEST_METHOD=GET; export REQUEST_METHOD
 . "${BP_LIB:-/usr/lib/blazepwifi/common.sh}"
 . "${BP_AUTH_LIB:-/usr/lib/blazepwifi/auth.sh}"
 . "${BP_CONFIG_LIB:-/usr/lib/blazepwifi/config.sh}"

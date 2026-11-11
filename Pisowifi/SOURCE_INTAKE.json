@@ -17,10 +17,10 @@
   "summary": {
     "original_rootfs_file_count": 61,
     "recovered_rootfs_file_count": 61,
-    "recovered_byte_identical_count": 54,
-    "locally_derived_files": 7,
+    "recovered_byte_identical_count": 47,
+    "locally_derived_files": 14,
     "unrecovered_rootfs_file_count": 0,
-    "unchanged_original_test_count": 3
+    "unchanged_original_test_count": 2
   },
   "runtime": [
     {
@@ -47,9 +47,9 @@
     {
       "path": "openwrt/rootfs/etc/init.d/blazepwifi-remote-admin",
       "source_git_blob": "8ee0e7f73f04c3b24011b0c8f616e12009e6d76e",
-      "destination_git_blob": "8ee0e7f73f04c3b24011b0c8f616e12009e6d76e",
+      "destination_git_blob": "68fb8748792fc4d58cb45842a04ab83b8e164f5c",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/etc/init.d/blazepwifi-remote-guard",
@@ -68,9 +68,9 @@
     {
       "path": "openwrt/rootfs/etc/uci-defaults/99-blazepwifi",
       "source_git_blob": "82dc54f717bc5cad91160286333529b5868ef17b",
-      "destination_git_blob": "82dc54f717bc5cad91160286333529b5868ef17b",
+      "destination_git_blob": "532727f06d78c05b87fef28d1c0e89a7c5de8308",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/lib/upgrade/keep.d/blazepwifi",
@@ -82,9 +82,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/auth.sh",
       "source_git_blob": "ecf2f1e8af8a56a6c02c5bd28a066c587741bfc0",
-      "destination_git_blob": "ecf2f1e8af8a56a6c02c5bd28a066c587741bfc0",
+      "destination_git_blob": "872385dfcd07bdd978c6c36ef166dd4130d56f84",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh",
@@ -96,7 +96,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/common.sh",
       "source_git_blob": "4ccb10777b08f541d092f7c2c2d2aad4d2f6562e",
-      "destination_git_blob": "0e5ae706a350187e81cd9a620efed11be05e5a26",
+      "destination_git_blob": "8c8024888cdc4a405da2af7798905a3ea56244dc",
       "git_mode": "100644",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -131,9 +131,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/member.sh",
       "source_git_blob": "69af39052959a1d6a349851b4fbd909a9ad53aeb",
-      "destination_git_blob": "69af39052959a1d6a349851b4fbd909a9ad53aeb",
+      "destination_git_blob": "7c2e599996d83751433ef2ceef87646c943bff7c",
       "git_mode": "100644",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/portal.sh",
@@ -166,9 +166,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/rental.sh",
       "source_git_blob": "7bb51bc9f38ae42441393ed20f0d67a35d5687f2",
-      "destination_git_blob": "7bb51bc9f38ae42441393ed20f0d67a35d5687f2",
+      "destination_git_blob": "35fcff9699fbcb55cbc1f1dcc094709d1d2abb2a",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/update-migrate.sh",
@@ -222,23 +222,23 @@
     {
       "path": "openwrt/rootfs/usr/sbin/blazepwifi-core",
       "source_git_blob": "94c6bfa462b509587e0ea5416c0481de0cb641f0",
-      "destination_git_blob": "00b355b15d0988d32c0b447046bfaeaf50b1cabd",
+      "destination_git_blob": "aa7a6bca9a894952903c6dc95ee3d449cdad9ace",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/sbin/blazepwifi-remote-admin-run",
       "source_git_blob": "7d6d2f4b18d6c5a5a925f5ce885305dec9b24db5",
-      "destination_git_blob": "7d6d2f4b18d6c5a5a925f5ce885305dec9b24db5",
+      "destination_git_blob": "1aabdc1a1f605ba7db0d474090fd651b7c6c2fc4",
       "git_mode": "100644",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/sbin/blazepwifi-remote-guard",
       "source_git_blob": "b45a5de7f79c87396257716c9918bfafb24297c4",
-      "destination_git_blob": "b45a5de7f79c87396257716c9918bfafb24297c4",
+      "destination_git_blob": "523d5af30b89f1556e8cd7e7ab6e165e57027dc1",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/sbin/blazepwifi-update",
@@ -327,7 +327,7 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/api",
       "source_git_blob": "a59c0080c04cdb6bd8fd830b623bdc62640fb6a5",
-      "destination_git_blob": "438fd0ea389e09c052b2d745c320561addd278a8",
+      "destination_git_blob": "87ea59a5721ff94329eefaa97adc5922b473da07",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -341,9 +341,9 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/vendo",
       "source_git_blob": "db58041c0575ad0a1101d99cb85403e03c8dcb22",
-      "destination_git_blob": "db58041c0575ad0a1101d99cb85403e03c8dcb22",
+      "destination_git_blob": "0a71c4e253ac6ec2c30d46f1f99faf874dbaab8e",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/www/blazepwifi/connecttest.txt",
@@ -457,28 +457,28 @@
       "source_git_blob": "a42a7d5ef27169f5aa72e7bf8d19b8637fbd3d80",
       "destination_git_blob": "d585b772538030bac20400197a981639eb3dd4b2",
       "git_mode": "100755",
-      "status": "derived_fixture_repair_unexecuted"
+      "status": "derived_cleanup_executed_in_ci"
     },
     {
       "path": "tests/integration.sh",
       "source_git_blob": "f6e98112da059f0c853fbfc90ebc70192f78c692",
-      "destination_git_blob": "f6e98112da059f0c853fbfc90ebc70192f78c692",
+      "destination_git_blob": "557b4d3d5d8478811ad057eb59a2d9ecf5c3a6a5",
       "git_mode": "100755",
-      "status": "byte_identical_unexecuted"
+      "status": "derived_cleanup_executed_in_ci"
     },
     {
       "path": "tests/portal.sh",
       "source_git_blob": "71b3c9622f51a80dc09a446389ba6faa001b7897",
       "destination_git_blob": "71b3c9622f51a80dc09a446389ba6faa001b7897",
       "git_mode": "100755",
-      "status": "byte_identical_unexecuted"
+      "status": "byte_identical_executed_in_ci"
     },
     {
       "path": "tests/security.sh",
       "source_git_blob": "bd40ccbd7c0c339bce6128c7b19f1467316d6fc4",
       "destination_git_blob": "bd40ccbd7c0c339bce6128c7b19f1467316d6fc4",
       "git_mode": "100755",
-      "status": "byte_identical_unexecuted"
+      "status": "byte_identical_executed_in_ci"
     }
   ],
   "license": {
@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "cdca7e1e9e44397a80de3fa841a9caea278ac044",
+      "git_blob": "fa1f4f2c6393504499d50659d8bf980caf7ff85b",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -568,6 +568,27 @@
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/bootstrap_and_cli_auth_guard.sh",
+      "git_blob": "1bb5aa0072084ad6f0b24e118bb07ad2b597213a",
+      "mode": "100755",
+      "github_actions_status": "PENDING_CI_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/member_receipt_failure_atomicity.sh",
+      "git_blob": "19dfc3cc50e1884b30e62cf0e71a5d02f123979b",
+      "mode": "100755",
+      "github_actions_status": "PENDING_CI_RUN",
+      "hardware_evidence": false
+    },
+    {
+      "path": "tests/member_txn_journal.sh",
+      "git_blob": "d04df3c6f3ada60b9fda8c8c04230dd31e37019a",
+      "mode": "100755",
+      "github_actions_status": "PENDING_CI_RUN",
+      "hardware_evidence": false
     }
   ],
   "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
@@ -579,5 +600,6 @@
     "openwrt/lab-native/Makefile"
   ],
   "note_pass07": "Pass07 source lock protects config_set() cooperating writers around snapshot->commit->apply->rollback; exact old config Git SHA da6319d5136f02f3b1d474460a91ccfef62dc449 reproduced RED racing a second writer. Corrected config Git SHA 2c005528058275a4ad25d25470dd697aa5a51edd and tests config_concurrency.sh 9ebcd67fe022c28d82054c70172efaee070c57a2, config_faults.sh 48c3b75af85285cc223ef967b9a99e290ac15873 passed local POSIX sh and BusyBox ash. Admin CGI full Git SHA 87a0a78daa4fae08ae7db84b9b0ce165108a56cc; exact extracted case blob SHA 49651cf8f363a7d77c94fcdec5831e74f4a4888f passed seven local isolated arm checks in sh and BusyBox ash using new admin_config_result.sh d8c8d8fc74bcbc66f87fc9f044cb9b2dc023d2aa. Full checkout, original full CGI, real UCI, and GitHub Actions NOT RUN.",
-  "note_pass08": "2026-11-09 Pass 08: config_apply executable preflight; missing script returns clean refusal rc7 without UCI changes, lost/failed apply after commit returns uncertain live state rc8, confirmed UCI revert without false live rollback guarantee. Source config Git SHA 4535ef6993185208fb3b098842a0f8d69e71d5c7; admin CGI Git SHA 6ec03db26a43d6669c067e452f6c0098bd2c8051 and extracted exact config-arm Git SHA ca291ac70125065b5d964294bc9ea7173dd4a2c6. Exact local test blobs config_faults=8e8053f709d53e78cef154ee9b6d0242075bebf7, config_concurrency=f8eaa2c0bc3cd1018942fe4bed7511a65db1118d, config_apply_failclosed=e6a6af64999769d5481506e7ee64e3934f4ae909, admin_config_result=975b3245d078e33faa54f22ac9fb5af0bfe49cf0 all PASS under sh and BusyBox ash. 18+3+9+8 = 38 checks each shell. This is a partially reconstructed Git-blob-verified test subset, not full GitHub checkout/CI, real UCI, real firewall or router."
+  "note_pass08": "2026-11-09 Pass 08: config_apply executable preflight; missing script returns clean refusal rc7 without UCI changes, lost/failed apply after commit returns uncertain live state rc8, confirmed UCI revert without false live rollback guarantee. Source config Git SHA 4535ef6993185208fb3b098842a0f8d69e71d5c7; admin CGI Git SHA 6ec03db26a43d6669c067e452f6c0098bd2c8051 and extracted exact config-arm Git SHA ca291ac70125065b5d964294bc9ea7173dd4a2c6. Exact local test blobs config_faults=8e8053f709d53e78cef154ee9b6d0242075bebf7, config_concurrency=f8eaa2c0bc3cd1018942fe4bed7511a65db1118d, config_apply_failclosed=e6a6af64999769d5481506e7ee64e3934f4ae909, admin_config_result=975b3245d078e33faa54f22ac9fb5af0bfe49cf0 all PASS under sh and BusyBox ash. 18+3+9+8 = 38 checks each shell. This is a partially reconstructed Git-blob-verified test subset, not full GitHub checkout/CI, real UCI, real firewall or router.",
+  "note_pass09": "2026-11-11 Pass 09 (Issue #31 member journal): member.sh now stages members.tsv, member-events.tsv and member-revision and commits them through a SHA-256 commit record with roll-forward recovery under the member lock (bp_member_txn_*). Locally executed under dash only: member_receipt_failure_atomicity.sh PASS; member_txn_journal.sh 8 simulated-fault cases PASS (success, receipt failure, crash after commit record, replay idempotence, crash mid-apply, tampered stage fail-closed, uncommitted stage discard, balance_change/delete); two mutation checks (no-op recovery, no digest check) were correctly detected. Simulated faults only: NO power-cut, real flash, BusyBox ash (CI pending), or hardware evidence. paid-state-uncertain is still never auto-cleared. Issue #31 remains OPEN pending independent review, power-cut proof (#34) and an anti-rollback witness (#43)."
 }

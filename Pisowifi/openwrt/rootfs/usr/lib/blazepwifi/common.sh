@@ -195,9 +195,11 @@ bp_account_write() {
 	# the old bytes for manual reconciliation if any source row is corrupt.
 	[ -f "$BP_ACCOUNTS" ] && [ ! -L "$BP_ACCOUNTS" ] || return 8
 	printf '%s\n' "$d" | LC_ALL=C grep -Eq '^[A-Za-z0-9_.:-]{2,96}$' || return 8
-	case "$credit:$expiry:$remaining:$paused:$pause_started" in
-	  *[!0-9:]*|'') return 8 ;;
-	esac
+	for v in "$credit" "$expiry" "$remaining" "$pause_started"; do
+	  case "$v" in
+	    ''|*[!0-9]*) return 8 ;;
+	  esac
+	done
 	case "$paused" in 0|1) ;; *) return 8;; esac
 	# Future v2 migration MUST use authenticated structured records. Current
 	# v1 caller strings cannot contain a TSV row separator or line break.
@@ -229,6 +231,40 @@ bp_account_write() {
 	fi
 	if ! chmod 600 "$tmp" || ! mv "$tmp" "$BP_ACCOUNTS"; then
 		rm -f "$tmp" 2>/dev/null || true
+		return 8
+	fi
+	bp_durable_sync || return 8
+	return 0
+}
+
+bp_voucher_mark_used() {
+	v_code="$1"; v_dev="$2"; v_time="$(bp_now 2>/dev/null || date +%s)"
+	[ -f "$BP_VOUCHERS" ] && [ ! -L "$BP_VOUCHERS" ] || return 8
+	printf '%s\n' "$v_code" | LC_ALL=C grep -Eq '^[A-Za-z0-9-]{4,32}$' || return 8
+	v_tmp="$BP_STATE/.vouchers.$(bp_tmp_suffix)"
+	umask 077
+	if ! awk -F '\t' -v OFS='\t' -v c="$v_code" -v d="$v_dev" -v t="$v_time" '
+		BEGIN {found=0; malformed=0}
+		{
+			if (NF<2 || $1 !~ /^[A-Za-z0-9-]+$/ || length($1)>32 ||
+			    $2 !~ /^[0-9]+$/ || ++seen[$1]>1) malformed=1
+			if ($1==c) {
+				if (NF>=3 && $3!="") malformed=1
+				print c,$2,t,d
+				found++
+				next
+			}
+			print
+		}
+		END {
+			if (malformed || found!=1) exit 8
+		}
+	' "$BP_VOUCHERS" > "$v_tmp"; then
+		rm -f "$v_tmp" 2>/dev/null || true
+		return 8
+	fi
+	if ! chmod 600 "$v_tmp" || ! mv "$v_tmp" "$BP_VOUCHERS"; then
+		rm -f "$v_tmp" 2>/dev/null || true
 		return 8
 	fi
 	bp_durable_sync || return 8
@@ -434,8 +470,10 @@ bp_coin_event_is_live() {
 	printf '%s' "$coin_window" | grep -Eq '^[A-Fa-f0-9]{8,32}$' || return 1
 	printf '%s' "$coin_digest" | grep -Eq '^[a-f0-9]{64}$' || return 1
 	for coin_target_file in "$BP_TARGET_DIR"/*.tsv; do
-		[ -f "$coin_target_file" ] && [ ! -L "$coin_target_file" ] || continue
-		IFS="$(printf '\t')" read -r coin_did coin_mac coin_target coin_expires coin_controller coin_kind < "$coin_target_file"
+		if [ ! -f "$coin_target_file" ] || [ -L "$coin_target_file" ]; then
+			continue
+		fi
+		IFS="$(printf '\t')" read -r _did _mac coin_target coin_expires _controller _kind < "$coin_target_file"
 		if [ "$coin_target" = "$coin_window" ] &&
 		   [ "${coin_kind:-hotspot}" = hotspot ] &&
 		   [ "$coin_expires" -gt "$(bp_now)" ] 2>/dev/null; then

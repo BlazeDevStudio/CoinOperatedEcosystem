@@ -88,6 +88,26 @@ member_mutation_sig() {
   printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s' "$secret" "$action_name" "$id" "$nonce" "$event_id" "$member_token" "$result_seconds" "$balance_seconds" "$revision" "$secret" | bp_sha256
 }
 
+vendo_ping_sig() {
+  server_now="$1"; secret="$(bp_cfg vendo_key)"
+  printf '%s|%s|%s|%s|%s|%s' "$secret" "$action" "$id" "$nonce" "$server_now" "$secret" | bp_sha256
+}
+
+vendo_poll_sig() {
+  p_insert="$1"; p_target="$2"; p_expires="$3"; secret="$(bp_cfg vendo_key)"
+  printf '%s|poll|%s|%s|%s|%s|%s|%s' "$secret" "$id" "$nonce" "$p_insert" "$p_target" "$p_expires" "$secret" | bp_sha256
+}
+
+vendo_coin_sig() {
+  c_dup="$1"; c_credited="$2"; c_total="$3"; c_target="$4"; secret="$(bp_cfg vendo_key)"
+  printf '%s|coin|%s|%s|%s|%s|%s|%s|%s' "$secret" "$id" "$nonce" "$c_dup" "$c_credited" "$c_total" "$c_target" "$secret" | bp_sha256
+}
+
+vendo_coin_rental_sig() {
+  r_dup="$1"; r_lease="$2"; r_pulses="$3"; r_cents="$4"; r_target="$5"; secret="$(bp_cfg vendo_key)"
+  printf '%s|coin_rental|%s|%s|%s|%s|%s|%s|%s|%s' "$secret" "$id" "$nonce" "$r_dup" "$r_lease" "$r_pulses" "$r_cents" "$r_target" "$secret" | bp_sha256
+}
+
 # PAY-0711: a replay response must keep the paid writer lock until
 # response emission or process exit; do not acquire this around a new write.
 member_replay_lock_or_fail() {
@@ -113,7 +133,8 @@ esac
 case "$action" in
   register|ping)
     controller="$(bp_controller_json "$id")"
-    body="$(printf '{"ok":true,"server_time":%s,"controller":%s}' "$now" "$controller")"
+    response_sig="$(vendo_ping_sig "$now")"
+    body="$(printf '{"ok":true,"server_time":%s,"controller":%s,"response_sig":"%s"}' "$now" "$controller" "$response_sig")"
     bp_json "$body"
     ;;
   poll)
@@ -134,7 +155,8 @@ case "$action" in
     enabled="$(printf '%s' "$controller" | sed -n 's/.*"enabled":\([01]\).*/\1/p')"
     coin_enabled="$(printf '%s' "$controller" | sed -n 's/.*"coin_enabled":\([01]\).*/\1/p')"
     [ "$enabled" = 1 ] && [ "$coin_enabled" = 1 ] || insert=0
-    body="$(printf '{"ok":true,"insert":%s,"target_nonce":"%s","expires":%s,"controller":%s}' "$insert" "$(bp_json_escape "$target_nonce")" "${expires:-0}" "$controller")"
+    response_sig="$(vendo_poll_sig "$insert" "$target_nonce" "${expires:-0}")"
+    body="$(printf '{"ok":true,"insert":%s,"target_nonce":"%s","expires":%s,"controller":%s,"response_sig":"%s"}' "$insert" "$(bp_json_escape "$target_nonce")" "${expires:-0}" "$controller" "$response_sig")"
     bp_json "$body"
     ;;
   member_snapshot)
@@ -384,7 +406,8 @@ case "$action" in
       case "$unit" in ''|*[!0-9]*) unit=100;; esac
       received_cents=$((unit*received_pulses))
       [ "$state" = duplicate ] && duplicate=true || duplicate=false
-      body="$(printf '{"ok":true,"duplicate":%s,"rental":true,"lease_until":%s,"received_pulses":%s,"received_cents":%s,"target_nonce":"%s"}' "$duplicate" "$lease" "$received_pulses" "$received_cents" "$(bp_json_escape "$target")")"
+      response_sig="$(vendo_coin_rental_sig "$duplicate" "$lease" "$received_pulses" "$received_cents" "$target")"
+      body="$(printf '{"ok":true,"duplicate":%s,"rental":true,"lease_until":%s,"received_pulses":%s,"received_cents":%s,"target_nonce":"%s","response_sig":"%s"}' "$duplicate" "$lease" "$received_pulses" "$received_cents" "$(bp_json_escape "$target")" "$response_sig")"
       bp_json "$body"
       exit 0
     fi
@@ -407,7 +430,8 @@ case "$action" in
       [ -n "$original_pulses" ] && [ "$original_pulses" = "$pulses" ] ||
         bp_fail "coin pulse payload collision; original credit unchanged"
       credit="$(bp_get_credit "$duplicate_device")"
-      body="$(printf '{"ok":true,"duplicate":true,"credited_cents":0,"credit_cents":%s,"target_nonce":"%s"}' "$credit" "$(bp_json_escape "$target")")"
+      response_sig="$(vendo_coin_sig true 0 "$credit" "$target")"
+      body="$(printf '{"ok":true,"duplicate":true,"credited_cents":0,"credit_cents":%s,"target_nonce":"%s","response_sig":"%s"}' "$credit" "$(bp_json_escape "$target")" "$response_sig")"
       # Keep paid-financial.lock held through the duplicate response/exit.
       bp_json "$body"
       exit 0
@@ -426,7 +450,8 @@ case "$action" in
       [ -n "$original_pulses" ] && [ "$original_pulses" = "$pulses" ] ||
         bp_fail "coin pulse payload collision; original credit unchanged"
       credit="$(bp_get_credit "$duplicate_device")"
-      body="$(printf '{"ok":true,"duplicate":true,"credited_cents":0,"credit_cents":%s,"target_nonce":"%s"}' "$credit" "$(bp_json_escape "$target")")"
+      response_sig="$(vendo_coin_sig true 0 "$credit" "$target")"
+      body="$(printf '{"ok":true,"duplicate":true,"credited_cents":0,"credit_cents":%s,"target_nonce":"%s","response_sig":"%s"}' "$credit" "$(bp_json_escape "$target")" "$response_sig")"
       bp_json "$body"
       exit 0
     fi
@@ -463,7 +488,8 @@ case "$action" in
       bp_fail "coin credit durability failed; operator reconciliation required"
     fi
     bp_unlock
-    body="$(printf '{"ok":true,"duplicate":false,"credited_cents":%s,"credit_cents":%s,"target_nonce":"%s"}' "$add" "$newcredit" "$(bp_json_escape "$target")")"
+    response_sig="$(vendo_coin_sig false "$add" "$newcredit" "$target")"
+    body="$(printf '{"ok":true,"duplicate":false,"credited_cents":%s,"credit_cents":%s,"target_nonce":"%s","response_sig":"%s"}' "$add" "$newcredit" "$(bp_json_escape "$target")" "$response_sig")"
     bp_json "$body"
     ;;
   *) bp_fail "unknown vendo action" ;;

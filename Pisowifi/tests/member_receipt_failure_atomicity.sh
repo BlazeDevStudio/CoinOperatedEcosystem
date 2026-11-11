@@ -1,7 +1,8 @@
 #!/bin/sh
-# P0 Experiments #31 — EXPECTED RED until balance and receipt commit atomically.
+# P0 Experiments #31 — regression: a failed receipt must leave balances unchanged.
+# Was an expected-RED witness until the member transaction journal landed
+# (see member_txn_journal.sh for the crash-injection suite).
 # Disposable host-only failure injection. Do not execute on a shop router.
-# This intentionally is NOT registered in run_focus.sh while the defect exists.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -57,11 +58,11 @@ from="$(awk -F '\t' '$1=="a1" {print $8}' "$BP_MEMBERS")"
 to="$(awk -F '\t' '$1=="b2" {print $8}' "$BP_MEMBERS")"
 
 # This is the required atomicity invariant: if there is no committed receipt,
-# neither member row may advance. Existing legacy code violates this even
-# though the uncertainty marker correctly stops ACK and later credits.
+# neither member row may advance. The journaled commit in member.sh upholds
+# this; the uncertainty marker additionally stops ACK and later credits.
 if [ "$from" = 200 ] && [ "$to" = 100 ]; then
   echo 'PASS: failed receipt left both balances unchanged'
   exit 0
 fi
-echo "RED: no receipt, but member balances moved (${from:-missing}/${to:-missing}); issue #31 remains open"
+echo "FAIL: no receipt, but member balances moved (${from:-missing}/${to:-missing}); issue #31 regression"
 exit 1

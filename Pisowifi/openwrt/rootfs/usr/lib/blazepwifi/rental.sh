@@ -128,7 +128,8 @@ bp_rental_seen_get() {
   printf '%s' "$seen_fallback"
 }
 
-bp_rental_device_write() {
+bp_rental_device_build() {
+  out="$1"; shift
   # No v1 financial/admin writes may fork the synthetic v2 lease authority.
   [ "${BP_RENTAL_V2_LAB:-0}" != 1 ] || return 9
   id="$1"; secret="$2"; lease="$3"; label="$4"; last="$5"
@@ -142,7 +143,6 @@ bp_rental_device_write() {
     case "$field" in *"$(printf '\t')"*|*"
 "*) return 8;; esac
   done
-  tmp="$BP_STATE/.rental-devices.$(bp_tmp_suffix)"
   umask 077
   if ! awk -F '\t' -v d="$id" '
     {
@@ -154,20 +154,125 @@ bp_rental_device_write() {
       print
     }
     END {if (invalid || matches>1) exit 8}
-  ' "$BP_RENTAL_DEVICES" > "$tmp"; then
-    rm -f "$tmp" 2>/dev/null || true
+  ' "$BP_RENTAL_DEVICES" > "$out"; then
+    rm -f "$out" 2>/dev/null || true
     return 8
   fi
-  if ! printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$secret" "$lease" "$(bp_rental_clean "$label")" "$last" >> "$tmp"; then
-    rm -f "$tmp" 2>/dev/null || true
+  if ! printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$secret" "$lease" "$(bp_rental_clean "$label")" "$last" >> "$out"; then
+    rm -f "$out" 2>/dev/null || true
     return 8
   fi
-  if ! chmod 600 "$tmp" || ! mv "$tmp" "$BP_RENTAL_DEVICES"; then
+  chmod 600 "$out" || { rm -f "$out" 2>/dev/null || true; return 8; }
+}
+
+bp_rental_device_write() {
+  tmp="$BP_STATE/.rental-devices.$(bp_tmp_suffix)"
+  bp_rental_device_build "$tmp" "$@" || return 8
+  if ! mv "$tmp" "$BP_RENTAL_DEVICES"; then
     rm -f "$tmp" 2>/dev/null || true
     return 8
   fi
   bp_durable_sync || return 8
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# Issue #31 rental transaction journal (redo log) across rental-devices.tsv
+# and rental-events.tsv. Mirrors the member journal in member.sh:
+#   1. stage the complete new rental-devices.tsv and rental-events.tsv;
+#   2. write rental-txn.commit (SHA-256 digests + END) via tmp+rename;
+#   3. apply staged files and remove rental-txn.commit.
+# Uncommitted stage files (no commit record) are discarded; a committed
+# record rolls forward on recovery. paid-state-uncertain is never auto-cleared.
+# ---------------------------------------------------------------------------
+BP_RENTAL_TXN_COMMIT="$BP_STATE/rental-txn.commit"
+BP_RENTAL_TXN_DEVICES="$BP_STATE/rental-txn.devices.new"
+BP_RENTAL_TXN_EVENTS="$BP_STATE/rental-txn.events.new"
+
+bp_rental_txn_clear_stage() {
+  rm -f "$BP_RENTAL_TXN_DEVICES" "$BP_RENTAL_TXN_EVENTS" 2>/dev/null || true
+}
+
+bp_rental_txn_apply() {
+  [ -f "$BP_RENTAL_TXN_COMMIT" ] && [ ! -L "$BP_RENTAL_TXN_COMMIT" ] || return 8
+  _ra_end="$(awk -F '\t' '$1=="END" {c++} END {print c+0}' "$BP_RENTAL_TXN_COMMIT")"
+  [ "$_ra_end" = 1 ] || return 8
+  for _ra_kind in devices events; do
+    case "$_ra_kind" in
+      devices) _ra_stage="$BP_RENTAL_TXN_DEVICES"; _ra_live="$BP_RENTAL_DEVICES";;
+      events) _ra_stage="$BP_RENTAL_TXN_EVENTS"; _ra_live="$BP_RENTAL_EVENTS";;
+    esac
+    _ra_want="$(awk -F '\t' -v k="$_ra_kind" '$1==k {print $2; n++} END {if (n!=1) exit 1}' "$BP_RENTAL_TXN_COMMIT")" || return 8
+    case "$_ra_want" in *[!0-9a-f]*|'') return 8;; esac
+    [ "${#_ra_want}" -eq 64 ] || return 8
+    if [ -e "$_ra_stage" ] || [ -L "$_ra_stage" ]; then
+      [ -f "$_ra_stage" ] && [ ! -L "$_ra_stage" ] || return 8
+      [ "$(bp_sha256 < "$_ra_stage")" = "$_ra_want" ] || return 8
+      chmod 600 "$_ra_stage" || return 8
+      mv "$_ra_stage" "$_ra_live" || return 8
+    else
+      [ "$(bp_sha256 < "$_ra_live" 2>/dev/null)" = "$_ra_want" ] || return 8
+    fi
+  done
+  bp_durable_sync || return 8
+  rm -f "$BP_RENTAL_TXN_COMMIT" || return 8
+  bp_durable_sync || return 8
+}
+
+bp_rental_txn_recover() {
+  if [ -e "$BP_RENTAL_TXN_COMMIT" ] || [ -L "$BP_RENTAL_TXN_COMMIT" ]; then
+    bp_rental_txn_apply
+    return $?
+  fi
+  bp_rental_txn_clear_stage
+  return 0
+}
+
+bp_rental_txn_begin() {
+  [ ! -e "$BP_RENTAL_TXN_COMMIT" ] && [ ! -L "$BP_RENTAL_TXN_COMMIT" ] || return 8
+  bp_rental_txn_clear_stage
+  umask 077
+  cp "$BP_RENTAL_EVENTS" "$BP_RENTAL_TXN_EVENTS" || return 8
+  chmod 600 "$BP_RENTAL_TXN_EVENTS" || return 8
+}
+
+bp_rental_txn_paid_receipt() {
+  _rtxn_live="$BP_RENTAL_EVENTS"
+  BP_RENTAL_EVENTS="$BP_RENTAL_TXN_EVENTS"
+  bp_rental_append_paid_receipt "$@"
+  _rtxn_rc=$?
+  BP_RENTAL_EVENTS="$_rtxn_live"
+  return "$_rtxn_rc"
+}
+
+bp_rental_txn_event_log() {
+  _rtxn_live="$BP_RENTAL_EVENTS"
+  BP_RENTAL_EVENTS="$BP_RENTAL_TXN_EVENTS"
+  bp_rental_event_log "$@"
+  _rtxn_rc=$?
+  BP_RENTAL_EVENTS="$_rtxn_live"
+  return "$_rtxn_rc"
+}
+
+bp_rental_txn_commit() {
+  [ -f "$BP_RENTAL_TXN_DEVICES" ] && [ -f "$BP_RENTAL_TXN_EVENTS" ] || { bp_rental_txn_clear_stage; return 8; }
+  umask 077
+  _rc_tmp="$BP_STATE/.rental-txn.commit.$(bp_tmp_suffix)"
+  if ! printf 'devices\t%s\nevents\t%s\nEND\t1\n' \
+        "$(bp_sha256 < "$BP_RENTAL_TXN_DEVICES")" \
+        "$(bp_sha256 < "$BP_RENTAL_TXN_EVENTS")" > "$_rc_tmp" ||
+     ! chmod 600 "$_rc_tmp" ||
+     ! bp_durable_sync; then
+    rm -f "$_rc_tmp" 2>/dev/null || true
+    bp_rental_txn_clear_stage
+    return 8
+  fi
+  if ! mv "$_rc_tmp" "$BP_RENTAL_TXN_COMMIT"; then
+    rm -f "$_rc_tmp" 2>/dev/null || true
+    bp_rental_txn_clear_stage
+    return 8
+  fi
+  bp_rental_txn_apply
 }
 
 bp_rental_list_json() {
@@ -325,13 +430,16 @@ bp_rental_device_rename() {
   secret="$(printf '%s' "$line" | cut -f2)"
   lease="$(printf '%s' "$line" | cut -f3)"
   last="$(printf '%s' "$line" | cut -f5)"
-  # Keep uncertainty in place if the lease replacement or audit append
-  # fails: either could already have reached storage.
-  if ! bp_rental_device_write "$did" "$secret" "$lease" "$new_label" "$last" ||
-     ! bp_rental_event_log rename "$did" "$new_label"; then
+  # Stage the updated lease row and audit event, then commit both via the
+  # rental transaction journal; keep paid-state-uncertain on any failure.
+  if ! bp_rental_txn_begin ||
+     ! bp_rental_device_build "$BP_RENTAL_TXN_DEVICES" "$did" "$secret" "$lease" "$new_label" "$last" ||
+     ! bp_rental_txn_event_log rename "$did" "$new_label"; then
+    bp_rental_txn_clear_stage
     bp_paid_abort
     return 8
   fi
+  bp_rental_txn_commit || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   return 0
 }
@@ -379,12 +487,14 @@ bp_rental_lease_add() {
   [ "$base" -le $((2147483647-seconds)) ] ||
     { bp_rental_admin_unmodified_reject 8; return $?; }
   newlease=$((base+seconds))
-  # V1 paid lease and event receipt are still separate durable file writes.
-  if ! bp_rental_device_write "$did" "$secret" "$newlease" "$label" "$last" ||
-     ! bp_rental_event_log lease_add "$did" "$seconds"; then
+  if ! bp_rental_txn_begin ||
+     ! bp_rental_device_build "$BP_RENTAL_TXN_DEVICES" "$did" "$secret" "$newlease" "$label" "$last" ||
+     ! bp_rental_txn_event_log lease_add "$did" "$seconds"; then
+    bp_rental_txn_clear_stage
     bp_paid_abort
     return 8
   fi
+  bp_rental_txn_commit || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s\n' "$newlease"
 }
@@ -428,11 +538,14 @@ bp_rental_lease_expire() {
   if [ "$lease" -gt "$now" ]; then
     detail="confirmed_forfeit_seconds:$((lease-now))"
   fi
-  if ! bp_rental_device_write "$did" "$secret" "$now" "$label" "$last" ||
-     ! bp_rental_event_log expire "$did" "$detail"; then
+  if ! bp_rental_txn_begin ||
+     ! bp_rental_device_build "$BP_RENTAL_TXN_DEVICES" "$did" "$secret" "$now" "$label" "$last" ||
+     ! bp_rental_txn_event_log expire "$did" "$detail"; then
+    bp_rental_txn_clear_stage
     bp_paid_abort
     return 8
   fi
+  bp_rental_txn_commit || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s\n' "$now"
 }
@@ -493,31 +606,37 @@ bp_rental_device_revoke() {
   if [ "$lease" -gt "$now" ]; then
     bp_rental_admin_unmodified_reject 6; return $?
   fi
-  for file in "$BP_RENTAL_DEVICES" "$BP_RENTAL_POLICY" "$BP_RENTAL_INVENTORY" "${BP_RENTAL_POLICY_V2:-}"; do
+  # Stage the device removal and audit event through the rental transaction
+  # journal so devices and events commit atomically.
+  if ! bp_rental_txn_begin; then
+    bp_rental_admin_unmodified_reject 8
+    return $?
+  fi
+  if ! awk -F '\t' -v d="$did" '$1!=d {print}' "$BP_RENTAL_DEVICES" > "$BP_RENTAL_TXN_DEVICES" ||
+     ! chmod 600 "$BP_RENTAL_TXN_DEVICES" ||
+     ! bp_rental_txn_event_log revoke "$did" "revoked"; then
+    bp_rental_txn_clear_stage
+    bp_paid_abort
+    return 8
+  fi
+  bp_rental_txn_commit || { bp_paid_abort; return 8; }
+  for file in "$BP_RENTAL_POLICY" "$BP_RENTAL_INVENTORY" "${BP_RENTAL_POLICY_V2:-}"; do
     [ -n "$file" ] || continue
     [ -f "$file" ] || continue
     tmp="$BP_STATE/.rental-revoke.$(bp_tmp_suffix)"
-    if ! awk -F '\t' -v d="$did" '$1!=d {print}' "$file" > "$tmp" ||
-       ! chmod 600 "$tmp" ||
-       ! mv "$tmp" "$file"; then
+    if awk -F '\t' -v d="$did" '$1!=d {print}' "$file" > "$tmp" &&
+       chmod 600 "$tmp"; then
+      mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
+    else
       rm -f "$tmp" 2>/dev/null || true
-      bp_paid_abort
-      return 8
     fi
   done
   for target_file in "$BP_TARGET_DIR"/*.tsv; do
     [ -f "$target_file" ] || continue
-    if [ "$(cut -f1 "$target_file")" = "$did" ]; then
-      if ! rm -f "$target_file"; then
-        bp_paid_abort
-        return 8
-      fi
+    if [ "$(cut -f1 "$target_file" 2>/dev/null)" = "$did" ]; then
+      rm -f "$target_file" 2>/dev/null || true
     fi
   done
-  if ! bp_rental_event_log revoke "$did" "revoked"; then
-    bp_paid_abort
-    return 8
-  fi
   bp_paid_commit || return 8
   return 0
 }
@@ -584,6 +703,7 @@ bp_rental_safe_seconds() {
 # financial lock. A returned receipt can never justify a success ACK while a
 # different controller/admin financial writer is in flight. Read-only helpers.
 bp_rental_paid_device_snapshot() {
+  bp_rental_txn_recover || return 8
   [ -f "$BP_RENTAL_DEVICES" ] && [ ! -L "$BP_RENTAL_DEVICES" ] || return 8
   awk -F '\t' -v d="$1" '
     NF!=5 || $1 !~ /^[A-Za-z0-9_.:-]+$/ ||
@@ -595,6 +715,7 @@ bp_rental_paid_device_snapshot() {
   ' "$BP_RENTAL_DEVICES"
 }
 bp_rental_paid_receipt_snapshot() {
+  bp_rental_txn_recover || return 8
   [ -f "$BP_RENTAL_EVENTS" ] && [ ! -L "$BP_RENTAL_EVENTS" ] || return 8
   # PAY-0740: the WHOLE signed paid receipt corpus is an authority input;
   # checking only the currently retried ID misses malformed/duplicated paid
@@ -770,14 +891,16 @@ bp_rental_apply_coin() {
     bp_rental_admin_unmodified_reject 8
     return $?
   fi
-  # Existing v1 writes remain two separately durable operations; quarantine
-  # on either failure instead of pretending this is an atomic v2 ledger.
-  if ! bp_rental_device_write "$did" "$secret" "$newlease" "$label" "$now"; then
-    bp_paid_abort; return 8
+  # Stage both rental-devices.tsv and rental-events.tsv and commit them
+  # through rental-txn.commit so a receipt failure leaves the lease unchanged.
+  if ! bp_rental_txn_begin ||
+     ! bp_rental_device_build "$BP_RENTAL_TXN_DEVICES" "$did" "$secret" "$newlease" "$label" "$now" ||
+     ! bp_rental_txn_paid_receipt "$event" "$did" "$newlease" "$now" "$pulses"; then
+    bp_rental_txn_clear_stage
+    bp_paid_abort
+    return 8
   fi
-  if ! bp_rental_append_paid_receipt "$event" "$did" "$newlease" "$now" "$pulses"; then
-    bp_paid_abort; return 8
-  fi
+  bp_rental_txn_commit || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf 'credited\t%s\n' "$newlease"
 }
