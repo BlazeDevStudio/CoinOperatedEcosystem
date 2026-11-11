@@ -74,3 +74,15 @@ Reproduced with `git merge-tree` simulations: the stack tip (`d537b30f…`), #17
 
 PR #24 also now enforces manifest executable modes in CI (`3235b33bcf165305ef5b53f091f7d330bc4d46a6`), covering the actionable part of PR #14.
 
+## Status addendum — 2026-11-11 (P1-4, P1-5, P2-1, P2-4 & Unified Integration Candidate PR #26)
+
+1. **P1-4 (CI Restored Across All Products):** Reproducible CI workflows are in place and verified green on GitHub Actions:
+   - `BlazeRental Standalone CI` (`.github/workflows/rental-ci.yml`) on PR #22 and PR #26.
+   - `BlazePisonet SoftTimer Windows synthetic CI` (`.github/workflows/pisonet-softtimer-windows.yml`) on PR #23 and PR #26.
+   - `Pisowifi OpenWrt Overlay & Shell Suite` (`.github/workflows/pisowifi-ci.yml`) on PR #24.
+   - `Case-collision guard` (`.github/workflows/case-collision-guard.yml`) on PR #25 and PR #26.
+2. **P1-5 (`integration.sh`):** Resolved on PR #24 (`d63f8d8`). `tests/integration.sh` now passes under both POSIX `sh` and BusyBox `ash`, asserts signed vendo replies (`response_sig`), validates durable voucher marking, and is integrated into `tests/run_focus.sh` and CI.
+3. **P2-1 (Dead cross-references):** Outdated `github.com/BlazingSystems/...` links in `Pisonet/SoftTimer/tests/NativeSerialPinFaultLab/README.md` have been updated to the active repository owner `github.com/BlazeDevStudio/...`.
+4. **P2-4 (`busybox` test dependency):** In `Rental/tests/test_durability.py`, the test checks `shutil.which('busybox')` and gracefully calls `skipTest()` when absent, while CI provisions `busybox-static` to ensure full syntax verification.
+5. **Unified Non-Proprietary Integration Candidate (Draft PR #26):** Combines `docs/`, `Rental/`, `Pisonet/SoftTimer/`, `tools/`, and CI workflows on `integration/ecosystem-nonproprietary-candidate-20261111` targeting `main`, while honoring the P0-1 privacy boundary (holding proprietary `Pisowifi/` in PR #18/#24 until owner resolution).
+
