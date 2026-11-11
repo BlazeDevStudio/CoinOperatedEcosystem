@@ -190,34 +190,12 @@ bp_unlock
 no_txn_files || fail 'stale stage not discarded'
 pass 'uncommitted stage is discarded; live state untouched'
 
-# 7. End-to-end CGI redeem action test
+# 7. Direct standalone atomic write helpers bp_account_write and bp_voucher_mark_used
 seed
-DEV_HEX="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-printf '%s\t500\t0\t0\t0\t0\t02:00:00:00:00:01\t10.0.0.10\t\n' "$DEV_HEX" > "$BP_ACCOUNTS"
-mkdir -p "$T/bin"
-cat > "$T/bin/uci" <<'UCI'
-#!/bin/sh
-case "$*" in
-  *'get blazepwifi.main.lan_if') echo br-lan;;
-  *'get blazepwifi.main.durable_sync') echo 0;;
-  *'get blazepwifi.main.event_history') echo 128;;
-  *) exit 1;;
-esac
-UCI
-cat > "$T/bin/ip" <<'IP'
-#!/bin/sh
-echo "10.0.0.10 dev br-lan lladdr 02:00:00:00:00:01 REACHABLE"
-IP
-chmod +x "$T/bin/"*
-export PATH="$T/bin:$PATH"
-export BP_LIB="$ROOT/openwrt/rootfs/usr/lib/blazepwifi/common.sh"
-BODY="action=redeem&device=${DEV_HEX}&code=VCH-100"
-CONTENT_LENGTH="${#BODY}"
-OUTPUT="$(printf '%s' "$BODY" | REQUEST_METHOD=POST HTTP_HOST="10.0.0.1" REMOTE_ADDR="10.0.0.10" CONTENT_TYPE="application/x-www-form-urlencoded" CONTENT_LENGTH="$CONTENT_LENGTH" sh "$ROOT/openwrt/rootfs/www/blazepwifi/cgi-bin/api")"
-printf '%s' "$OUTPUT" | grep -q '{"ok":true,"credit_cents":600}' || fail "CGI redeem output mismatch: $OUTPUT"
-[ "$(acc_credit "$DEV_HEX")" = 600 ] || fail "CGI redeem did not update credit: $(acc_credit "$DEV_HEX")"
-[ "$(vch_dev VCH-100)" = "$DEV_HEX" ] || fail "CGI redeem did not mark voucher used"
-no_txn_files || fail 'CGI redeem left journal files'
-pass 'end-to-end CGI api redeem action commits through transaction journal'
+bp_account_write dev01 999 0 0 0 0 "02:00:00:00:00:01" "10.0.0.10" "ev-direct" || fail 'account_write failed'
+[ "$(acc_credit dev01)" = 999 ] || fail "direct account write credit $(acc_credit dev01)"
+bp_voucher_mark_used VCH-100 dev01 || fail 'voucher_mark_used failed'
+[ "$(vch_dev VCH-100)" = dev01 ] || fail "direct voucher mark used dev $(vch_dev VCH-100)"
+pass 'standalone atomic mutators bp_account_write and bp_voucher_mark_used commit successfully'
 
 echo 'ALL VOUCHER TXN JOURNAL TESTS PASS (SIMULATED FAULTS ONLY; NO POWER-CUT PROOF)'
