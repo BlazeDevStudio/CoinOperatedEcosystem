@@ -97,8 +97,7 @@ br_commit() {
     fi
 }
 br_registration() {
-    br_clock && br_check && br_lock || return 1
-    br_check || return 1
+    br_clock && br_lock && br_check || return 1
     id=$(br_random 12) || return 1
     secret=$(br_random 32) || return 1
     { br_id_ok "$id" && br_secret_ok "$secret"; } || { br_die 'random data invalid'; return 1; }
@@ -114,8 +113,7 @@ br_registration() {
 br_grant() {
     id=$1; seconds=$2; tx=$3
     { br_id_ok "$id" && br_tx_ok "$tx" && br_uint_ok "$seconds" && [ "$seconds" -ge 1 ] && [ "$seconds" -le 2592000 ]; } || { br_die 'invalid grant parameters'; return 1; }
-    br_clock && br_check && br_lock || return 1
-    br_check || return 1
+    br_clock && br_lock && br_check || return 1
     receipt=$(br_get_receipt "$tx")
     if [ -n "$receipt" ]; then
         oldid=$(printf '%s\n' "$receipt" | cut -f3)
