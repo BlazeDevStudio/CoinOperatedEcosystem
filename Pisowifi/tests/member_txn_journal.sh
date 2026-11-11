@@ -161,4 +161,55 @@ bp_member_unlock
 no_txn_files || fail 'journal files left'
 pass 'balance_change and delete commit through the journal'
 
-echo 'ALL MEMBER TXN JOURNAL TESTS PASS (SIMULATED FAULTS ONLY; NO POWER-CUT PROOF)'
+# 8. Member create, patch and set_password also commit via the journal;
+# receipt failure on create leaves members.tsv and revision untouched.
+. "$ROOT/openwrt/rootfs/usr/lib/blazepwifi/auth.sh"
+seed; before="$(snapshot)"
+bp_member_event_record() { return 8; }
+bp_member_lock || fail 'lock'
+rc=0; bp_member_create c3 Charlie 'SecretPass123' fixture >/dev/null 2>&1 || rc=$?
+bp_member_unlock
+[ "$rc" -ne 0 ] || fail 'create receipt failure was acknowledged'
+[ "$(snapshot)" = "$before" ] || fail 'create receipt failure mutated live state'
+. "$ROOT/openwrt/rootfs/usr/lib/blazepwifi/member.sh"
+reconcile
+bp_member_lock || fail 'lock'
+bp_member_create c3 Charlie 'SecretPass123' fixture >/dev/null || fail 'create failed'
+bp_member_patch c3 'CharlieUpdated' 1 fixture >/dev/null || fail 'patch failed'
+bp_member_set_password c3 'NewSecret456' fixture >/dev/null || fail 'set_password failed'
+bp_member_unlock
+[ "$(nev)" = 3 ] && [ "$(rev)" = 4 ] || fail "create/patch/password rev=$(rev) nev=$(nev)"
+no_txn_files || fail 'journal files left after create/patch/password'
+pass 'member create, patch and set_password commit atomically through the journal'
+
+# 9. Rental coin-credit journal: receipt failure leaves lease unchanged,
+# and crash after rental-txn.commit rolls forward both devices and events.
+. "$ROOT/openwrt/rootfs/usr/lib/blazepwifi/rental.sh"
+reconcile
+bp_rental_init
+printf 'dev01\tsec01\t1800000000\tPhone1\t1700000000\n' > "$BP_RENTAL_DEVICES"
+: > "$BP_RENTAL_EVENTS"
+chmod 600 "$BP_RENTAL_DEVICES" "$BP_RENTAL_EVENTS"
+r_before="$(cat "$BP_RENTAL_DEVICES" "$BP_RENTAL_EVENTS" | sha256sum | awk '{print $1}')"
+bp_rental_append_paid_receipt() { return 8; }
+rc=0; bp_rental_apply_coin dev01 vendo1 nonce1 dev01 2 >/dev/null 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail 'rental receipt failure was acknowledged'
+r_after="$(cat "$BP_RENTAL_DEVICES" "$BP_RENTAL_EVENTS" | sha256sum | awk '{print $1}')"
+[ "$r_after" = "$r_before" ] || fail 'rental lease changed despite receipt failure'
+[ -e "$BP_STATE/paid-state-uncertain" ] || fail 'rental uncertainty marker missing'
+. "$ROOT/openwrt/rootfs/usr/lib/blazepwifi/rental.sh"
+reconcile
+bp_rental_txn_apply() { return 8; }
+rc=0; bp_rental_apply_coin dev01 vendo1 nonce1 dev01 2 >/dev/null 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail 'interrupted rental commit acknowledged'
+[ -e "$BP_RENTAL_TXN_COMMIT" ] || fail 'rental commit record missing'
+. "$ROOT/openwrt/rootfs/usr/lib/blazepwifi/rental.sh"
+reconcile
+# Next replay/read recovers the committed rental transaction and ACKs as duplicate
+dup_out="$(bp_rental_apply_coin dev01 vendo1 nonce1 dev01 2)" || fail 'rental replay after recovery failed'
+printf '%s' "$dup_out" | grep -q '^duplicate	' || fail "unexpected rental replay output: $dup_out"
+[ ! -e "$BP_RENTAL_TXN_COMMIT" ] || fail 'rental commit record left after recovery'
+pass 'rental coin-credit journal prevents unreceipted lease changes and rolls forward on recovery'
+
+echo 'ALL MEMBER & RENTAL TXN JOURNAL TESTS PASS (SIMULATED FAULTS ONLY; NO POWER-CUT PROOF)'
+

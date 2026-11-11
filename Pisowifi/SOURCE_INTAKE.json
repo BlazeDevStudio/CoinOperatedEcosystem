@@ -17,8 +17,8 @@
   "summary": {
     "original_rootfs_file_count": 61,
     "recovered_rootfs_file_count": 61,
-    "recovered_byte_identical_count": 48,
-    "locally_derived_files": 13,
+    "recovered_byte_identical_count": 47,
+    "locally_derived_files": 14,
     "unrecovered_rootfs_file_count": 0,
     "unchanged_original_test_count": 2
   },
@@ -131,7 +131,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/member.sh",
       "source_git_blob": "69af39052959a1d6a349851b4fbd909a9ad53aeb",
-      "destination_git_blob": "56c2fc1e9f504f9db7b5908b542c8363827ce110",
+      "destination_git_blob": "7c2e599996d83751433ef2ceef87646c943bff7c",
       "git_mode": "100644",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -166,9 +166,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/rental.sh",
       "source_git_blob": "7bb51bc9f38ae42441393ed20f0d67a35d5687f2",
-      "destination_git_blob": "7bb51bc9f38ae42441393ed20f0d67a35d5687f2",
+      "destination_git_blob": "270adc8eedc22215910ae36f354d5661f68a7c2a",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/update-migrate.sh",
@@ -585,7 +585,7 @@
     },
     {
       "path": "tests/member_txn_journal.sh",
-      "git_blob": "06ec598d8e5a0517adf25166d90eefc3ef385110",
+      "git_blob": "01dc9c65ae9d74eaafb403d47aebcd20edd14390",
       "mode": "100755",
       "github_actions_status": "PENDING_CI_RUN",
       "hardware_evidence": false

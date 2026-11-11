@@ -333,12 +333,14 @@ bp_member_create() {
   hash="$(printf '%s' "$verifier" | cut -f3)"
   rounds="$(printf '%s' "$verifier" | cut -f4)"
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" 1 "$scheme" "$salt" "$hash" "$rounds" 0 "$rev" "$now" "$source" ||
-     ! bp_member_event_record "admin:$rev:$user" "$now" "$user" create 0 0 "$source" ""; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" 1 "$scheme" "$salt" "$hash" "$rounds" 0 "$rev" "$now" "$source" ||
+     ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" create 0 0 "$source" ""; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }
@@ -361,12 +363,14 @@ bp_member_patch() {
   case "$enabled" in 0|1) ;; *) return 2;; esac
   label="$(bp_member_clean "$label")"
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
-     ! bp_member_event_record "admin:$rev:$user" "$now" "$user" patch 0 "$banked" "$source" ""; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
+     ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" patch 0 "$banked" "$source" ""; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }
@@ -386,12 +390,14 @@ bp_member_set_password() {
   hash="$(printf '%s' "$verifier" | cut -f3)"
   rounds="$(printf '%s' "$verifier" | cut -f4)"
   bp_paid_begin || return 9
-  rev="$(bp_member_next_revision)" || { bp_paid_abort; return 8; }
+  rev="$(bp_member_peek_revision)" || { bp_paid_abort; return 8; }
   now="$(bp_now)"
-  if ! bp_member_write "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
-     ! bp_member_event_record "admin:$rev:$user" "$now" "$user" password_reset 0 "$banked" "$source" ""; then
-    bp_paid_abort; return 8
+  bp_member_txn_begin || { bp_paid_abort; return 8; }
+  if ! bp_member_build "$BP_MEMBER_TXN_MEMBERS" "$user" "$label" "$enabled" "$scheme" "$salt" "$hash" "$rounds" "$banked" "$rev" "$now" "$source" ||
+     ! bp_member_txn_receipt "admin:$rev:$user" "$now" "$user" password_reset 0 "$banked" "$source" ""; then
+    bp_member_txn_clear_stage; bp_paid_abort; return 8
   fi
+  bp_member_txn_commit "$rev" || { bp_paid_abort; return 8; }
   bp_paid_commit || return 8
   printf '%s' "$rev"
 }

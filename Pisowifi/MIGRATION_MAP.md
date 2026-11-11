@@ -27,12 +27,12 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | `openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh` | `058891bf2b13b59333b4247743fcccc8741bf9b4` | `058891bf2b13b59333b4247743fcccc8741bf9b4` | copied unchanged; source retained |
-| `openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `69af39052959a1d6a349851b4fbd909a9ad53aeb` | `56c2fc1e9f504f9db7b5908b542c8363827ce110` | locally derived (Issue #31 member transaction journal); source retained; real-router test NOT_RUN |
+| `openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `69af39052959a1d6a349851b4fbd909a9ad53aeb` | `7c2e599996d83751433ef2ceef87646c943bff7c` | locally derived (Issue #31 member transaction journal); source retained; real-router test NOT_RUN |
 | `openwrt/rootfs/usr/lib/blazepwifi/portal.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/portal.sh` | `702bb344d2531eb046c189adebfb193ba7ca4e6e` | `702bb344d2531eb046c189adebfb193ba7ca4e6e` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/remote_apply.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/remote_apply.sh` | `ef85698211f79108e6e152c6f4ea1165d6c5f44c` | `ef85698211f79108e6e152c6f4ea1165d6c5f44c` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/rental_policy.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/rental_policy.sh` | `dcaed944f6ee7bea5d8e806c139d25c8eddeb4df` | `dcaed944f6ee7bea5d8e806c139d25c8eddeb4df` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/rental_update.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/rental_update.sh` | `783c0a45ee650f3eea8a890ea4d24b086d36a31a` | `783c0a45ee650f3eea8a890ea4d24b086d36a31a` | copied unchanged; source retained |
-| `openwrt/rootfs/usr/lib/blazepwifi/rental.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/rental.sh` | `7bb51bc9f38ae42441393ed20f0d67a35d5687f2` | `7bb51bc9f38ae42441393ed20f0d67a35d5687f2` | copied unchanged; source retained |
+| `openwrt/rootfs/usr/lib/blazepwifi/rental.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/rental.sh` | `7bb51bc9f38ae42441393ed20f0d67a35d5687f2` | `270adc8eedc22215910ae36f354d5661f68a7c2a` | locally derived (Issue #31 rental transaction journal); source retained; real-router test NOT_RUN |
 | `openwrt/rootfs/usr/lib/blazepwifi/update-migrate.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/update-migrate.sh` | `bbfd3817da2f50af9174218be65d9801965446b1` | `bbfd3817da2f50af9174218be65d9801965446b1` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/update.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/update.sh` | `8b8153fba470cd9e3edbc30dd89d915b03417102` | `8b8153fba470cd9e3edbc30dd89d915b03417102` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/v2_frozen_capture.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/v2_frozen_capture.sh` | `229085fcb3f7457a14b51a378acf4be78a6e970e` | `229085fcb3f7457a14b51a378acf4be78a6e970e` | copied unchanged; source retained |
@@ -103,7 +103,7 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 
 | `Pisowifi/tests/bootstrap_and_cli_auth_guard.sh` | `1bb5aa0072084ad6f0b24e118bb07ad2b597213a` | locally authored CLI auth REQUEST_METHOD isolation and 99-blazepwifi fail-closed CSPRNG regression |
 | `Pisowifi/tests/member_receipt_failure_atomicity.sh` | `19dfc3cc50e1884b30e62cf0e71a5d02f123979b` | locally authored #31 receipt-failure regression (formerly expected-RED `member_crash_atomicity_red.sh`); dash PASS, CI PENDING |
-| `Pisowifi/tests/member_txn_journal.sh` | `06ec598d8e5a0517adf25166d90eefc3ef385110` | locally authored #31 journal crash-injection suite (simulated faults only); dash PASS, CI PENDING |
+| `Pisowifi/tests/member_txn_journal.sh` | `01dc9c65ae9d74eaafb403d47aebcd20edd14390` | locally authored #31 journal crash-injection suite (simulated faults only); dash PASS, CI PENDING |
 
 ## Other provenance
 
