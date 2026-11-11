@@ -235,6 +235,40 @@ bp_account_write() {
 	return 0
 }
 
+bp_voucher_mark_used() {
+	v_code="$1"; v_dev="$2"; v_time="$(bp_now 2>/dev/null || date +%s)"
+	[ -f "$BP_VOUCHERS" ] && [ ! -L "$BP_VOUCHERS" ] || return 8
+	printf '%s\n' "$v_code" | LC_ALL=C grep -Eq '^[A-Za-z0-9-]{4,32}$' || return 8
+	v_tmp="$BP_STATE/.vouchers.$(bp_tmp_suffix)"
+	umask 077
+	if ! awk -F '\t' -v OFS='\t' -v c="$v_code" -v d="$v_dev" -v t="$v_time" '
+		BEGIN {found=0; malformed=0}
+		{
+			if (NF<2 || $1 !~ /^[A-Za-z0-9-]+$/ || length($1)>32 ||
+			    $2 !~ /^[0-9]+$/ || ++seen[$1]>1) malformed=1
+			if ($1==c) {
+				if (NF>=3 && $3!="") malformed=1
+				print c,$2,t,d
+				found++
+				next
+			}
+			print
+		}
+		END {
+			if (malformed || found!=1) exit 8
+		}
+	' "$BP_VOUCHERS" > "$v_tmp"; then
+		rm -f "$v_tmp" 2>/dev/null || true
+		return 8
+	fi
+	if ! chmod 600 "$v_tmp" || ! mv "$v_tmp" "$BP_VOUCHERS"; then
+		rm -f "$v_tmp" 2>/dev/null || true
+		return 8
+	fi
+	bp_durable_sync || return 8
+	return 0
+}
+
 # Legacy MAC financial source is NOT a v2 migration. Do not silently
 # coerce malformed/duplicate credit records into a zero balance.
 bp_legacy_value() {

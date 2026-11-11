@@ -22,7 +22,7 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | `openwrt/rootfs/lib/upgrade/keep.d/blazepwifi` | `Pisowifi/openwrt/rootfs/lib/upgrade/keep.d/blazepwifi` | `82167b8ef1fc683b6b531dce0a7cbbd4ed4fcd56` | `82167b8ef1fc683b6b531dce0a7cbbd4ed4fcd56` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/auth.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/auth.sh` | `ecf2f1e8af8a56a6c02c5bd28a066c587741bfc0` | `3a152fec651a1d2cd24cc1c55a8ea98645bf0e24` | intentionally edited; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/capabilities.sh` | `3753966f3e52c04ffddbc080f04bb37e12af0e67` | `098eafbe06193ff1ea7b4fc7e3bf4ae3b7b3e4cd` | intentionally edited; source retained |
-| `openwrt/rootfs/usr/lib/blazepwifi/common.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/common.sh` | `4ccb10777b08f541d092f7c2c2d2aad4d2f6562e` | `0e5ae706a350187e81cd9a620efed11be05e5a26` | intentionally edited; source retained |
+| `openwrt/rootfs/usr/lib/blazepwifi/common.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/common.sh` | `4ccb10777b08f541d092f7c2c2d2aad4d2f6562e` | `eaf6e0ea4c4fa10e912b9a8d971e64acbe7bacef` | intentionally edited; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/config.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/config.sh` | `7bde717f02d6f1d90ca099ab29bff336824ad81f` | `4535ef6993185208fb3b098842a0f8d69e71d5c7` | intentionally edited; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | copied unchanged; source retained |
@@ -55,9 +55,9 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/admin-login` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/admin-login` | `92d28546045a792413c45fbda60ef6be21a29e3d` | `92d28546045a792413c45fbda60ef6be21a29e3d` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/admin-logout` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/admin-logout` | `dfc35c4bd77a8b86f3eb2355684d5f1edb90daa8` | `dfc35c4bd77a8b86f3eb2355684d5f1edb90daa8` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/admin-session` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/admin-session` | `00ecb12446fd4a55b8ad206f796eef6e94276e84` | `00ecb12446fd4a55b8ad206f796eef6e94276e84` | copied unchanged; source retained |
-| `openwrt/rootfs/www/blazepwifi/cgi-bin/api` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/api` | `a59c0080c04cdb6bd8fd830b623bdc62640fb6a5` | `438fd0ea389e09c052b2d745c320561addd278a8` | intentionally edited; source retained |
+| `openwrt/rootfs/www/blazepwifi/cgi-bin/api` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/api` | `a59c0080c04cdb6bd8fd830b623bdc62640fb6a5` | `87ea59a5721ff94329eefaa97adc5922b473da07` | intentionally edited; source retained |
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/rental` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/rental` | `644d2c0a16f084f2ce98560d7008b0f20fdd30ff` | `644d2c0a16f084f2ce98560d7008b0f20fdd30ff` | copied unchanged; source retained |
-| `openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `db58041c0575ad0a1101d99cb85403e03c8dcb22` | `db58041c0575ad0a1101d99cb85403e03c8dcb22` | copied unchanged; source retained |
+| `openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `db58041c0575ad0a1101d99cb85403e03c8dcb22` | `0a71c4e253ac6ec2c30d46f1f99faf874dbaab8e` | intentionally edited; source retained |
 | `openwrt/rootfs/www/blazepwifi/connecttest.txt` | `Pisowifi/openwrt/rootfs/www/blazepwifi/connecttest.txt` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/games.html` | `Pisowifi/openwrt/rootfs/www/blazepwifi/games.html` | `0ad4532d7853aab7ccbe0143b2ad9f53d2c294ea` | `0ad4532d7853aab7ccbe0143b2ad9f53d2c294ea` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/generate_204` | `Pisowifi/openwrt/rootfs/www/blazepwifi/generate_204` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | copied unchanged; source retained |
@@ -79,7 +79,7 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | Original source path | New destination path | Source Git blob SHA | Destination Git blob SHA | Migration status |
 |---|---|---|---|---|
 | `tests/config.sh` | `Pisowifi/tests/config.sh` | `a42a7d5ef27169f5aa72e7bf8d19b8637fbd3d80` | `d585b772538030bac20400197a981639eb3dd4b2` | intentionally edited; source retained |
-| `tests/integration.sh` | `Pisowifi/tests/integration.sh` | `f6e98112da059f0c853fbfc90ebc70192f78c692` | `b6af895e5cd927cfba8ead4b831785a7d03c0cb3` | intentionally edited; source retained |
+| `tests/integration.sh` | `Pisowifi/tests/integration.sh` | `f6e98112da059f0c853fbfc90ebc70192f78c692` | `557b4d3d5d8478811ad057eb59a2d9ecf5c3a6a5` | intentionally edited; source retained |
 | `tests/portal.sh` | `Pisowifi/tests/portal.sh` | `71b3c9622f51a80dc09a446389ba6faa001b7897` | `71b3c9622f51a80dc09a446389ba6faa001b7897` | copied unchanged; source retained |
 | `tests/security.sh` | `Pisowifi/tests/security.sh` | `bd40ccbd7c0c339bce6128c7b19f1467316d6fc4` | `bd40ccbd7c0c339bce6128c7b19f1467316d6fc4` | copied unchanged; source retained |
 

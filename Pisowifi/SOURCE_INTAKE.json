@@ -96,7 +96,7 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/common.sh",
       "source_git_blob": "4ccb10777b08f541d092f7c2c2d2aad4d2f6562e",
-      "destination_git_blob": "0e5ae706a350187e81cd9a620efed11be05e5a26",
+      "destination_git_blob": "eaf6e0ea4c4fa10e912b9a8d971e64acbe7bacef",
       "git_mode": "100644",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -327,7 +327,7 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/api",
       "source_git_blob": "a59c0080c04cdb6bd8fd830b623bdc62640fb6a5",
-      "destination_git_blob": "438fd0ea389e09c052b2d745c320561addd278a8",
+      "destination_git_blob": "87ea59a5721ff94329eefaa97adc5922b473da07",
       "git_mode": "100755",
       "status": "derived_cleanup_review_required_real_router_test"
     },
@@ -341,9 +341,9 @@
     {
       "path": "openwrt/rootfs/www/blazepwifi/cgi-bin/vendo",
       "source_git_blob": "db58041c0575ad0a1101d99cb85403e03c8dcb22",
-      "destination_git_blob": "db58041c0575ad0a1101d99cb85403e03c8dcb22",
+      "destination_git_blob": "0a71c4e253ac6ec2c30d46f1f99faf874dbaab8e",
       "git_mode": "100755",
-      "status": "byte_identical"
+      "status": "derived_cleanup_review_required_real_router_test"
     },
     {
       "path": "openwrt/rootfs/www/blazepwifi/connecttest.txt",
@@ -462,7 +462,7 @@
     {
       "path": "tests/integration.sh",
       "source_git_blob": "f6e98112da059f0c853fbfc90ebc70192f78c692",
-      "destination_git_blob": "b6af895e5cd927cfba8ead4b831785a7d03c0cb3",
+      "destination_git_blob": "557b4d3d5d8478811ad057eb59a2d9ecf5c3a6a5",
       "git_mode": "100755",
       "status": "derived_cleanup_executed_in_ci"
     },

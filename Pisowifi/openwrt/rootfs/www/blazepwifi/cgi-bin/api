@@ -308,7 +308,24 @@ case "$action" in
       bp_fail "paid receipt history unavailable; voucher not applied"
     fi
     newcredit=$((credit+cents))
-    bp_account_paid_write_or_fail "$device" "$newcredit" "$expiry" "$remaining" "$paused" "$ps" "$mac" "$ipaddr" "$newevents"
+    if ! bp_paid_begin; then
+      bp_unlock
+      bp_fail "paid state uncertain or accounting busy"
+    fi
+    if ! bp_account_write "$device" "$newcredit" "$expiry" "$remaining" "$paused" "$ps" "$mac" "$ipaddr" "$newevents"; then
+      bp_paid_abort
+      bp_unlock
+      bp_fail "paid account write failed; operator reconciliation required"
+    fi
+    if ! bp_voucher_mark_used "$code" "$device"; then
+      bp_paid_abort
+      bp_unlock
+      bp_fail "paid voucher record failed; operator reconciliation required"
+    fi
+    if ! bp_paid_commit; then
+      bp_unlock
+      bp_fail "paid account durability failed; operator reconciliation required"
+    fi
     bp_unlock
     bp_json "{\"ok\":true,\"credit_cents\":$newcredit}"
     ;;
