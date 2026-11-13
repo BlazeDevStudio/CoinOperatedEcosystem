@@ -110,6 +110,36 @@ class StandaloneApi(unittest.TestCase):
         self.assertNotIn('device_secret=',cp.stdout)
         self.assertEqual((self.state/'state.tsv').read_bytes(),before)
 
+    def test_reply_hmac_failure_fails_closed(self):
+        info = self.pair()
+        did = info['device_id']
+        secret = info['device_secret']
+        nonce = 'deadbeef00112233deadbeef00112233'
+        sig = hmac.new(bytes.fromhex(secret), f'v1|status|{did}|{nonce}'.encode(), hashlib.sha256).hexdigest()
+        with tempfile.TemporaryDirectory() as td:
+            counter = Path(td) / 'calls'
+            fake = Path(td) / 'openssl'
+            fake.write_text(
+                '#!/bin/sh\n'
+                f'n=$(cat "{counter}" 2>/dev/null || echo 0)\n'
+                'n=$((n+1))\n'
+                f'echo "$n" > "{counter}"\n'
+                '[ "$n" -eq 1 ] && exec /usr/bin/openssl "$@"\n'
+                'exit 1\n'
+            )
+            fake.chmod(0o755)
+            query = f'action=status&device_id={did}&nonce={nonce}&sig={sig}'
+            env = self.env | {
+                'PATH': td + os.pathsep + os.environ['PATH'],
+                'REQUEST_METHOD': 'GET',
+                'QUERY_STRING': query,
+            }
+            cp = subprocess.run(['sh', str(CGI)], capture_output=True, text=True, env=env)
+        self.assertEqual(cp.returncode, 0, cp.stderr)
+        body = json.loads(cp.stdout.split('\r\n\r\n', 1)[-1].split('\n\n', 1)[-1])
+        self.assertFalse(body['ok'])
+        self.assertNotIn('proof', body)
+
 
 class JavaProtocol(unittest.TestCase):
     def test_java_hmac_interop(self):

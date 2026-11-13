@@ -13,7 +13,10 @@ br_tx_ok() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_-]{12,64}$'; }
 br_uint_ok() { case "$1" in ''|*[!0-9]*) return 1;; esac; [ "$1" -le 4102444800 ] 2>/dev/null; }
 br_clock() {
     BR_NOW=$(date +%s) || return 1
-    br_uint_ok "$BR_NOW" && [ "$BR_NOW" -ge 1700000000 ] || br_die 'clock not synchronized'
+    if ! br_uint_ok "$BR_NOW" || [ "$BR_NOW" -lt 1700000000 ]; then
+        br_die 'clock not synchronized'
+        return 1
+    fi
 }
 br_init() {
     [ ! -L "$BR_STATE_DIR" ] || { br_die 'state directory is a symlink'; return 1; }
@@ -50,18 +53,27 @@ br_check() {
         exit bad?1:0
     }' "$BR_DB" || br_die 'corrupted state; refusing operation'
 }
+br_lock_try() {
+    [ ! -e "$BR_STATE_DIR/.lock" ] && [ ! -L "$BR_STATE_DIR/.lock" ] || return 1
+    ( set -C; printf '%s\n' "$$" > "$BR_STATE_DIR/.lock_pid" ) 2>/dev/null || return 1
+    if [ "$(cat "$BR_STATE_DIR/.lock_pid" 2>/dev/null)" = "$$" ] && mkdir "$BR_STATE_DIR/.lock" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$BR_STATE_DIR/.lock_pid" 2>/dev/null || :
+    return 1
+}
 br_lock() {
     i=0
-    while ! mkdir "$BR_STATE_DIR/.lock" 2>/dev/null; do
+    while ! br_lock_try; do
         i=$((i+1)); [ "$i" -lt 5 ] || { br_die 'state locked; refusing operation'; return 1; }
         sleep 1
     done
-    trap 'rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || :' 0
-    trap 'exit 130' 1 2 3 15
+    trap 'rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || :; rm -f "$BR_STATE_DIR/.lock_pid" 2>/dev/null || :; exit 130' 1 2 3 15
 }
 br_unlock() {
-    rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || return 1
-    trap - 0 1 2 3 15
+    trap - 1 2 3 15
+    rmdir "$BR_STATE_DIR/.lock" 2>/dev/null || { rm -f "$BR_STATE_DIR/.lock_pid" 2>/dev/null || :; br_die 'unlock failed'; return 1; }
+    rm -f "$BR_STATE_DIR/.lock_pid" 2>/dev/null || { br_die 'unlock failed'; return 1; }
 }
 br_get_device() { awk -F '\t' -v id="$1" '$1=="D" && $2==id {print;exit}' "$BR_DB"; }
 br_get_receipt() { awk -F '\t' -v id="$1" '$1=="R" && $2==id {print;exit}' "$BR_DB"; }
@@ -72,6 +84,7 @@ br_commit() {
     # barriers are bounded best-effort durability, NOT a flash power-loss proof.
     tmp=$1
     { [ -f "$tmp" ] && [ ! -L "$tmp" ]; } || { br_die 'unsafe staged file'; return 1; }
+    chmod 600 "$tmp" || { br_die 'cannot secure staged file'; return 1; }
     { [ ! -e "$BR_STATE_DIR/.pending" ] && [ ! -L "$BR_STATE_DIR/.pending" ]; } || { br_die 'unresolved pending transaction'; return 1; }
     if ! ( set -C; printf 'PENDING\n' > "$BR_STATE_DIR/.pending" ); then
         br_die 'cannot create transaction intent'; return 1
@@ -95,8 +108,7 @@ br_commit() {
         br_die 'final sync failed; recovery required'; return 1
     fi
 }
-br_registration() {
-    br_clock && br_check && br_lock || return 1
+br_registration_locked() {
     br_check || return 1
     id=$(br_random 12) || return 1
     secret=$(br_random 32) || return 1
@@ -104,16 +116,25 @@ br_registration() {
     [ -z "$(br_get_device "$id")" ] || { br_die 'id collision'; return 1; }
     tmp=$(mktemp "$BR_STATE_DIR/.state.XXXXXXXX") || return 1
     if cat "$BR_DB" > "$tmp" && printf 'D\t%s\t%s\t%s\n' "$id" "$secret" "$BR_NOW" >> "$tmp" && br_commit "$tmp"; then
-        br_unlock || return 1
-        printf 'device_id=%s\ndevice_secret=%s\n' "$id" "$secret"
-    else
-        rm -f "$tmp"; return 1
+        BR_OUT=$(printf 'device_id=%s\ndevice_secret=%s' "$id" "$secret")
+        return 0
     fi
+    rm -f "$tmp"
+    return 1
 }
-br_grant() {
+br_registration() {
+    br_clock || return 1
+    br_lock || return 1
+    if br_registration_locked; then
+        br_unlock || return 1
+        printf '%s\n' "$BR_OUT"
+        return 0
+    fi
+    br_unlock || :
+    return 1
+}
+br_grant_locked() {
     id=$1; seconds=$2; tx=$3
-    { br_id_ok "$id" && br_tx_ok "$tx" && br_uint_ok "$seconds" && [ "$seconds" -ge 1 ] && [ "$seconds" -le 2592000 ]; } || { br_die 'invalid grant parameters'; return 1; }
-    br_clock && br_check && br_lock || return 1
     br_check || return 1
     receipt=$(br_get_receipt "$tx")
     if [ -n "$receipt" ]; then
@@ -121,8 +142,7 @@ br_grant() {
         oldseconds=$(printf '%s\n' "$receipt" | cut -f4)
         lease=$(printf '%s\n' "$receipt" | cut -f5)
         { [ "$oldid" = "$id" ] && [ "$oldseconds" = "$seconds" ]; } || { br_die 'transaction conflict'; return 1; }
-        br_unlock || return 1
-        printf 'lease_until=%s\nreplayed=true\n' "$lease"
+        BR_OUT=$(printf 'lease_until=%s\nreplayed=true' "$lease")
         return 0
     fi
     device=$(br_get_device "$id")
@@ -138,15 +158,33 @@ br_grant() {
       printf 'D\t%s\t%s\t%s\n' "$id" "$secret" "$new" >> "$tmp" &&
       printf 'R\t%s\t%s\t%s\t%s\n' "$tx" "$id" "$seconds" "$new" >> "$tmp" &&
       br_commit "$tmp"; then
-        br_unlock || return 1
-        printf 'lease_until=%s\nreplayed=false\n' "$new"
-    else
-        rm -f "$tmp"; return 1
+        BR_OUT=$(printf 'lease_until=%s\nreplayed=false' "$new")
+        return 0
     fi
+    rm -f "$tmp"
+    return 1
+}
+br_grant() {
+    id=$1; seconds=$2; tx=$3
+    if ! br_id_ok "$id" || ! br_tx_ok "$tx" || ! br_uint_ok "$seconds" || [ "$seconds" -lt 1 ] || [ "$seconds" -gt 2592000 ]; then
+        br_die 'invalid grant parameters'
+        return 1
+    fi
+    br_clock || return 1
+    br_lock || return 1
+    if br_grant_locked "$id" "$seconds" "$tx"; then
+        br_unlock || return 1
+        printf '%s\n' "$BR_OUT"
+        return 0
+    fi
+    br_unlock || :
+    return 1
 }
 br_status() {
     id=$1
-    br_id_ok "$id" && br_clock && br_check || return 1
+    br_id_ok "$id" || return 1
+    br_clock || return 1
+    br_check || return 1
     device=$(br_get_device "$id"); [ -n "$device" ] || { br_die 'unknown device'; return 1; }
     lease=$(printf '%s\n' "$device" | cut -f4)
     br_uint_ok "$lease" || { br_die 'invalid lease'; return 1; }
