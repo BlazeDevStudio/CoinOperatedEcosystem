@@ -1,6 +1,6 @@
 # PHX-QA | External-board active-low authority guard | 2026-11-15
 
-**Status:** IN PROGRESS — test-only; Windows native execution NOT YET RUN.  
+**Status:** COMMITTED_UNTESTED — test-only; Windows native execution NOT YET RUN.  
 **Task:** [Experiments #164](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/164), independent source-linked migration regression.  
 **Parent owner:** [COE PISONET DRAFT #30](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/30), exact parent `8144242c0469ffc9fc7757ebe91964caa4a2a527`.  
 **Affected scope:** `Pisonet/SoftTimer/tests/NativeSerialPinFaultLab/` only. No production C# or release workflow changes.
@@ -35,3 +35,11 @@ Require exit 0 and the **new controller-source marker**, the existing `EXTERNAL_
 If the regression is RED, PISONET owns the production fix and PHX-QA records it without overwriting source. Rollback by closing the unmerged QA PR. Finance ledger, protected witness, migration, signing, USB-RS232 hardware testing, 150 power cuts, 30-device 24-hour soak and production release remain **NO-GO**.
 
 **Resume:** Verify current parent and QA HEADs, read this note and control plane #172, inspect exact CI status, repair only QA test/harness defects, then provide BLAZE-COMMS/1 evidence to MASTER/PISONET.
+
+## Implementation checkpoint — 2026-11-15
+
+- New source-linked test-only helper: `ExternalBoardAuthoritySourceGuard.cs`, Git blob `f150d1539770fa64c8ad549aefa1ff15c324546e`, commit `0ea32f1ba3868803d74b4a95da1254106fb0dea8`.
+- Existing test runner `Program.cs` invokes the helper explicitly after its existing successful unknown-signal fake-OS scenario; runner commit `ac5fe4bc1ce4f4368f126db02a2e1ac3bdd0bf26`, new Git blob `2e653780c6cb87ec0d4dab6098ed8c9daa7905de`.
+- **No actual production source was touched.** Current `AppController.cs` remains Git blob `d905a1f610ee0c47f3fb958943c4714eaad18291` inherited from PISONET #30.
+- Actual connector source readback plus 10 JavaScript structural assertions against the *literal verified controller method* all passed: extracted method; error-aware TryGetSignal; zero-authority denial; return before inversion; polarity path; normal grant path; no obsolete bool GetSignal; new marker; runner invocation; unchanged product blob. **This is a static patch/fixture check only**, not compiled .NET8 code, not Windows job, not hardware.
+- Next exact head gate: Windows Actions `windows-lab` runs the existing `NativeSerialPinFaultLab` under `--safety-gate`, requiring `EXTERNAL_BOARD_CONTROLLER_AUTHORITY_SOURCE_GUARD_PASS`, `EXTERNAL_BOARD_SIGNAL_UNKNOWN_DENIED_PASS`, `READ_ERROR_SAFETY_GREEN: 4/4` and job success on exact QA head. Keep PR draft; do not merge, sign, flash or deploy.
