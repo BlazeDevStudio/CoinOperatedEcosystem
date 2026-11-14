@@ -51,6 +51,19 @@ try
         "missing installed config with pending write");
     File.Delete(configPath + ".tmp");
 
+    // Configuration loss must never be treated as first install when a
+    // committed, backup or pending paid session already exists beside it.
+    foreach (var suffix in new[] { "", ".bak", ".tmp" })
+    {
+        File.WriteAllText(path + suffix, "prior-paid-session-evidence");
+        MustReject(() => Storage.LoadConfigFromPath(configPath),
+            "missing config with paid-state evidence " + suffix);
+        Require(!File.Exists(configPath) &&
+            File.ReadAllText(path + suffix) == "prior-paid-session-evidence",
+            "identity reset must not erase paid-state evidence " + suffix);
+        File.Delete(path + suffix);
+    }
+
     File.WriteAllText(configPath, originalConfigText);
     File.WriteAllText(configPath + ".tmp", "uncommitted-secret-update");
     MustReject(() => Storage.LoadConfigFromPath(configPath),
