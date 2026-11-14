@@ -160,6 +160,42 @@ try
         validAdmin.Enabled && validAdmin.ShopName != "unsaved-preview",
         "failed config save must leave installed and live settings unchanged");
     File.Delete(configPath + ".tmp");
+    var committed = Storage.CloneConfig(validAdmin);
+    committed.Enabled = true;
+    committed.TimerSource = TimerSourceMode.InternalPcTimer;
+    committed.CoinTopology = CoinTopologyMode.StandardOneToOne;
+    Require(SerialReconnectPolicy.Allows(committed, false),
+        "active internal per-PC timer may reconnect under committed policy");
+    committed.CoinTopology = CoinTopologyMode.CentralizedCoordinator;
+    Require(SerialReconnectPolicy.Allows(committed, false),
+        "active centralized coordinator may reconnect its physical coin input");
+    committed.CoinTopology = CoinTopologyMode.CentralizedStation;
+    Require(!SerialReconnectPolicy.Allows(committed, false),
+        "centralized station must not open an alternate local coin input");
+    committed.TimerSource = TimerSourceMode.ExternalTimerBoard;
+    Require(SerialReconnectPolicy.Allows(committed, false),
+        "active external timer input may reconnect under existing runtime rules");
+    committed.TimerSource = TimerSourceMode.BlazePisonetTimer;
+    Require(!SerialReconnectPolicy.Allows(committed, false),
+        "wireless timer mode must never open a local serial coin source");
+    committed.TimerSource = TimerSourceMode.InternalPcTimer;
+    committed.CoinTopology = CoinTopologyMode.StandardOneToOne;
+    committed.Enabled = false;
+    Require(!SerialReconnectPolicy.Allows(committed, false),
+        "disabled SoftTimer must never manually open serial coin hardware");
+    committed.Enabled = true;
+    Require(!SerialReconnectPolicy.Allows(committed, true),
+        "persisted coin credit fault must inhibit manual reconnect");
+
+    // A pending unsaved UI selection may not alter the live adapter policy.
+    var preview = Storage.CloneConfig(committed);
+    preview.SerialSelection = SerialSelectionMode.ManualPort;
+    preview.ManualComPort = "COM92";
+    Require(committed.SerialSelection != preview.SerialSelection &&
+        committed.ManualComPort != preview.ManualComPort,
+        "preview adapter selection must not modify committed serial policy");
+    Console.WriteLine("SERIAL_COMMITTED_RECONNECT_GUARD_PASS");
+
     Console.WriteLine("CONFIG_STAGED_UPDATE_PASS");
 
     Console.WriteLine("CONFIG_ADMIN_SCHEMA_GUARD_PASS");
