@@ -117,6 +117,31 @@ public sealed class AppController : IDisposable
         StatusChanged?.Invoke();
     }
 
+    // Admin diagnostics may force a reconnect, but only with the already
+    // committed runtime policy. UI preview values have not passed Save & Apply
+    // and must never select a new coin adapter or signal polarity here.
+    public bool ReconnectSerialFromCommittedConfig()
+    {
+        if (!SerialReconnectPolicy.Allows(Config, _timer.CreditPersistenceFaulted))
+        {
+            _serial.Disconnect();
+            HardwareStatus = _timer.CreditPersistenceFaulted
+                ? "COIN STORAGE FAULT · manual reconnect denied"
+                : "Serial reconnect not allowed by active timer topology";
+            StatusChanged?.Invoke();
+            return false;
+        }
+
+        var connected = _serial.Connect(Config);
+        HardwareStatus = connected
+            ? $"Serial connected · {_serial.ConnectedDevice?.Display}"
+            : "Serial reconnect failed · check pinned adapter and hardware";
+        if (Config.TimerSource == TimerSourceMode.ExternalTimerBoard)
+            UpdateExternalBoard();
+        StatusChanged?.Invoke();
+        return connected;
+    }
+
     private void ConfigureRuntime()
     {
         _blazeTimer.Stop();
