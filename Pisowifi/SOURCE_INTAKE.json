@@ -117,9 +117,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/controller.sh",
       "source_git_blob": "54bdc59949884bd3e734f8c07ddeb1d7c2cf9848",
-      "destination_git_blob": "69be1941c66cb619a342785f16177458aedac75e",
+      "destination_git_blob": "a75d4776e50f91d375c9e4361b0d73bd8e68ab7a",
       "git_mode": "100755",
-      "status": "locally_derived_default_deny_identity_fix"
+      "status": "locally_derived_default_deny_exact_id_and_failed_copy_guard"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh",
@@ -608,7 +608,7 @@
       "path": "tests/controller_registry_write_fault.sh",
       "git_blob": "118cf66c0100235df12590a7716757771dbc62a9",
       "mode": "100755",
-      "github_actions_status": "EXPECTED_RED",
+      "github_actions_status": "EXPECTED_RED_43633308345__FIX_PENDING",
       "hardware_evidence": false
     }
   ],
@@ -625,5 +625,6 @@
   "note_pass09": "2026-11-11 Pass 09 (Issue #31 member journal): member.sh now stages members.tsv, member-events.tsv and member-revision and commits them through a SHA-256 commit record with roll-forward recovery under the member lock (bp_member_txn_*). Locally executed under dash only: member_receipt_failure_atomicity.sh PASS; member_txn_journal.sh 8 simulated-fault cases PASS (success, receipt failure, crash after commit record, replay idempotence, crash mid-apply, tampered stage fail-closed, uncommitted stage discard, balance_change/delete); two mutation checks (no-op recovery, no digest check) were correctly detected. Simulated faults only: NO power-cut, real flash, BusyBox ash (CI pending), or hardware evidence. paid-state-uncertain is still never auto-cleared. Issue #31 remains OPEN pending independent review, power-cut proof (#34) and an anti-rollback witness (#43).",
   "note_pass10": "2026-11-15 isolated draft: reconcile controller.sh with newer CORE branch fail-closed auto-enrollment (enabled=0, coin_enabled=0) and literal first-field controller identity matching; disposable source regression added. Does NOT import fd4 admission locking, receipt/lease atomicity, protected independent witness or hardware approval. Review and independent QA required.",
   "note_pass11": "2026-11-15: exact-head PR #29 CI 43632501488 correctly failed manifest provenance because changed tests/run_focus.sh was not SHA-synchronized; update derived_tests hash to d1defb20f640d134689e0020a4f9890f7cb7ada9. Re-run required; prior failure must not be called GREEN.",
-  "note_pass12": "2026-11-15 test-first EXPECTED RED: source-linked disposable failure-injection test controller_registry_write_fault.sh asserts bp_controller_set denies a failed awk copy and preserves all registry rows. It is an intentional failing diagnostic until the separate CORE writer fix is applied. This is NOT production tested."
+  "note_pass12": "2026-11-15 test-first EXPECTED RED: source-linked disposable failure-injection test controller_registry_write_fault.sh asserts bp_controller_set denies a failed awk copy and preserves all registry rows. It is an intentional failing diagnostic until the separate CORE writer fix is applied. This is NOT production tested.",
+  "note_pass13": "2026-11-15: exact original source RED run #43633308345: real-sourced controller_set ACKed failed awk registry-copy. New controller source now checks awk, append, chmod, rename and optional durability status; exact-head CI pending. No fd4, witness, migration or hardware acceptance claimed."
 }
