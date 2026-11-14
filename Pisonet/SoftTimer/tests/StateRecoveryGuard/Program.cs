@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 // Source-linked paid-session recovery regression. Uses disposable temp files only.
 using System.Text.Json;
 using BlazePisonet.SoftTimer;
@@ -20,6 +21,151 @@ var path = Path.Combine(root, "state.json");
 Directory.CreateDirectory(root);
 try
 {
+    // Same production config loader with disposable paths: no installed
+    // ProgramData files, live COM ports or operator credentials are touched.
+    var configPath = Path.Combine(root, "config.json");
+    var initialConfig = Storage.LoadConfigFromPath(configPath);
+    var originalConfigText = File.ReadAllText(configPath);
+    var originalKey = initialConfig.CentralSharedKey;
+    Require(!initialConfig.Enabled && !string.IsNullOrWhiteSpace(originalKey) &&
+        !string.IsNullOrWhiteSpace(initialConfig.BlazePwifiControllerId),
+        "first install must persist disabled config with stable identity");
+    Require(Storage.LoadConfigFromPath(configPath).CentralSharedKey == originalKey,
+        "normal restart must preserve coordinator key");
+
+    File.WriteAllText(configPath, "{");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "corrupt installed configuration must never reset admin or secrets");
+    Require(File.ReadAllText(configPath) == "{",
+        "corrupt installed configuration must be preserved unchanged");
+    File.Delete(configPath);
+
+    File.WriteAllText(configPath + ".bak", originalConfigText);
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "missing installed config with backup evidence");
+    Require(!File.Exists(configPath),
+        "missing primary with backup must not bootstrap a new identity");
+    File.Delete(configPath + ".bak");
+
+    File.WriteAllText(configPath + ".tmp", "uncommitted-config");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "missing installed config with pending write");
+    File.Delete(configPath + ".tmp");
+
+    // Configuration loss must never be treated as first install when a
+    // committed, backup or pending paid session already exists beside it.
+    foreach (var suffix in new[] { "", ".bak", ".tmp" })
+    {
+        File.WriteAllText(path + suffix, "prior-paid-session-evidence");
+        MustReject(() => Storage.LoadConfigFromPath(configPath),
+            "missing config with paid-state evidence " + suffix);
+        Require(!File.Exists(configPath) &&
+            File.ReadAllText(path + suffix) == "prior-paid-session-evidence",
+            "identity reset must not erase paid-state evidence " + suffix);
+        File.Delete(path + suffix);
+    }
+
+    File.WriteAllText(configPath, originalConfigText);
+    File.WriteAllText(configPath + ".tmp", "uncommitted-secret-update");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "parseable primary with unresolved key change");
+    Require(File.ReadAllText(configPath) == originalConfigText &&
+        File.ReadAllText(configPath + ".tmp") == "uncommitted-secret-update",
+        "pending configuration evidence must survive rejection");
+    File.Delete(configPath + ".tmp");
+
+    var invalidIdentity = JsonSerializer.Deserialize<AppConfig>(
+        originalConfigText, Storage.JsonOptions)!;
+    invalidIdentity.CentralSharedKey = string.Empty;
+    File.WriteAllText(configPath, JsonSerializer.Serialize(invalidIdentity, Storage.JsonOptions));
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "installed config missing stable coordinator secret");
+    invalidIdentity.CentralSharedKey = originalKey;
+    invalidIdentity.BlazePwifiControllerId = string.Empty;
+    File.WriteAllText(configPath, JsonSerializer.Serialize(invalidIdentity, Storage.JsonOptions));
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "installed config missing stable controller identity");
+    File.WriteAllText(configPath, originalConfigText);
+    Require(Storage.LoadConfigFromPath(configPath).CentralSharedKey == originalKey,
+        "repaired evidence must load original coordinator identity");
+    // An installed configuration must not silently default admin access.
+    foreach (var missingField in new[]
+    {
+        "Enabled", "AdminPasswordHash", "AdminPasswordSalt",
+        "AdminPasswordIterations"
+    })
+    {
+        var incomplete = JsonNode.Parse(originalConfigText)!.AsObject();
+        Require(incomplete.Remove(missingField), "required test field must exist");
+        File.WriteAllText(configPath, incomplete.ToJsonString());
+        MustReject(() => Storage.LoadConfigFromPath(configPath),
+            "installed config missing " + missingField);
+        Require(File.ReadAllText(configPath) == incomplete.ToJsonString(),
+            "rejected incomplete configuration must remain unmodified");
+    }
+
+    // Reject case-insensitive duplicates rather than relying on last-wins.
+    File.WriteAllText(configPath,
+        originalConfigText.TrimEnd()[..^1] + ",\"enabled\":true}");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "ambiguous case-insensitive duplicate Enabled field");
+
+    var invalidAdmin = JsonNode.Parse(originalConfigText)!.AsObject();
+    invalidAdmin["Enabled"] = true;
+    File.WriteAllText(configPath, invalidAdmin.ToJsonString());
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "enabled machine with no administrator password");
+    invalidAdmin["Enabled"] = false;
+    invalidAdmin["AdminPasswordSalt"] = "AQID";
+    File.WriteAllText(configPath, invalidAdmin.ToJsonString());
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "partial administrator password credentials");
+    invalidAdmin["AdminPasswordSalt"] = "";
+    invalidAdmin["AdminPasswordIterations"] = 0;
+    File.WriteAllText(configPath, invalidAdmin.ToJsonString());
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "invalid administrator PBKDF2 iterations");
+
+    File.WriteAllText(configPath, originalConfigText);
+    var validAdmin = JsonSerializer.Deserialize<AppConfig>(
+        originalConfigText, Storage.JsonOptions)!;
+    Passwords.SetAdminPassword(validAdmin, "disposable-test-credential");
+    validAdmin.Enabled = true;
+    Storage.SaveConfigToPath(configPath, validAdmin);
+    var reloadedAdmin = Storage.LoadConfigFromPath(configPath);
+    Require(reloadedAdmin.Enabled && reloadedAdmin.HasAdminPassword &&
+        Passwords.VerifyAdminPassword(reloadedAdmin, "disposable-test-credential") &&
+        reloadedAdmin.CentralSharedKey == originalKey,
+        "valid configured machine must retain administrator access and identity");
+    // UI edits and admin credential changes must stage a deep copy.
+    // This source-linked helper is used by the actual Windows controller/UI.
+    var draft = Storage.CloneConfig(validAdmin);
+    draft.Enabled = false;
+    draft.ShopName = "unsaved-preview";
+    draft.BlockedProcesses.Clear();
+    draft.NotificationSchedules[0].Name = "unsaved-schedule";
+    Require(validAdmin.Enabled && validAdmin.ShopName != "unsaved-preview" &&
+        validAdmin.BlockedProcesses.Count > 0 &&
+        validAdmin.NotificationSchedules[0].Name != "unsaved-schedule",
+        "nested UI draft must not mutate live configuration or policy");
+
+    // An interrupted write must preserve both the published configuration
+    // and the previously committed file, not fabricate a successful apply.
+    var priorConfigBytes = File.ReadAllText(configPath);
+    File.WriteAllText(configPath + ".tmp", "pending-config-write");
+    MustReject(() => Storage.SaveConfigToPath(configPath, draft),
+        "failed staged config write");
+    Require(File.ReadAllText(configPath) == priorConfigBytes &&
+        File.ReadAllText(configPath + ".tmp") == "pending-config-write" &&
+        validAdmin.Enabled && validAdmin.ShopName != "unsaved-preview",
+        "failed config save must leave installed and live settings unchanged");
+    File.Delete(configPath + ".tmp");
+    Console.WriteLine("CONFIG_STAGED_UPDATE_PASS");
+
+    Console.WriteLine("CONFIG_ADMIN_SCHEMA_GUARD_PASS");
+
+    Console.WriteLine("CONFIG_FAIL_CLOSED_RECOVERY_PASS");
+
     Require(Storage.LoadStateFromPath(path, now).RemainingSeconds == 0,
         "actual first-run should initialize zero");
     File.WriteAllText(path, "{");

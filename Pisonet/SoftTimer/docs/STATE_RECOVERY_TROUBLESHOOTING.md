@@ -19,7 +19,9 @@ The production Storage class currently uses `%ProgramData%\BlazeSystems\BlazePis
 | `state.json` | Committed paid seconds, member balances, replay IDs, pending member operation |
 | `state.json.bak` | Previous committed snapshot after replace |
 | `state.json.tmp` | Unresolved in-progress write; **preserve it** |
-| `config.json` | Configuration; may contain **secrets** (never attach raw to bug reports) |
+| `config.json` | Operator configuration, controller identity, and **secrets**; must not be replaced by defaults on corruption |
+| `config.json.bak` | Prior committed configuration snapshot; preserve for authorized review |
+| `config.json.tmp` | Unresolved configuration update, possibly containing changed keys/passwords; preserve |
 | `softtimer.log` | Operator diagnostic log; review for sensitive content before sharing |
 
 **Never** delete, rename, overwrite or auto-promote a `.tmp` or `.bak` to make startup succeed. An unresolved write may represent consumed money. Isolate the device, preserve all original evidence and escalate reconciliation. Do not reconnect live coin inputs until the financial/capture gate is independently accepted.
@@ -32,6 +34,7 @@ The production Storage class currently uses `%ProgramData%\BlazeSystems\BlazePis
 | Parseable JSON missing required accounting fields | `LoadStateFromPath` | Preserve original file and compare to the prior verified schema |
 | Negative time, sales count, replay identity or member bank/revision | `ValidateFinancialState` | Do not normalize or clamp; record exact error and review the source of corruption |
 | Pending write after a crash | `AtomicWrite` / startup decoder | Stop paid intake; reconcile pending and committed evidence offline |
+| Corrupt installed config, missing admin security field, duplicate JSON setting, or missing coordinator identity | `LoadConfigFromPath` | Preserve `config.json/.bak/.tmp`, stop startup, and review authorized recovery; do not regenerate credentials |
 | Unknown or disconnected COM device | Native serial ownership layer | Treat device as unavailable; do not use a COM-name-only fallback |
 | Credit persistence fault latched | `TimerEngine` | Do not automatically retry a consumed coin or remove the customer lock |
 
@@ -48,10 +51,14 @@ dotnet run --project .\tests\TimerCreditCommitGuard\TimerCreditCommitGuard.cspro
 dotnet run --project .\tests\MemberTimeCommitGuard\MemberTimeCommitGuard.csproj -c Release
 ```
 
-Expected source-linked state guard includes `STATE_MEMBER_ACCOUNT_VALIDATION_PASS` when all regression assertions pass. Its presence must be verified in an **actual exact-commit** workflow log, not inferred from source. The repo's `pisonet-softtimer-windows.yml` runs Windows synthetic CI for changes under this subtree.
+Expected source-linked recovery output includes `CONFIG_FAIL_CLOSED_RECOVERY_PASS` and `STATE_MEMBER_ACCOUNT_VALIDATION_PASS` when all regression assertions pass. Its presence must be verified in an **actual exact-commit** workflow log, not inferred from source. The repo's `pisonet-softtimer-windows.yml` runs Windows synthetic CI for changes under this subtree.
 
 ## Reporting a reproducible bug
 
 Record exact repository, commit SHA, branch/PR, Windows version and .NET SDK, test command, failing log step, synthetic-versus-real device evidence and whether customer money/hardware was involved. Redact `CentralSharedKey`, admin/member password hashes and salts, usernames, member tokens and serial identifiers before sharing outside authorized troubleshooting. Preserve raw originals in approved private evidence storage; provide only sanitized excerpts to public issues.
 
 **Still blocked:** independent ledger/rollback witness, physical USB-RS232/voltage-correct coin acceptance, crash/power-cut endurance, installer lifecycle, and signed production admission.
+
+## Configuration preview and Save & Apply safety
+
+The Windows settings UI must edit a deep `Storage.CloneConfig` snapshot, not `AppController.Config`. The **Bind Exact Device**, **Pair Timer**, test-warning and serial reconnect preview paths stage selections locally. Only a successful Save & Apply commits their settings; failed validation or `config.json.tmp` write errors must leave the active configuration untouched. `AppController.ApplyConfig` saves before publishing a new runtime policy, and administrator-password changes likewise save a staged copy before updating the security controller. The source-linked `CONFIG_STAGED_UPDATE_PASS` fixture covers clone isolation and rejected writes; it does not exercise a real Windows lock screen or USB adapter.
