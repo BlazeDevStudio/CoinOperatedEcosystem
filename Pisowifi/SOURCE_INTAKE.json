@@ -629,7 +629,7 @@
       "path": "tests/controller_registry_symlink.sh",
       "git_blob": "ce15969f9f15b51b44a28fb5d6f2a69e536920bf",
       "mode": "100755",
-      "github_actions_status": "RED_CONFIRMED_43643240752_FIX_CI_PENDING",
+      "github_actions_status": "CI_VERIFIED_GREEN_43643397472",
       "hardware_evidence": false
     }
   ],
@@ -654,5 +654,6 @@
   "note_pass17": "2026-11-15: first source SHA 7d481d1d785d8d7b7ad1931f83b23479e888f3d3 completed actual GH Actions CI #43634597297 SUCCESS with CONTROLLER_REGISTRATION_RACE_GREEN and full focused mock suites. New additional source-linked regression controller_registry_set_race.sh checks two concurrent disjoint admin controller_set calls survive as separate rev=2 enabled/coin_enabled=1 rows; exact-head CI pending.",
   "note_pass18": "2026-11-15 CI source+test commit ae64a496783d40a51d372c847ae1d2e6b8f67279 GH Actions #43634813512 COMPLETED SUCCESS and case-collision #43634813474 SUCCESS: real-sourced controller registration race GREEN, disjoint admin policy updates race GREEN, earlier failed-copy and default-deny tests GREEN, provenance/modes, POSIX and BusyBox syntax, all focused mocked suite and simulated member/rental/voucher journals passed. Test-first RED #43634427828 pinned and retained. fd4 registry guard still NOT a paid-admission witness, operator recovery/flash durability proof, or production financial acceptance. This commit is metadata-only follow-up, requires its own exact-head CI.",
   "note_pass19": "2026-11-15 test-first source-linked /tmp regression rejects symlinked controllers.tsv in init/ensure/set without touching external evidence, then confirms ordinary auto-created policy defaults disabled. Existing staged source EXPECTED RED until CI confirms; no multiuser TOCTOU or physical proof.",
-  "note_pass20": "2026-11-15: negative source-linked test #43643240752 correctly exposed controller registry symlink acceptance; new source rejects nonregular/symlink path and guards helper entry. Controlled noncustomer /tmp test only, exact-head CI pending. Does not claim protected registry witness, multiuser symlink race proof, physical flash, or money admission."
+  "note_pass20": "2026-11-15: negative source-linked test #43643240752 correctly exposed controller registry symlink acceptance; new source rejects nonregular/symlink path and guards helper entry. Controlled noncustomer /tmp test only, exact-head CI pending. Does not claim protected registry witness, multiuser symlink race proof, physical flash, or money admission.",
+  "note_pass21": "2026-11-15 exact-source commit 4c4565a2f6712e08318572325e96ee7e36856da4 GitHub Actions PisoWiFi #43643397472 COMPLETED SUCCESS. controller_registry_symlink.sh logs CONTROLLER_REGISTRY_SYMLINK_GREEN (link rejected, external sentinel unmodified); previous controller regression tests and full mocked member/rental/voucher journal + BusyBox suites also passed; case-collision #43643397491 SUCCESS. Source-linked RED #43643240752 retained. Mocked POSIX/ash CI only; commercial signer/witness, actual financial admission, real routers/power cuts not accepted. Metadata-head CI should be separately classified."
 }
