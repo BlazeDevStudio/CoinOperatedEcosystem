@@ -2,12 +2,20 @@
 BP_CONTROLLERS="$BP_STATE/controllers.tsv"
 
 bp_controller_init() {
-  bp_init_dirs
-  touch "$BP_CONTROLLERS"
-  chmod 600 "$BP_CONTROLLERS"
+  bp_init_dirs || return 8
+
+  # A controller registry is authority state, never an alias or special file.
+  # A non-customer restore can leave a symlink here: do not touch/chmod/follow it.
+  if [ ! -e "$BP_CONTROLLERS" ] && [ ! -L "$BP_CONTROLLERS" ]; then
+    # noclobber avoids truncating a file created by another first heartbeat.
+    (umask 077; set -C; : > "$BP_CONTROLLERS") 2>/dev/null || :
+  fi
+  [ -f "$BP_CONTROLLERS" ] && [ ! -L "$BP_CONTROLLERS" ] || return 8
+  chmod 600 "$BP_CONTROLLERS" || return 8
 }
 
 bp_controller_line() {
+  [ -f "$BP_CONTROLLERS" ] && [ ! -L "$BP_CONTROLLERS" ] || return 8
   awk -F '\t' -v d="$1" '$1==d {print; exit}' "$BP_CONTROLLERS"
 }
 
@@ -70,6 +78,8 @@ bp_controller_uint() {
 
 bp_controller_write() {
   id="$1"; shift
+  # Defensive even when called outside controller_set's usual writer lock.
+  [ -f "$BP_CONTROLLERS" ] && [ ! -L "$BP_CONTROLLERS" ] || return 8
   tmp="$BP_STATE/.controllers.$(bp_tmp_suffix)"
 
   # Never publish an incomplete controller policy table. A failed copy
@@ -111,6 +121,10 @@ bp_controller_set() {
   # Serialize the full read/modify/write, not just publication of the
   # temporary file. Concurrent admin writes must not lose each other's rows.
   bp_controller_admission_lock || return 8
+  if ! bp_controller_init; then
+    bp_controller_admission_unlock
+    return 8
+  fi
   line="$(bp_controller_line "$id")" || {
     bp_controller_admission_unlock
     return 8
@@ -132,8 +146,9 @@ bp_controller_set() {
 
 bp_controller_json() {
   id="$1"
-  bp_controller_ensure "$id"
-  line="$(bp_controller_line "$id")"
+  bp_controller_ensure "$id" || return 8
+  line="$(bp_controller_line "$id")" || return 8
+  [ -n "$line" ] || return 8
   enabled="$(printf '%s' "$line" | cut -f2)"
   coin="$(printf '%s' "$line" | cut -f3)"
   relay="$(printf '%s' "$line" | cut -f4)"
@@ -152,7 +167,7 @@ bp_controller_json() {
 }
 
 bp_controller_list_json() {
-  bp_controller_init
+  bp_controller_init || return 8
   first=1
   printf '['
   while IFS="$(printf '\t')" read -r id enabled coin relay led cpin rpin lpin clow rhigh lhigh debounce group retries rev; do

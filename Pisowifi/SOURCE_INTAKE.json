@@ -117,9 +117,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/controller.sh",
       "source_git_blob": "54bdc59949884bd3e734f8c07ddeb1d7c2cf9848",
-      "destination_git_blob": "3219f99b02556eddced4bccd644a13baa0633260",
+      "destination_git_blob": "6427cb28a7f325b6b1fc9b6744e0449951ccbb5f",
       "git_mode": "100755",
-      "status": "locally_derived_default_deny_exact_id_failed_copy_guard_and_locked_registry"
+      "status": "derived_default_deny_locked_registry_and_symlink_integrity_guard"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh",
@@ -629,7 +629,7 @@
       "path": "tests/controller_registry_symlink.sh",
       "git_blob": "ce15969f9f15b51b44a28fb5d6f2a69e536920bf",
       "mode": "100755",
-      "github_actions_status": "EXPECTED_RED_PENDING",
+      "github_actions_status": "RED_CONFIRMED_43643240752_FIX_CI_PENDING",
       "hardware_evidence": false
     }
   ],
@@ -653,5 +653,6 @@
   "note_pass16": "2026-11-15 actual source-linked concurrency RED at #43634427828 on test-only fc039686: duplicate rows from racing controller_ensure. fd4 controller-admission.lock now guards ensure and set read/modify/write in derived source. This is ONLY a registry mutex, not a port of CORE #252 paid-admission authorization/witness. Exact-head CI verification pending.",
   "note_pass17": "2026-11-15: first source SHA 7d481d1d785d8d7b7ad1931f83b23479e888f3d3 completed actual GH Actions CI #43634597297 SUCCESS with CONTROLLER_REGISTRATION_RACE_GREEN and full focused mock suites. New additional source-linked regression controller_registry_set_race.sh checks two concurrent disjoint admin controller_set calls survive as separate rev=2 enabled/coin_enabled=1 rows; exact-head CI pending.",
   "note_pass18": "2026-11-15 CI source+test commit ae64a496783d40a51d372c847ae1d2e6b8f67279 GH Actions #43634813512 COMPLETED SUCCESS and case-collision #43634813474 SUCCESS: real-sourced controller registration race GREEN, disjoint admin policy updates race GREEN, earlier failed-copy and default-deny tests GREEN, provenance/modes, POSIX and BusyBox syntax, all focused mocked suite and simulated member/rental/voucher journals passed. Test-first RED #43634427828 pinned and retained. fd4 registry guard still NOT a paid-admission witness, operator recovery/flash durability proof, or production financial acceptance. This commit is metadata-only follow-up, requires its own exact-head CI.",
-  "note_pass19": "2026-11-15 test-first source-linked /tmp regression rejects symlinked controllers.tsv in init/ensure/set without touching external evidence, then confirms ordinary auto-created policy defaults disabled. Existing staged source EXPECTED RED until CI confirms; no multiuser TOCTOU or physical proof."
+  "note_pass19": "2026-11-15 test-first source-linked /tmp regression rejects symlinked controllers.tsv in init/ensure/set without touching external evidence, then confirms ordinary auto-created policy defaults disabled. Existing staged source EXPECTED RED until CI confirms; no multiuser TOCTOU or physical proof.",
+  "note_pass20": "2026-11-15: negative source-linked test #43643240752 correctly exposed controller registry symlink acceptance; new source rejects nonregular/symlink path and guards helper entry. Controlled noncustomer /tmp test only, exact-head CI pending. Does not claim protected registry witness, multiuser symlink race proof, physical flash, or money admission."
 }
