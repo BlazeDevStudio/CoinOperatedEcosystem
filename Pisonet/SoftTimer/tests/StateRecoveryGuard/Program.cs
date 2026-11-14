@@ -85,6 +85,40 @@ try
     Require(restored.RemainingSeconds == 3000 &&
         restored.AppliedEventIds.Contains("COIN:SOURCE:SEQUENCE-1"),
         "valid paid credit and case-insensitive event deduplication must survive restart");
+    // A syntactically valid member record cannot carry negative paid time
+    // or an invalid revision. Reject on both load and save, before any I/O.
+    paid.Members["local"] = new MemberAccount { BankedSeconds = -1 };
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "negative local member bank");
+    paid.Members["local"].BankedSeconds = 0;
+    paid.Members["local"].Revision = -1;
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "negative local member revision");
+    paid.Members.Clear();
+
+    paid.RemoteMembers["remote"] = new MemberAccount { BankedSeconds = -60 };
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "negative remote member bank");
+    paid.RemoteMembers["remote"].BankedSeconds = 0;
+    paid.RemoteMembers["remote"].Revision = -1;
+    File.WriteAllText(path, JsonSerializer.Serialize(paid, Storage.JsonOptions));
+    MustReject(() => Storage.LoadStateFromPath(path, now),
+        "negative remote member revision");
+    paid.RemoteMembers.Clear();
+
+    var invalidMemberSavePath = Path.Combine(root, "invalid-member-save.json");
+    paid.Members["local"] = new MemberAccount { BankedSeconds = -1 };
+    MustReject(() => Storage.SaveStateToPath(invalidMemberSavePath, paid, now),
+        "reject invalid local member before state save");
+    Require(!File.Exists(invalidMemberSavePath) &&
+        !File.Exists(invalidMemberSavePath + ".tmp"),
+        "invalid financial snapshot must never reach disk");
+    paid.Members.Clear();
+    Console.WriteLine("STATE_MEMBER_ACCOUNT_VALIDATION_PASS");
+
     Console.WriteLine("STATE_RECOVERY_INTERRUPTED_WRITE_PASS");
     Console.WriteLine("STATE_RECOVERY_REQUIRED_FIELDS_AND_CLOCK_PASS");
     Console.WriteLine("STATE_RECOVERY_CASE_INSENSITIVE_DEDUP_PASS");
