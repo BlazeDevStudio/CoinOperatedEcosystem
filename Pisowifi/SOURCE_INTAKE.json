@@ -608,7 +608,7 @@
       "path": "tests/controller_registry_write_fault.sh",
       "git_blob": "118cf66c0100235df12590a7716757771dbc62a9",
       "mode": "100755",
-      "github_actions_status": "EXPECTED_RED_43633308345__FIX_PENDING",
+      "github_actions_status": "CI_VERIFIED_GREEN_43633448039",
       "hardware_evidence": false
     }
   ],
@@ -626,5 +626,6 @@
   "note_pass10": "2026-11-15 isolated draft: reconcile controller.sh with newer CORE branch fail-closed auto-enrollment (enabled=0, coin_enabled=0) and literal first-field controller identity matching; disposable source regression added. Does NOT import fd4 admission locking, receipt/lease atomicity, protected independent witness or hardware approval. Review and independent QA required.",
   "note_pass11": "2026-11-15: exact-head PR #29 CI 43632501488 correctly failed manifest provenance because changed tests/run_focus.sh was not SHA-synchronized; update derived_tests hash to d1defb20f640d134689e0020a4f9890f7cb7ada9. Re-run required; prior failure must not be called GREEN.",
   "note_pass12": "2026-11-15 test-first EXPECTED RED: source-linked disposable failure-injection test controller_registry_write_fault.sh asserts bp_controller_set denies a failed awk copy and preserves all registry rows. It is an intentional failing diagnostic until the separate CORE writer fix is applied. This is NOT production tested.",
-  "note_pass13": "2026-11-15: exact original source RED run #43633308345: real-sourced controller_set ACKed failed awk registry-copy. New controller source now checks awk, append, chmod, rename and optional durability status; exact-head CI pending. No fd4, witness, migration or hardware acceptance claimed."
+  "note_pass13": "2026-11-15: exact original source RED run #43633308345: real-sourced controller_set ACKed failed awk registry-copy. New controller source now checks awk, append, chmod, rename and optional durability status; exact-head CI pending. No fd4, witness, migration or hardware acceptance claimed.",
+  "note_pass14": "2026-11-15 exact source+test SHA 98075a22470c0be991978469d8908efb75b91328 GitHub Actions #43633448039 COMPLETED SUCCESS: controller_registration_defaults PASS, controller_registry_write_fault GREEN, provenance/modes and POSIX+BusyBox syntax PASS, full POSIX mocked integration and BusyBox money journal simulated-fault suites PASS. Historical test-first RED #43633308345 preserved. Does NOT attest hardware flash, independent antirollback witness or signed financial admission. This metadata-only checkpoint must be checked independently at its own HEAD."
 }
