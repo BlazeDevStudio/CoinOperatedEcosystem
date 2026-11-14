@@ -24,6 +24,9 @@ namespace System.IO.Ports
     public sealed class SerialPort : IDisposable
     {
         public static bool InitialCtsLevel { get; set; }
+        // TEST ONLY: force a failed initial modem-status read on the NEXT
+        // created fake port, before the source can arm coin capture.
+        public static bool FailInitialCtsReadOnNextPort { get; set; }
         // Fake OS fault injection for actual C# failed-Open lifecycle test.
         public static bool ThrowOnNextOpen { get; set; }
         public int OpenAttemptCount { get; private set; }
@@ -58,6 +61,8 @@ namespace System.IO.Ports
         {
             PortName = portName;
             CtsLevel = InitialCtsLevel;
+            ThrowOnCtsRead = FailInitialCtsReadOnNextPort;
+            FailInitialCtsReadOnNextPort = false;
             LastCreated = this;
         }
         public void Open()
