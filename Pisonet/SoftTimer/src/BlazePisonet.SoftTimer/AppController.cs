@@ -105,8 +105,10 @@ public sealed class AppController : IDisposable
                     $"Resolve the pending BlazePwifi member transaction ({pending.Action} · {pending.Username}) before disabling or changing central member integration.");
         }
 
+        // Persist first: no failed configuration write may publish staged
+        // policy changes to the running timer, hardware, or lock controller.
+        Storage.SaveConfig(updated);
         Config = updated;
-        Storage.SaveConfig(Config);
         _security.UpdateConfig(Config);
         _blazeTimer.UpdateConfig(Config);
         _blazePwifi.UpdateConfig(Config);
@@ -298,8 +300,13 @@ public sealed class AppController : IDisposable
 
     public void SetAdminPassword(string password)
     {
-        Passwords.SetAdminPassword(Config, password);
-        Storage.SaveConfig(Config);
+        // A failed or ambiguous write must not leave a new administrator
+        // password visible only in memory while disk has the previous one.
+        var staged = Storage.CloneConfig(Config);
+        Passwords.SetAdminPassword(staged, password);
+        Storage.SaveConfig(staged);
+        Config = staged;
+        _security.UpdateConfig(staged);
     }
 
     public void EvaluateLockState()
