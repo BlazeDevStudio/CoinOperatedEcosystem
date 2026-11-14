@@ -72,6 +72,18 @@ public static class Storage
     {
         if (!File.Exists(path))
         {
+            // A lost configuration with an existing paid session is not a
+            // first installation. Regenerating its key/identity could orphan
+            // member reconciliation or authorize a reset of operator policy.
+            var paidState = Path.Combine(
+                Path.GetDirectoryName(path) ?? throw new InvalidDataException(
+                    "Configuration path has no parent directory."), "state.json");
+            if (File.Exists(paidState) || File.Exists(paidState + ".bak") ||
+                File.Exists(paidState + ".tmp"))
+                throw new InvalidDataException(
+                    "SoftTimer configuration is missing while paid-state evidence exists. " +
+                    "Preserve paid state and configuration before supervised recovery.");
+
             // A missing primary alongside an older snapshot or interrupted
             // write is recovery work, never permission to reset operator auth.
             if (File.Exists(path + ".bak") || File.Exists(path + ".tmp"))
