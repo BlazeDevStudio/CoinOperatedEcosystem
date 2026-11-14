@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "d1defb20f640d134689e0020a4f9890f7cb7ada9",
+      "git_blob": "fbc810665a0551bf2cacfb7e0ef1f72e5bf4868c",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -603,6 +603,13 @@
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/controller_registry_write_fault.sh",
+      "git_blob": "118cf66c0100235df12590a7716757771dbc62a9",
+      "mode": "100755",
+      "github_actions_status": "EXPECTED_RED",
+      "hardware_evidence": false
     }
   ],
   "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
@@ -617,5 +624,6 @@
   "note_pass08": "2026-11-09 Pass 08: config_apply executable preflight; missing script returns clean refusal rc7 without UCI changes, lost/failed apply after commit returns uncertain live state rc8, confirmed UCI revert without false live rollback guarantee. Source config Git SHA 4535ef6993185208fb3b098842a0f8d69e71d5c7; admin CGI Git SHA 6ec03db26a43d6669c067e452f6c0098bd2c8051 and extracted exact config-arm Git SHA ca291ac70125065b5d964294bc9ea7173dd4a2c6. Exact local test blobs config_faults=8e8053f709d53e78cef154ee9b6d0242075bebf7, config_concurrency=f8eaa2c0bc3cd1018942fe4bed7511a65db1118d, config_apply_failclosed=e6a6af64999769d5481506e7ee64e3934f4ae909, admin_config_result=975b3245d078e33faa54f22ac9fb5af0bfe49cf0 all PASS under sh and BusyBox ash. 18+3+9+8 = 38 checks each shell. This is a partially reconstructed Git-blob-verified test subset, not full GitHub checkout/CI, real UCI, real firewall or router.",
   "note_pass09": "2026-11-11 Pass 09 (Issue #31 member journal): member.sh now stages members.tsv, member-events.tsv and member-revision and commits them through a SHA-256 commit record with roll-forward recovery under the member lock (bp_member_txn_*). Locally executed under dash only: member_receipt_failure_atomicity.sh PASS; member_txn_journal.sh 8 simulated-fault cases PASS (success, receipt failure, crash after commit record, replay idempotence, crash mid-apply, tampered stage fail-closed, uncommitted stage discard, balance_change/delete); two mutation checks (no-op recovery, no digest check) were correctly detected. Simulated faults only: NO power-cut, real flash, BusyBox ash (CI pending), or hardware evidence. paid-state-uncertain is still never auto-cleared. Issue #31 remains OPEN pending independent review, power-cut proof (#34) and an anti-rollback witness (#43).",
   "note_pass10": "2026-11-15 isolated draft: reconcile controller.sh with newer CORE branch fail-closed auto-enrollment (enabled=0, coin_enabled=0) and literal first-field controller identity matching; disposable source regression added. Does NOT import fd4 admission locking, receipt/lease atomicity, protected independent witness or hardware approval. Review and independent QA required.",
-  "note_pass11": "2026-11-15: exact-head PR #29 CI 43632501488 correctly failed manifest provenance because changed tests/run_focus.sh was not SHA-synchronized; update derived_tests hash to d1defb20f640d134689e0020a4f9890f7cb7ada9. Re-run required; prior failure must not be called GREEN."
+  "note_pass11": "2026-11-15: exact-head PR #29 CI 43632501488 correctly failed manifest provenance because changed tests/run_focus.sh was not SHA-synchronized; update derived_tests hash to d1defb20f640d134689e0020a4f9890f7cb7ada9. Re-run required; prior failure must not be called GREEN.",
+  "note_pass12": "2026-11-15 test-first EXPECTED RED: source-linked disposable failure-injection test controller_registry_write_fault.sh asserts bp_controller_set denies a failed awk copy and preserves all registry rows. It is an intentional failing diagnostic until the separate CORE writer fix is applied. This is NOT production tested."
 }
