@@ -2,7 +2,9 @@
 """Automated tests for Appliance Firmware Packager and ImageBuilder Configurator."""
 import json
 import os
+import shlex
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -74,7 +76,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("nftables", cmd)
         self.assertIn("firewall4", cmd)
         self.assertNotIn("openssl-util", cmd)
-        self.assertIn("FILES=\"/tmp/staging\"", cmd)
+        self.assertIn("FILES=/tmp/staging", shlex.split(cmd))
 
         # Rental enabled
         cmd_rental = build_imagebuilder_cmd(p, "/tmp/staging", include_rental=True)
@@ -148,6 +150,69 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             content = f.read()
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
+
+    def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False):
+        """Execute a generated wrapper against a disposable local Makefile."""
+        profile = load_profile("gl-mt1300")
+        stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
+        stage_relative = os.path.relpath(stage_absolute, os.getcwd())
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, stage_relative)
+        wrapper = os.path.join(self.temp_dir, "nonshipping-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        fake_builder = os.path.join(self.temp_dir, "fake-imagebuilder")
+        os.makedirs(fake_builder, exist_ok=True)
+        recipe = 'image:\n\t@test -d "$(FILES)"\n'
+        if mkdir_subtarget:
+            recipe += '\t@mkdir -p bin/targets/ramips/mt7621\n'
+        if image_subpath is not None:
+            # Fixture paths are hardcoded by these tests, never user input.
+            recipe += '\t@mkdir -p "$(dir ' + image_subpath + ')"\n'
+            recipe += '\t@printf "SYNTHETIC-NOT-FIRMWARE" > ' + image_subpath + '\n'
+        with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
+        result = subprocess.run(
+            ["sh", wrapper], cwd=self.temp_dir, env=env,
+            capture_output=True, text=True, check=False
+        )
+        return result, fake_builder, wrapper, stage_absolute
+
+    def test_generated_wrapper_denies_missing_target_images(self):
+        result, builder, _, _ = self._run_mock_imagebuilder()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: target/subtarget image directory missing", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_empty_expected_subtarget(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(mkdir_subtarget=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: no firmware images found", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_wrong_subtarget_images(self):
+        result, _, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7620/decoy.bin"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: target/subtarget image directory missing", result.stderr)
+
+    def test_generated_wrapper_relative_stage_uses_absolute_path(self):
+        result, builder, wrapper, stage_absolute = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("Appliance PREVIEW build completed", result.stdout)
+        manifest = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        with open(manifest, "r", encoding="utf-8") as fp:
+            lines = fp.read().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("synthetic.bin", lines[0])
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            contents = fp.read()
+        self.assertIn("FILES=" + shlex.quote(stage_absolute), contents)
 
     def test_generate_network_uci_xiaomi(self):
         p = load_profile("xiaomi-4a-gigabit")
