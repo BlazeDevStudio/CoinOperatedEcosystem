@@ -37,3 +37,7 @@ Never attach an unconditioned 12V coin pulse directly to PC serial pins. See `MI
 ## Installer compilation
 
 A separate dependent CI job compiles an **unsigned NSIS LAB installer** after all source-linked tests pass. The installer has not been run or uninstalled on Windows, and its artifact is **not customer-ready**. See `installer/README-LAB.md`.
+
+## Human debugging and non-destructive state recovery
+
+See [`docs/STATE_RECOVERY_TROUBLESHOOTING.md`](docs/STATE_RECOVERY_TROUBLESHOOTING.md) for the module ownership map, fail-closed error guide, source-linked Windows commands, and incident evidence rules. Do not delete `state.json.tmp` or reset financial data as a troubleshooting shortcut.
