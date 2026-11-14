@@ -5,7 +5,9 @@
 . "${BP_MEMBER_LIB:-/usr/lib/blazepwifi/member.sh}"
 bp_init_dirs
 bp_rental_init
-bp_controller_init
+# A controller registry failure must fail BEFORE emitting a signed success.
+# An invalid policy path must not be mistaken for an unregistered device.
+bp_controller_init || bp_fail "controller state unavailable; admission denied"
 bp_member_init
 
 vendo_port="$(bp_cfg vendo_port)"
@@ -57,19 +59,33 @@ now="$(bp_now)"
 ipaddr="${REMOTE_ADDR:-0.0.0.0}"
 
 heartbeat() {
-  tmp="$BP_RUN/vendos.$$"
-  awk -F '\t' -v OFS='\t' -v id="$id" -v n="$now" -v ip="$ipaddr" '
+  # Account lock is acquired before fd4 controller lock, as required by the
+  # CORE controller-admission lock ordering contract.
+  bp_controller_ensure "$id" || return 8
+  [ -f "$BP_VENDOS" ] && [ ! -L "$BP_VENDOS" ] || return 8
+
+  # A failed volatile heartbeat publication must never be followed by
+  # signed controller policy OK. Stage permissions before replacing state.
+  tmp="$BP_RUN/vendos.$"
+  if ! awk -F '\t' -v OFS='\t' -v id="$id" -v n="$now" -v ip="$ipaddr" '
     BEGIN{f=0}
     $1==id {print id,n,ip;f=1;next}
     {print}
     END{if(!f) print id,n,ip}
-  ' "$BP_VENDOS" > "$tmp" && mv "$tmp" "$BP_VENDOS"
-  chmod 600 "$BP_VENDOS"
-  bp_controller_ensure "$id"
+  ' "$BP_VENDOS" > "$tmp" ||
+     ! chmod 600 "$tmp" ||
+     ! mv "$tmp" "$BP_VENDOS"; then
+    rm -f "$tmp" 2>/dev/null || true
+    return 8
+  fi
+  return 0
 }
 
 bp_lock || bp_fail "vendo state busy"
-heartbeat
+if ! heartbeat; then
+  bp_unlock
+  bp_fail "controller heartbeat unavailable; admission denied"
+fi
 bp_unlock
 
 
@@ -132,7 +148,8 @@ esac
 
 case "$action" in
   register|ping)
-    controller="$(bp_controller_json "$id")"
+    controller="$(bp_controller_json "$id")" ||
+      bp_fail "controller policy unavailable; admission denied"
     response_sig="$(vendo_ping_sig "$now")"
     body="$(printf '{"ok":true,"server_time":%s,"controller":%s,"response_sig":"%s"}' "$now" "$controller" "$response_sig")"
     bp_json "$body"
@@ -151,7 +168,8 @@ case "$action" in
         rm -f "$target_file" "$BP_TARGET_DIR/$id.progress"
       fi
     fi
-    controller="$(bp_controller_json "$id")"
+    controller="$(bp_controller_json "$id")" ||
+      bp_fail "controller policy unavailable; admission denied"
     enabled="$(printf '%s' "$controller" | sed -n 's/.*"enabled":\([01]\).*/\1/p')"
     coin_enabled="$(printf '%s' "$controller" | sed -n 's/.*"coin_enabled":\([01]\).*/\1/p')"
     [ "$enabled" = 1 ] && [ "$coin_enabled" = 1 ] || insert=0
