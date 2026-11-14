@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 // Source-linked paid-session recovery regression. Uses disposable temp files only.
 using System.Text.Json;
 using BlazePisonet.SoftTimer;
@@ -87,6 +88,57 @@ try
     File.WriteAllText(configPath, originalConfigText);
     Require(Storage.LoadConfigFromPath(configPath).CentralSharedKey == originalKey,
         "repaired evidence must load original coordinator identity");
+    // An installed configuration must not silently default admin access.
+    foreach (var missingField in new[]
+    {
+        "Enabled", "AdminPasswordHash", "AdminPasswordSalt",
+        "AdminPasswordIterations"
+    })
+    {
+        var incomplete = JsonNode.Parse(originalConfigText)!.AsObject();
+        Require(incomplete.Remove(missingField), "required test field must exist");
+        File.WriteAllText(configPath, incomplete.ToJsonString());
+        MustReject(() => Storage.LoadConfigFromPath(configPath),
+            "installed config missing " + missingField);
+        Require(File.ReadAllText(configPath) == incomplete.ToJsonString(),
+            "rejected incomplete configuration must remain unmodified");
+    }
+
+    // Reject case-insensitive duplicates rather than relying on last-wins.
+    File.WriteAllText(configPath,
+        originalConfigText.TrimEnd()[..^1] + ",\"enabled\":true}");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "ambiguous case-insensitive duplicate Enabled field");
+
+    var invalidAdmin = JsonNode.Parse(originalConfigText)!.AsObject();
+    invalidAdmin["Enabled"] = true;
+    File.WriteAllText(configPath, invalidAdmin.ToJsonString());
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "enabled machine with no administrator password");
+    invalidAdmin["Enabled"] = false;
+    invalidAdmin["AdminPasswordSalt"] = "AQID";
+    File.WriteAllText(configPath, invalidAdmin.ToJsonString());
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "partial administrator password credentials");
+    invalidAdmin["AdminPasswordSalt"] = "";
+    invalidAdmin["AdminPasswordIterations"] = 0;
+    File.WriteAllText(configPath, invalidAdmin.ToJsonString());
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "invalid administrator PBKDF2 iterations");
+
+    File.WriteAllText(configPath, originalConfigText);
+    var validAdmin = JsonSerializer.Deserialize<AppConfig>(
+        originalConfigText, Storage.JsonOptions)!;
+    Passwords.SetAdminPassword(validAdmin, "disposable-test-credential");
+    validAdmin.Enabled = true;
+    Storage.SaveConfigToPath(configPath, validAdmin);
+    var reloadedAdmin = Storage.LoadConfigFromPath(configPath);
+    Require(reloadedAdmin.Enabled && reloadedAdmin.HasAdminPassword &&
+        Passwords.VerifyAdminPassword(reloadedAdmin, "disposable-test-credential") &&
+        reloadedAdmin.CentralSharedKey == originalKey,
+        "valid configured machine must retain administrator access and identity");
+    Console.WriteLine("CONFIG_ADMIN_SCHEMA_GUARD_PASS");
+
     Console.WriteLine("CONFIG_FAIL_CLOSED_RECOVERY_PASS");
 
     Require(Storage.LoadStateFromPath(path, now).RemainingSeconds == 0,
