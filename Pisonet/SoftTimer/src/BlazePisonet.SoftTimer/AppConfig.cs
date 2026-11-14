@@ -34,6 +34,20 @@ public enum ModemSignal
     RingIndicator
 }
 
+// Manual serial reconnect must follow the committed runtime topology; a UI
+// preview is never an authority to open a different hardware/coin source.
+internal static class SerialReconnectPolicy
+{
+    internal static bool Allows(AppConfig committed, bool creditPersistenceFaulted)
+    {
+        ArgumentNullException.ThrowIfNull(committed);
+        return committed.Enabled && !creditPersistenceFaulted &&
+            (committed.TimerSource == TimerSourceMode.ExternalTimerBoard ||
+             (committed.TimerSource == TimerSourceMode.InternalPcTimer &&
+              committed.CoinTopology != CoinTopologyMode.CentralizedStation));
+    }
+}
+
 public sealed class AppConfig
 {
     public string Version { get; set; } = "0.4.0";

@@ -253,9 +253,6 @@ public sealed class SerialHardware : IDisposable
                 _openedHandleVerified =
                     config.SerialSelection == SerialSelectionMode.ExactDevice;
                 ConnectedDevice = selected;
-                config.LastKnownComPort = selected.PortName;
-                if (config.SerialSelection == SerialSelectionMode.ExactDevice && string.IsNullOrWhiteSpace(config.PreferredPnpDeviceId))
-                    SerialDiscovery.BindExactDevice(config, selected);
                 _pulseStarted = null;
                 _lastAccepted = DateTimeOffset.MinValue;
                 _lastCoinActive = false;
@@ -274,6 +271,16 @@ public sealed class SerialHardware : IDisposable
                     // do not infer its beginning or credit an incomplete coin.
                     _requireVerifiedIdle = initialActive;
                 }
+                // Opening a port is not successful admission until the first
+                // measurable status has been verified. Never commit a new COM
+                // number or exact-adapter binding from a failed startup read;
+                // the operator may need the original binding to diagnose it.
+                // RI has no level sample, so this remains discovery metadata,
+                // not evidence that an RI pulse is safe for paid acceptance.
+                config.LastKnownComPort = selected.PortName;
+                if (config.SerialSelection == SerialSelectionMode.ExactDevice &&
+                    string.IsNullOrWhiteSpace(config.PreferredPnpDeviceId))
+                    SerialDiscovery.BindExactDevice(config, selected);
                 ConnectionChanged?.Invoke($"Connected to {selected.Display}");
                 return true;
             }
@@ -577,12 +584,6 @@ public sealed class SerialHardware : IDisposable
         _unclaimedCoins.Add(accepted);
         Storage.Log($"Coin pulse accepted on {device.PortName} ({widthMs} ms)");
         return accepted;
-    }
-
-    private bool IsSignalActive(ModemSignal signal, bool activeHigh)
-    {
-        var raw = GetSignal(signal);
-        return activeHigh ? raw : !raw;
     }
 
     public void Disconnect()

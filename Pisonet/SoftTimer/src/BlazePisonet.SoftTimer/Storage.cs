@@ -63,43 +63,136 @@ public static class Storage
     public static AppConfig LoadConfig()
     {
         Directory.CreateDirectory(RootDirectory);
-        if (!File.Exists(ConfigPath))
-        {
-            var cfg = new AppConfig
-            {
-                CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant(),
-                BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName)
-            };
-            SaveConfig(cfg);
-            return cfg;
-        }
-
-        try
-        {
-            var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath), JsonOptions) ?? new AppConfig();
-            if (string.IsNullOrWhiteSpace(cfg.CentralSharedKey))
-                cfg.CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(cfg.BlazePwifiControllerId))
-                cfg.BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName);
-            cfg.Version = "0.4.0";
-            EnsureSchedules(cfg);
-            return cfg;
-        }
-        catch (Exception ex)
-        {
-            Log("Config load failed: " + ex.Message);
-            return new AppConfig
-            {
-                CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant(),
-                BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName)
-            };
-        }
+        return LoadConfigFromPath(ConfigPath);
     }
 
-    public static void SaveConfig(AppConfig config)
+    // The production loader and disposable-file regression harness share this
+    // exact path. Only a truly absent configuration may be initialized.
+    internal static AppConfig LoadConfigFromPath(string path)
     {
+        if (!File.Exists(path))
+        {
+            // A lost configuration with an existing paid session is not a
+            // first installation. Regenerating its key/identity could orphan
+            // member reconciliation or authorize a reset of operator policy.
+            var paidState = Path.Combine(
+                Path.GetDirectoryName(path) ?? throw new InvalidDataException(
+                    "Configuration path has no parent directory."), "state.json");
+            if (File.Exists(paidState) || File.Exists(paidState + ".bak") ||
+                File.Exists(paidState + ".tmp"))
+                throw new InvalidDataException(
+                    "SoftTimer configuration is missing while paid-state evidence exists. " +
+                    "Preserve paid state and configuration before supervised recovery.");
+
+            // A missing primary alongside an older snapshot or interrupted
+            // write is recovery work, never permission to reset operator auth.
+            if (File.Exists(path + ".bak") || File.Exists(path + ".tmp"))
+                throw new InvalidDataException(
+                    "SoftTimer configuration is missing but recovery evidence exists. " +
+                    "Preserve config.json/.bak/.tmp and reconcile under operator supervision.");
+
+            var initial = new AppConfig
+            {
+                CentralSharedKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant(),
+                BlazePwifiControllerId = "softtimer-" + NormalizeId(Environment.MachineName)
+            };
+            SaveConfigToPath(path, initial);
+            return initial;
+        }
+
+        // A parseable primary does not make an interrupted configuration
+        // update safe: an uncommitted new key or password may be in .tmp.
+        if (File.Exists(path + ".tmp"))
+            throw new InvalidDataException(
+                "SoftTimer configuration has an unresolved pending write. " +
+                "Preserve config.json/.bak/.tmp for supervised recovery.");
+
+        AppConfig config;
+        try
+        {
+            var json = File.ReadAllText(path);
+            using (var document = JsonDocument.Parse(json))
+            {
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException(
+                        "Existing SoftTimer configuration must be a JSON object.");
+
+                // Missing security fields otherwise deserialize to defaults,
+                // and MainForm may enter unrestricted admin maintenance.
+                // Reject ambiguous case-insensitive duplicates too: JsonOptions
+                // would otherwise silently choose one of the conflicting values.
+                var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (!fields.Add(property.Name))
+                        throw new InvalidDataException(
+                            "Existing SoftTimer configuration has duplicate fields.");
+                }
+                foreach (var required in new[]
+                {
+                    "Enabled", "AdminPasswordHash", "AdminPasswordSalt",
+                    "AdminPasswordIterations", "CentralSharedKey",
+                    "BlazePwifiControllerId"
+                })
+                {
+                    if (!fields.Contains(required))
+                        throw new InvalidDataException(
+                            "Existing SoftTimer configuration is missing required field: " +
+                            required);
+                }
+            }
+
+            config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions)
+                ?? throw new InvalidDataException("Existing SoftTimer configuration is null.");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException(
+                "Existing SoftTimer configuration is unreadable. Preserve original files; " +
+                "do not silently reset administrator or integration settings.", ex);
+        }
+
+        var hasSalt = !string.IsNullOrWhiteSpace(config.AdminPasswordSalt);
+        var hasHash = !string.IsNullOrWhiteSpace(config.AdminPasswordHash);
+        if (config.AdminPasswordIterations <= 0 || hasSalt != hasHash ||
+            (config.Enabled && !config.HasAdminPassword))
+            throw new InvalidDataException(
+                "Existing SoftTimer configuration has invalid administrator credentials. " +
+                "Preserve it for supervised recovery.");
+
+        // Identity/key generation is permitted only on genuine first install.
+        // A damaged installed configuration must never silently rotate its
+        // coordinator secret or device binding and resume in a new identity.
+        if (string.IsNullOrWhiteSpace(config.CentralSharedKey) ||
+            string.IsNullOrWhiteSpace(config.BlazePwifiControllerId))
+            throw new InvalidDataException(
+                "Existing SoftTimer configuration has no stable controller identity or " +
+                "coordinator key. Preserve it for supervised migration/recovery.");
+
+        config.Version = "0.4.0";
         EnsureSchedules(config);
-        AtomicWrite(ConfigPath, JsonSerializer.Serialize(config, JsonOptions));
+        return config;
+    }
+
+    // UI editing and credential rotation must never mutate the live config
+    // before an acknowledged durable save. JSON cloning also copies nested
+    // schedule/day and blocked-process collections (not merely their refs).
+    internal static AppConfig CloneConfig(AppConfig original)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        return JsonSerializer.Deserialize<AppConfig>(
+            JsonSerializer.Serialize(original, JsonOptions), JsonOptions)
+            ?? throw new InvalidDataException("SoftTimer configuration clone is null.");
+    }
+
+    public static void SaveConfig(AppConfig config) =>
+        SaveConfigToPath(ConfigPath, config);
+
+    internal static void SaveConfigToPath(string path, AppConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        EnsureSchedules(config);
+        AtomicWrite(path, JsonSerializer.Serialize(config, JsonOptions));
     }
 
     private static void EnsureSchedules(AppConfig config)
