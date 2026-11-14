@@ -11,8 +11,10 @@ import argparse
 import json
 import os
 import shutil
+import shlex
 import stat
 import sys
+import re
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHARED_PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-profile", "profiles")
@@ -138,7 +140,11 @@ def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool =
         packages.extend(RENTAL_PACKAGES)
     all_packages = packages + EXCLUDED_PACKAGES
     pkg_str = " ".join(all_packages)
-    return f"make image PROFILE={profile_id} PACKAGES=\"{pkg_str}\" FILES=\"{files_dir}\""
+    return "make image PROFILE={} PACKAGES={} FILES={}".format(
+        shlex.quote(profile_id),
+        shlex.quote(pkg_str),
+        shlex.quote(os.path.abspath(files_dir)),
+    )
 
 
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
@@ -216,7 +222,7 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
         "flash_kb": flash_kb,
         "include_rental": include_rental,
         "staging_dir": staging_dir,
-        "imagebuilder_command": build_imagebuilder_cmd(profile, staging_dir, include_rental=include_rental)
+        "imagebuilder_command": build_imagebuilder_cmd(profile, os.path.abspath(staging_dir), include_rental=include_rental)
     }
 
 
@@ -226,16 +232,27 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
     target_arch = manifest["target_architecture"]
     cmd = manifest["imagebuilder_command"]
     staging_dir = os.path.abspath(manifest["staging_dir"])
-    target_prefix = target_arch.split("/")[0]
+    # Do not interpolate an untrusted/custom JSON profile into shell syntax.
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", profile_id):
+        raise ValueError("Invalid ImageBuilder profile ID")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", target_arch):
+        raise ValueError("Invalid ImageBuilder target/subtarget")
+    # This absolute path remains valid after the wrapper changes into ImageBuilder.
+    stage_arg = shlex.quote(staging_dir)
 
     content = f"""#!/bin/sh
-# Auto-generated OpenWrt ImageBuilder wrapper for {profile_id} ({target_arch})
+# Auto-generated nonproduction ImageBuilder wrapper for {profile_id} ({target_arch})
+# A checksum is not hardware or financial release acceptance.
 set -eu
 
 BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
+STAGING_DIR={stage_arg}
 if [ ! -f "$BUILD_DIR/Makefile" ]; then
-    echo "ERROR: ImageBuilder Makefile not found in $BUILD_DIR" >&2
-    echo "Set OPENWRT_IMAGEBUILDER_DIR to the extracted OpenWrt ImageBuilder root." >&2
+    echo "RELEASE-BLOCKED: ImageBuilder Makefile not found in $BUILD_DIR" >&2
+    exit 1
+fi
+if [ ! -d "$STAGING_DIR" ]; then
+    echo "RELEASE-BLOCKED: staged rootfs not found: $STAGING_DIR" >&2
     exit 1
 fi
 
@@ -244,14 +261,26 @@ cd "$BUILD_DIR"
 {cmd}
 
 echo "=== Verifying Built Firmware Binaries & Generating Manifest ==="
-BIN_DIR="$BUILD_DIR/bin/targets/{target_prefix}"
-if [ -d "$BIN_DIR" ]; then
-    find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$BUILD_DIR/RELEASE_MANIFEST.sha256"
-    echo "Release manifest written to $BUILD_DIR/RELEASE_MANIFEST.sha256"
-    cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
+BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
+if [ ! -d "$BIN_DIR" ]; then
+    echo "RELEASE-BLOCKED: target/subtarget image directory missing: $BIN_DIR" >&2
+    exit 1
 fi
-echo "Appliance build completed successfully."
+
+TMP_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.tmp"
+find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
+if [ ! -s "$TMP_MANIFEST" ]; then
+    rm -f "$TMP_MANIFEST"
+    echo "RELEASE-BLOCKED: no firmware images found for {target_arch}" >&2
+    exit 1
+fi
+LC_ALL=C sort "$TMP_MANIFEST" > "$BUILD_DIR/RELEASE_MANIFEST.sha256"
+rm -f "$TMP_MANIFEST"
+echo "Release manifest written to $BUILD_DIR/RELEASE_MANIFEST.sha256 (PREVIEW ONLY)"
+cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
+echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
 """
+
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(content)
     os.chmod(script_path, 0o755)
