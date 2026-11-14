@@ -110,8 +110,39 @@ public static class Storage
         AppConfig config;
         try
         {
-            config = JsonSerializer.Deserialize<AppConfig>(
-                File.ReadAllText(path), JsonOptions)
+            var json = File.ReadAllText(path);
+            using (var document = JsonDocument.Parse(json))
+            {
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException(
+                        "Existing SoftTimer configuration must be a JSON object.");
+
+                // Missing security fields otherwise deserialize to defaults,
+                // and MainForm may enter unrestricted admin maintenance.
+                // Reject ambiguous case-insensitive duplicates too: JsonOptions
+                // would otherwise silently choose one of the conflicting values.
+                var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var property in document.RootElement.EnumerateObject())
+                {
+                    if (!fields.Add(property.Name))
+                        throw new InvalidDataException(
+                            "Existing SoftTimer configuration has duplicate fields.");
+                }
+                foreach (var required in new[]
+                {
+                    "Enabled", "AdminPasswordHash", "AdminPasswordSalt",
+                    "AdminPasswordIterations", "CentralSharedKey",
+                    "BlazePwifiControllerId"
+                })
+                {
+                    if (!fields.Contains(required))
+                        throw new InvalidDataException(
+                            "Existing SoftTimer configuration is missing required field: " +
+                            required);
+                }
+            }
+
+            config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions)
                 ?? throw new InvalidDataException("Existing SoftTimer configuration is null.");
         }
         catch (JsonException ex)
@@ -120,6 +151,14 @@ public static class Storage
                 "Existing SoftTimer configuration is unreadable. Preserve original files; " +
                 "do not silently reset administrator or integration settings.", ex);
         }
+
+        var hasSalt = !string.IsNullOrWhiteSpace(config.AdminPasswordSalt);
+        var hasHash = !string.IsNullOrWhiteSpace(config.AdminPasswordHash);
+        if (config.AdminPasswordIterations <= 0 || hasSalt != hasHash ||
+            (config.Enabled && !config.HasAdminPassword))
+            throw new InvalidDataException(
+                "Existing SoftTimer configuration has invalid administrator credentials. " +
+                "Preserve it for supervised recovery.");
 
         // Identity/key generation is permitted only on genuine first install.
         // A damaged installed configuration must never silently rotate its
