@@ -13,12 +13,19 @@ bp_controller_line() {
 
 bp_controller_ensure() {
   id="$1"
-  bp_controller_init
-  grep -q "^$id$(printf '\t')" "$BP_CONTROLLERS" 2>/dev/null || {
-    printf '%s\t1\t1\t1\t1\t-1\t-1\t-1\t1\t1\t1\t40\t400\t6\t1\n' "$id" >> "$BP_CONTROLLERS"
-    chmod 600 "$BP_CONTROLLERS"
-    bp_durable_sync
-  }
+  bp_controller_init || return 8
+
+  # IDs may contain '.', which is a wildcard in the former grep pattern.
+  # Compare the complete first TSV field literally, just like controller_line.
+  # A registry read failure must not be mistaken for a missing identity.
+  known="$(LC_ALL=C awk -F '\t' -v d="$id" '$1==d {print "found"; exit}' "$BP_CONTROLLERS")" || return 8
+  [ -z "$known" ] || return 0
+
+  # Unknown controllers remain unprovisioned. Heartbeats cannot authorize
+  # coin acceptance; only explicit authenticated enrollment may do so.
+  printf '%s\t0\t0\t1\t1\t-1\t-1\t-1\t1\t1\t1\t40\t400\t6\t1\n' "$id" >> "$BP_CONTROLLERS" || return 8
+  chmod 600 "$BP_CONTROLLERS" || return 8
+  bp_durable_sync
 }
 
 bp_controller_bool() {

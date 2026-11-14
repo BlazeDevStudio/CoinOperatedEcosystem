@@ -4,6 +4,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 for test_file in \
   capabilities.sh \
+  controller_registration_defaults.sh \
   nft_atomic_setup.sh \
   nft_shutdown_guard.sh \
   nft_membership_failclosed.sh \
