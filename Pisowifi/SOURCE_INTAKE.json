@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "45951adee04658125216806aeffb8cd5227dd3ab",
+      "git_blob": "297ab832b55333f5d63a234915ac433c8b55afe6",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -631,6 +631,13 @@
       "mode": "100755",
       "github_actions_status": "CI_VERIFIED_GREEN_43643397472",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/vendo_controller_failclosed.sh",
+      "git_blob": "842ef74c6019c31a014d83d6e1564774ab0aac8b",
+      "mode": "100755",
+      "github_actions_status": "EXPECTED_RED_PENDING",
+      "hardware_evidence": false
     }
   ],
   "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
@@ -655,5 +662,6 @@
   "note_pass18": "2026-11-15 CI source+test commit ae64a496783d40a51d372c847ae1d2e6b8f67279 GH Actions #43634813512 COMPLETED SUCCESS and case-collision #43634813474 SUCCESS: real-sourced controller registration race GREEN, disjoint admin policy updates race GREEN, earlier failed-copy and default-deny tests GREEN, provenance/modes, POSIX and BusyBox syntax, all focused mocked suite and simulated member/rental/voucher journals passed. Test-first RED #43634427828 pinned and retained. fd4 registry guard still NOT a paid-admission witness, operator recovery/flash durability proof, or production financial acceptance. This commit is metadata-only follow-up, requires its own exact-head CI.",
   "note_pass19": "2026-11-15 test-first source-linked /tmp regression rejects symlinked controllers.tsv in init/ensure/set without touching external evidence, then confirms ordinary auto-created policy defaults disabled. Existing staged source EXPECTED RED until CI confirms; no multiuser TOCTOU or physical proof.",
   "note_pass20": "2026-11-15: negative source-linked test #43643240752 correctly exposed controller registry symlink acceptance; new source rejects nonregular/symlink path and guards helper entry. Controlled noncustomer /tmp test only, exact-head CI pending. Does not claim protected registry witness, multiuser symlink race proof, physical flash, or money admission.",
-  "note_pass21": "2026-11-15 exact-source commit 4c4565a2f6712e08318572325e96ee7e36856da4 GitHub Actions PisoWiFi #43643397472 COMPLETED SUCCESS. controller_registry_symlink.sh logs CONTROLLER_REGISTRY_SYMLINK_GREEN (link rejected, external sentinel unmodified); previous controller regression tests and full mocked member/rental/voucher journal + BusyBox suites also passed; case-collision #43643397491 SUCCESS. Source-linked RED #43643240752 retained. Mocked POSIX/ash CI only; commercial signer/witness, actual financial admission, real routers/power cuts not accepted. Metadata-head CI should be separately classified."
+  "note_pass21": "2026-11-15 exact-source commit 4c4565a2f6712e08318572325e96ee7e36856da4 GitHub Actions PisoWiFi #43643397472 COMPLETED SUCCESS. controller_registry_symlink.sh logs CONTROLLER_REGISTRY_SYMLINK_GREEN (link rejected, external sentinel unmodified); previous controller regression tests and full mocked member/rental/voucher journal + BusyBox suites also passed; case-collision #43643397491 SUCCESS. Source-linked RED #43643240752 retained. Mocked POSIX/ash CI only; commercial signer/witness, actual financial admission, real routers/power cuts not accepted. Metadata-head CI should be separately classified.",
+  "note_pass22": "2026-11-15 test-first real staged Vendo CGI regression: symlinked controller registry, healthy/default-disabled registration, late sourced controller JSON read EIO, and heartbeat metadata rename fault must never return signed OK; synthetic UCI and disposable state only. Expected source RED, CI pending; no paid acceptance."
 }
