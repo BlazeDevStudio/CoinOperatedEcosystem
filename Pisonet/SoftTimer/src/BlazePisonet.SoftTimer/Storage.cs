@@ -174,6 +174,17 @@ public static class Storage
         return config;
     }
 
+    // UI editing and credential rotation must never mutate the live config
+    // before an acknowledged durable save. JSON cloning also copies nested
+    // schedule/day and blocked-process collections (not merely their refs).
+    internal static AppConfig CloneConfig(AppConfig original)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        return JsonSerializer.Deserialize<AppConfig>(
+            JsonSerializer.Serialize(original, JsonOptions), JsonOptions)
+            ?? throw new InvalidDataException("SoftTimer configuration clone is null.");
+    }
+
     public static void SaveConfig(AppConfig config) =>
         SaveConfigToPath(ConfigPath, config);
 
