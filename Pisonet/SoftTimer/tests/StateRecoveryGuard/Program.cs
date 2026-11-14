@@ -137,6 +137,31 @@ try
         Passwords.VerifyAdminPassword(reloadedAdmin, "disposable-test-credential") &&
         reloadedAdmin.CentralSharedKey == originalKey,
         "valid configured machine must retain administrator access and identity");
+    // UI edits and admin credential changes must stage a deep copy.
+    // This source-linked helper is used by the actual Windows controller/UI.
+    var draft = Storage.CloneConfig(validAdmin);
+    draft.Enabled = false;
+    draft.ShopName = "unsaved-preview";
+    draft.BlockedProcesses.Clear();
+    draft.NotificationSchedules[0].Name = "unsaved-schedule";
+    Require(validAdmin.Enabled && validAdmin.ShopName != "unsaved-preview" &&
+        validAdmin.BlockedProcesses.Count > 0 &&
+        validAdmin.NotificationSchedules[0].Name != "unsaved-schedule",
+        "nested UI draft must not mutate live configuration or policy");
+
+    // An interrupted write must preserve both the published configuration
+    // and the previously committed file, not fabricate a successful apply.
+    var priorConfigBytes = File.ReadAllText(configPath);
+    File.WriteAllText(configPath + ".tmp", "pending-config-write");
+    MustReject(() => Storage.SaveConfigToPath(configPath, draft),
+        "failed staged config write");
+    Require(File.ReadAllText(configPath) == priorConfigBytes &&
+        File.ReadAllText(configPath + ".tmp") == "pending-config-write" &&
+        validAdmin.Enabled && validAdmin.ShopName != "unsaved-preview",
+        "failed config save must leave installed and live settings unchanged");
+    File.Delete(configPath + ".tmp");
+    Console.WriteLine("CONFIG_STAGED_UPDATE_PASS");
+
     Console.WriteLine("CONFIG_ADMIN_SCHEMA_GUARD_PASS");
 
     Console.WriteLine("CONFIG_FAIL_CLOSED_RECOVERY_PASS");
