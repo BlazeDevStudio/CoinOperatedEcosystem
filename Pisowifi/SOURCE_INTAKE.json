@@ -615,14 +615,14 @@
       "path": "tests/controller_registration_race.sh",
       "git_blob": "1c74e538e72e64525d587a14a42a3a1dfe5d5a80",
       "mode": "100755",
-      "github_actions_status": "RED_CONFIRMED_43634427828__FIX_CI_PENDING",
+      "github_actions_status": "CI_VERIFIED_GREEN_43634597297_AND_43634813512",
       "hardware_evidence": false
     },
     {
       "path": "tests/controller_registry_set_race.sh",
       "git_blob": "229188e59dc6f3b261598f06842a938534e2cfc8",
       "mode": "100755",
-      "github_actions_status": "PENDING",
+      "github_actions_status": "CI_VERIFIED_GREEN_43634813512",
       "hardware_evidence": false
     }
   ],
@@ -644,5 +644,6 @@
   "note_pass14": "2026-11-15 exact source+test SHA 98075a22470c0be991978469d8908efb75b91328 GitHub Actions #43633448039 COMPLETED SUCCESS: controller_registration_defaults PASS, controller_registry_write_fault GREEN, provenance/modes and POSIX+BusyBox syntax PASS, full POSIX mocked integration and BusyBox money journal simulated-fault suites PASS. Historical test-first RED #43633308345 preserved. Does NOT attest hardware flash, independent antirollback witness or signed financial admission. This metadata-only checkpoint must be checked independently at its own HEAD.",
   "note_pass15": "2026-11-15 test-first regression candidate: actual sourced controller_ensure with delayed first awk lookup, two concurrent processes, and exact TSV row count/disabled assertions. Existing code lacks shared lock and is EXPECTED RED until tested. No hardware, financial authority or power-loss acceptance.",
   "note_pass16": "2026-11-15 actual source-linked concurrency RED at #43634427828 on test-only fc039686: duplicate rows from racing controller_ensure. fd4 controller-admission.lock now guards ensure and set read/modify/write in derived source. This is ONLY a registry mutex, not a port of CORE #252 paid-admission authorization/witness. Exact-head CI verification pending.",
-  "note_pass17": "2026-11-15: first source SHA 7d481d1d785d8d7b7ad1931f83b23479e888f3d3 completed actual GH Actions CI #43634597297 SUCCESS with CONTROLLER_REGISTRATION_RACE_GREEN and full focused mock suites. New additional source-linked regression controller_registry_set_race.sh checks two concurrent disjoint admin controller_set calls survive as separate rev=2 enabled/coin_enabled=1 rows; exact-head CI pending."
+  "note_pass17": "2026-11-15: first source SHA 7d481d1d785d8d7b7ad1931f83b23479e888f3d3 completed actual GH Actions CI #43634597297 SUCCESS with CONTROLLER_REGISTRATION_RACE_GREEN and full focused mock suites. New additional source-linked regression controller_registry_set_race.sh checks two concurrent disjoint admin controller_set calls survive as separate rev=2 enabled/coin_enabled=1 rows; exact-head CI pending.",
+  "note_pass18": "2026-11-15 CI source+test commit ae64a496783d40a51d372c847ae1d2e6b8f67279 GH Actions #43634813512 COMPLETED SUCCESS and case-collision #43634813474 SUCCESS: real-sourced controller registration race GREEN, disjoint admin policy updates race GREEN, earlier failed-copy and default-deny tests GREEN, provenance/modes, POSIX and BusyBox syntax, all focused mocked suite and simulated member/rental/voucher journals passed. Test-first RED #43634427828 pinned and retained. fd4 registry guard still NOT a paid-admission witness, operator recovery/flash durability proof, or production financial acceptance. This commit is metadata-only follow-up, requires its own exact-head CI."
 }
