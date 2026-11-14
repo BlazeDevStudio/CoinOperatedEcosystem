@@ -256,12 +256,28 @@ if [ ! -d "$STAGING_DIR" ]; then
     exit 1
 fi
 
+# A reused ImageBuilder may report success without writing a new binary.
+# Never certify files or a checksum manifest left by an earlier invocation.
+# Refuse stale data without deleting or modifying an operator's files.
+BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
+OUT_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256"
+if [ -e "$OUT_MANIFEST" ] || [ -L "$OUT_MANIFEST" ]; then
+    echo "RELEASE-BLOCKED: previous release manifest exists: $OUT_MANIFEST; use a clean ImageBuilder workspace" >&2
+    exit 1
+fi
+if [ -d "$BIN_DIR" ]; then
+    PRIOR_IMAGE=$(find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -print -quit)
+    if [ -n "$PRIOR_IMAGE" ]; then
+        echo "RELEASE-BLOCKED: stale firmware images exist: $PRIOR_IMAGE; use a clean ImageBuilder workspace" >&2
+        exit 1
+    fi
+fi
+
 echo "=== Building Appliance Firmware for {profile_id} ==="
 cd "$BUILD_DIR"
 {cmd}
 
 echo "=== Verifying Built Firmware Binaries & Generating Manifest ==="
-BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
 if [ ! -d "$BIN_DIR" ]; then
     echo "RELEASE-BLOCKED: target/subtarget image directory missing: $BIN_DIR" >&2
     exit 1
