@@ -174,12 +174,7 @@ public static class Storage
 
         var state = JsonSerializer.Deserialize<RuntimeState>(json, JsonOptions)
             ?? throw new InvalidDataException("Paid state JSON is null.");
-        if (state.AppliedEventIds is null ||
-            state.Members is null || state.RemoteMembers is null ||
-            state.RemainingSeconds < 0 || state.SalesPulseCount < 0 ||
-            state.RemoteMemberRevision < 0 ||
-            state.AppliedEventIds.Any(string.IsNullOrWhiteSpace))
-            throw new InvalidDataException("Paid state has invalid accounting fields.");
+        ValidateFinancialState(state);
         // Preserve case-insensitive event and member identity after JSON
         // round-trip. Ambiguous mixed-case member duplicates must fail closed.
         state.AppliedEventIds = state.AppliedEventIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -205,6 +200,32 @@ public static class Storage
         return state;
     }
 
+    // Shared startup/write guard: never deserialize or persist member balances
+    // that could be mistaken for usable prepaid credit on later operations.
+    private static void ValidateFinancialState(RuntimeState state)
+    {
+        if (state.RemainingSeconds < 0 || state.SalesPulseCount < 0 ||
+            state.RemoteMemberRevision < 0 || state.AppliedEventIds is null ||
+            state.Members is null || state.RemoteMembers is null ||
+            state.AppliedEventIds.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("Paid state has invalid accounting fields.");
+
+        ValidateMemberAccounting(state.Members, "local");
+        ValidateMemberAccounting(state.RemoteMembers, "remote");
+    }
+
+    private static void ValidateMemberAccounting(
+        Dictionary<string, MemberAccount> accounts, string scope)
+    {
+        foreach (var (key, member) in accounts)
+        {
+            if (string.IsNullOrWhiteSpace(key) || member is null ||
+                member.BankedSeconds < 0 || member.Revision < 0)
+                throw new InvalidDataException(
+                    "Paid state has invalid " + scope + " member accounting fields.");
+        }
+    }
+
     public static void SaveState(RuntimeState state) =>
         SaveStateToPath(StatePath, state, DateTimeOffset.UtcNow);
 
@@ -213,11 +234,7 @@ public static class Storage
     internal static void SaveStateToPath(string path, RuntimeState state, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(state);
-        if (state.RemainingSeconds < 0 || state.SalesPulseCount < 0 ||
-            state.RemoteMemberRevision < 0 || state.AppliedEventIds is null ||
-            state.Members is null || state.RemoteMembers is null ||
-            state.AppliedEventIds.Any(string.IsNullOrWhiteSpace))
-            throw new InvalidDataException("Cannot persist invalid financial state.");
+        ValidateFinancialState(state);
 
         // Never silently truncate historical event identities. Removing an
         // old ID permits a replay of already-paid coin/member events. A

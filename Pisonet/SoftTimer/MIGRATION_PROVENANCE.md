@@ -72,3 +72,6 @@ Imported the SetupAPI / Win32 P/Invoke platform isolation from historical `Blaze
 - `tests/NativeComInterfaceHandleLab/NativeComInterfaceHandleLab.csproj` (`82c6805cd740667c8dbff09e1cde5d57e56adc0b`): links `WindowsNativeComPlatform.cs` alongside `NativeComInterfaceTransport.cs`.
 Physical device attestation remains unproven and exact-device paid coin admission remains disabled (**NO-GO**).
 
+## Member accounting validation cleanup (2026-11-15, isolated review)
+
+A child review branch of the Windows M4 migration (`cleanup/pisonet-setupapi-platform-boundary-20261111` at `3ef98d426f0c2ab04928293917341275b78f47ac`) centralizes the duplicated load/save financial-state checks into `Storage.ValidateFinancialState`. It additionally rejects null, blank-key, negative-balance, or negative-revision local/remote member entries before any paid state is loaded or written. `tests/StateRecoveryGuard` now source-links those negative cases with disposable files. This is a **destination-only review change**, not a new upstream import, hardware validation, merge, or release. See `docs/STATE_RECOVERY_TROUBLESHOOTING.md` for human diagnostics; physical and production financial acceptance remain NO-GO.
