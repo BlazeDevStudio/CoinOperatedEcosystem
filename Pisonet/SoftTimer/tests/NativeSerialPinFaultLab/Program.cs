@@ -519,6 +519,61 @@ if (manualDiagnosticPulses != 1)
     throw new Exception("ManualPort diagnostic pulse positive control broken");
 SerialPort.PhysicalPnpAtOpen = null;
 
+// Source-linked failed-initial-status startup contract. An opened port
+// without a trustworthy first modem level must not commit its COM selection
+// or auto-pin controller identity to the active AppConfig, even if the opened
+// HANDLE identity itself was proven. Retry with a valid status must still work.
+SerialPort.InitialCtsLevel = false;
+var failedSampleManual = new AppConfig {
+    SerialSelection = SerialSelectionMode.ManualPort, ManualComPort = "COM9",
+    LastKnownComPort = "COM77", CoinInputSignal = ModemSignal.Cts
+};
+using (var subject = new SerialHardware()) {
+    SerialPort.FailInitialCtsReadOnNextPort = true;
+    if (subject.Connect(failedSampleManual))
+        throw new Exception("Initial CTS read error unexpectedly connected manual port");
+    var failed = SerialPort.LastCreated ??
+        throw new Exception("Failed initial-status COM candidate absent");
+    if (failedSampleManual.LastKnownComPort != "COM77" ||
+        subject.IsConnected || !failed.WasDisposed || failed.PinSubscriberCount != 0)
+        throw new Exception("Failed initial status altered saved COM or leaked adapter");
+    if (!subject.Connect(failedSampleManual) ||
+        failedSampleManual.LastKnownComPort != "COM9")
+        throw new Exception("Valid manual reconnect did not restore committed COM");
+}
+
+System.Management.ManagementObjectSearcher.FakeDevices = new[] {
+    new System.Management.ManagementObject(
+        "Coin Adapter (COM9)", "Lab", openPinnedPnp, "COM9")
+};
+SerialPort.PhysicalPnpAtOpen = openPinnedPnp;
+var failedSampleExact = new AppConfig {
+    SerialSelection = SerialSelectionMode.ExactDevice,
+    PreferredUsbSerial = "COIN-A", PreferredVid = "1234", PreferredPid = "5678",
+    LastKnownComPort = "COM77", ManualComPort = "COM77",
+    CoinInputSignal = ModemSignal.Cts
+};
+using (var subject = new SerialHardware()) {
+    SerialPort.FailInitialCtsReadOnNextPort = true;
+    if (subject.Connect(failedSampleExact))
+        throw new Exception("Initial CTS error unexpectedly accepted exact adapter");
+    var failed = SerialPort.LastCreated ??
+        throw new Exception("Failed exact-device COM candidate absent");
+    if (failedSampleExact.LastKnownComPort != "COM77" ||
+        failedSampleExact.ManualComPort != "COM77" ||
+        !string.IsNullOrEmpty(failedSampleExact.PreferredPnpDeviceId) ||
+        subject.IsConnected || !failed.WasDisposed || failed.PinSubscriberCount != 0)
+        throw new Exception("Failed CTS initial sample pinned controller to rejected adapter");
+    if (!subject.Connect(failedSampleExact) ||
+        failedSampleExact.PreferredPnpDeviceId != openPinnedPnp ||
+        failedSampleExact.LastKnownComPort != "COM9")
+        throw new Exception("Verified status retry failed to pin exact adapter");
+}
+System.Management.ManagementObjectSearcher.FakeDevices =
+    Array.Empty<System.Management.ManagementObject>();
+SerialPort.PhysicalPnpAtOpen = null;
+Console.WriteLine("SERIAL_FAILED_STARTUP_CONFIG_UNCHANGED_PASS");
+
 // Source-linked external board status contract. A failed CTS read must be
 // UNKNOWN, not a LOW value that an active-low timer would invert to unlocked.
 SerialPort.InitialCtsLevel = true;
