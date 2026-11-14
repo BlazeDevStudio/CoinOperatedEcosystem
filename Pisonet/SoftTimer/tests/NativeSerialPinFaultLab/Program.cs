@@ -548,6 +548,11 @@ using (var board = new SerialHardware())
 }
 Console.WriteLine("EXTERNAL_BOARD_SIGNAL_UNKNOWN_DENIED_PASS: high/low/error/RI/disconnect");
 
+// QA #164: verify the actual downstream controller still denies an UNKNOWN
+// modem reading before any active-low polarity inversion. Source-static only;
+// the real SerialHardware fake-OS behavioral suite above remains separate.
+ExternalBoardAuthoritySourceGuard.Run();
+
 var cases = new (string Name, int Actual, int Expected)[] {
     ("exact_stable_opened_handle_positive_coin", stableExactOpenedHandleCoins, 1),
     ("manual_com_without_opened_handle_proof_denies_paid_claim", manualUnverifiedPaidClaims, 0),
