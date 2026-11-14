@@ -58,3 +58,7 @@ Expected source-linked recovery output includes `CONFIG_FAIL_CLOSED_RECOVERY_PAS
 Record exact repository, commit SHA, branch/PR, Windows version and .NET SDK, test command, failing log step, synthetic-versus-real device evidence and whether customer money/hardware was involved. Redact `CentralSharedKey`, admin/member password hashes and salts, usernames, member tokens and serial identifiers before sharing outside authorized troubleshooting. Preserve raw originals in approved private evidence storage; provide only sanitized excerpts to public issues.
 
 **Still blocked:** independent ledger/rollback witness, physical USB-RS232/voltage-correct coin acceptance, crash/power-cut endurance, installer lifecycle, and signed production admission.
+
+## Configuration preview and Save & Apply safety
+
+The Windows settings UI must edit a deep `Storage.CloneConfig` snapshot, not `AppController.Config`. The **Bind Exact Device**, **Pair Timer**, test-warning and serial reconnect preview paths stage selections locally. Only a successful Save & Apply commits their settings; failed validation or `config.json.tmp` write errors must leave the active configuration untouched. `AppController.ApplyConfig` saves before publishing a new runtime policy, and administrator-password changes likewise save a staged copy before updating the security controller. The source-linked `CONFIG_STAGED_UPDATE_PASS` fixture covers clone isolation and rejected writes; it does not exercise a real Windows lock screen or USB adapter.
