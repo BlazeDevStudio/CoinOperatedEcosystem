@@ -34,7 +34,7 @@ The production Storage class currently uses `%ProgramData%\BlazeSystems\BlazePis
 | Parseable JSON missing required accounting fields | `LoadStateFromPath` | Preserve original file and compare to the prior verified schema |
 | Negative time, sales count, replay identity or member bank/revision | `ValidateFinancialState` | Do not normalize or clamp; record exact error and review the source of corruption |
 | Pending write after a crash | `AtomicWrite` / startup decoder | Stop paid intake; reconcile pending and committed evidence offline |
-| Corrupt installed config or missing coordinator key/controller ID | `LoadConfigFromPath` | Do not regenerate keys; preserve `config.json/.bak/.tmp`, stop startup and review authorized recovery |
+| Corrupt installed config, missing admin security field, duplicate JSON setting, or missing coordinator identity | `LoadConfigFromPath` | Preserve `config.json/.bak/.tmp`, stop startup, and review authorized recovery; do not regenerate credentials |
 | Unknown or disconnected COM device | Native serial ownership layer | Treat device as unavailable; do not use a COM-name-only fallback |
 | Credit persistence fault latched | `TimerEngine` | Do not automatically retry a consumed coin or remove the customer lock |
 
