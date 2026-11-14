@@ -6,6 +6,7 @@ for test_file in \
   capabilities.sh \
   controller_registration_defaults.sh \
   controller_registry_write_fault.sh \
+  controller_registration_race.sh \
   nft_atomic_setup.sh \
   nft_shutdown_guard.sh \
   nft_membership_failclosed.sh \

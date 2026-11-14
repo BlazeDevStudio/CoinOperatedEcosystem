@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "fbc810665a0551bf2cacfb7e0ef1f72e5bf4868c",
+      "git_blob": "d6b35468c889a84e11d3898f533c92fd2c8d6bff",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -610,6 +610,13 @@
       "mode": "100755",
       "github_actions_status": "CI_VERIFIED_GREEN_43633448039",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/controller_registration_race.sh",
+      "git_blob": "1c74e538e72e64525d587a14a42a3a1dfe5d5a80",
+      "mode": "100755",
+      "github_actions_status": "EXPECTED_RED_PENDING",
+      "hardware_evidence": false
     }
   ],
   "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
@@ -627,5 +634,6 @@
   "note_pass11": "2026-11-15: exact-head PR #29 CI 43632501488 correctly failed manifest provenance because changed tests/run_focus.sh was not SHA-synchronized; update derived_tests hash to d1defb20f640d134689e0020a4f9890f7cb7ada9. Re-run required; prior failure must not be called GREEN.",
   "note_pass12": "2026-11-15 test-first EXPECTED RED: source-linked disposable failure-injection test controller_registry_write_fault.sh asserts bp_controller_set denies a failed awk copy and preserves all registry rows. It is an intentional failing diagnostic until the separate CORE writer fix is applied. This is NOT production tested.",
   "note_pass13": "2026-11-15: exact original source RED run #43633308345: real-sourced controller_set ACKed failed awk registry-copy. New controller source now checks awk, append, chmod, rename and optional durability status; exact-head CI pending. No fd4, witness, migration or hardware acceptance claimed.",
-  "note_pass14": "2026-11-15 exact source+test SHA 98075a22470c0be991978469d8908efb75b91328 GitHub Actions #43633448039 COMPLETED SUCCESS: controller_registration_defaults PASS, controller_registry_write_fault GREEN, provenance/modes and POSIX+BusyBox syntax PASS, full POSIX mocked integration and BusyBox money journal simulated-fault suites PASS. Historical test-first RED #43633308345 preserved. Does NOT attest hardware flash, independent antirollback witness or signed financial admission. This metadata-only checkpoint must be checked independently at its own HEAD."
+  "note_pass14": "2026-11-15 exact source+test SHA 98075a22470c0be991978469d8908efb75b91328 GitHub Actions #43633448039 COMPLETED SUCCESS: controller_registration_defaults PASS, controller_registry_write_fault GREEN, provenance/modes and POSIX+BusyBox syntax PASS, full POSIX mocked integration and BusyBox money journal simulated-fault suites PASS. Historical test-first RED #43633308345 preserved. Does NOT attest hardware flash, independent antirollback witness or signed financial admission. This metadata-only checkpoint must be checked independently at its own HEAD.",
+  "note_pass15": "2026-11-15 test-first regression candidate: actual sourced controller_ensure with delayed first awk lookup, two concurrent processes, and exact TSV row count/disabled assertions. Existing code lacks shared lock and is EXPECTED RED until tested. No hardware, financial authority or power-loss acceptance."
 }
