@@ -8,6 +8,7 @@ for test_file in \
   controller_registry_write_fault.sh \
   controller_registration_race.sh \
   controller_registry_set_race.sh \
+  controller_registry_symlink.sh \
   nft_atomic_setup.sh \
   nft_shutdown_guard.sh \
   nft_membership_failclosed.sh \

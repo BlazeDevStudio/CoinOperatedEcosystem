@@ -543,7 +543,7 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "cccd2ab5554c9d4f05a4c0cafc27669805e18a9e",
+      "git_blob": "45951adee04658125216806aeffb8cd5227dd3ab",
       "mode": "100755",
       "github_actions_status": "NOT_RUN",
       "hardware_evidence": false
@@ -624,6 +624,13 @@
       "mode": "100755",
       "github_actions_status": "CI_VERIFIED_GREEN_43634813512",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/controller_registry_symlink.sh",
+      "git_blob": "ce15969f9f15b51b44a28fb5d6f2a69e536920bf",
+      "mode": "100755",
+      "github_actions_status": "EXPECTED_RED_PENDING",
+      "hardware_evidence": false
     }
   ],
   "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
@@ -645,5 +652,6 @@
   "note_pass15": "2026-11-15 test-first regression candidate: actual sourced controller_ensure with delayed first awk lookup, two concurrent processes, and exact TSV row count/disabled assertions. Existing code lacks shared lock and is EXPECTED RED until tested. No hardware, financial authority or power-loss acceptance.",
   "note_pass16": "2026-11-15 actual source-linked concurrency RED at #43634427828 on test-only fc039686: duplicate rows from racing controller_ensure. fd4 controller-admission.lock now guards ensure and set read/modify/write in derived source. This is ONLY a registry mutex, not a port of CORE #252 paid-admission authorization/witness. Exact-head CI verification pending.",
   "note_pass17": "2026-11-15: first source SHA 7d481d1d785d8d7b7ad1931f83b23479e888f3d3 completed actual GH Actions CI #43634597297 SUCCESS with CONTROLLER_REGISTRATION_RACE_GREEN and full focused mock suites. New additional source-linked regression controller_registry_set_race.sh checks two concurrent disjoint admin controller_set calls survive as separate rev=2 enabled/coin_enabled=1 rows; exact-head CI pending.",
-  "note_pass18": "2026-11-15 CI source+test commit ae64a496783d40a51d372c847ae1d2e6b8f67279 GH Actions #43634813512 COMPLETED SUCCESS and case-collision #43634813474 SUCCESS: real-sourced controller registration race GREEN, disjoint admin policy updates race GREEN, earlier failed-copy and default-deny tests GREEN, provenance/modes, POSIX and BusyBox syntax, all focused mocked suite and simulated member/rental/voucher journals passed. Test-first RED #43634427828 pinned and retained. fd4 registry guard still NOT a paid-admission witness, operator recovery/flash durability proof, or production financial acceptance. This commit is metadata-only follow-up, requires its own exact-head CI."
+  "note_pass18": "2026-11-15 CI source+test commit ae64a496783d40a51d372c847ae1d2e6b8f67279 GH Actions #43634813512 COMPLETED SUCCESS and case-collision #43634813474 SUCCESS: real-sourced controller registration race GREEN, disjoint admin policy updates race GREEN, earlier failed-copy and default-deny tests GREEN, provenance/modes, POSIX and BusyBox syntax, all focused mocked suite and simulated member/rental/voucher journals passed. Test-first RED #43634427828 pinned and retained. fd4 registry guard still NOT a paid-admission witness, operator recovery/flash durability proof, or production financial acceptance. This commit is metadata-only follow-up, requires its own exact-head CI.",
+  "note_pass19": "2026-11-15 test-first source-linked /tmp regression rejects symlinked controllers.tsv in init/ensure/set without touching external evidence, then confirms ordinary auto-created policy defaults disabled. Existing staged source EXPECTED RED until CI confirms; no multiuser TOCTOU or physical proof."
 }
