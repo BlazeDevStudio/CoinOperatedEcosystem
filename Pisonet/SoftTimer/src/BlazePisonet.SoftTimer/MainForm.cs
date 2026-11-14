@@ -5,6 +5,10 @@ namespace BlazePisonet.SoftTimer;
 public sealed class MainForm : Form
 {
     private readonly AppController _controller;
+    // These selections remain drafts until Save & Apply persists them.
+    private SerialDeviceInfo? _pendingExactDevice;
+    private string? _pendingTimerMac;
+    private string? _pendingTimerName;
     private readonly Panel _content = new() { Dock = DockStyle.Fill, Padding = new Padding(22), AutoScroll = true };
     private readonly Dictionary<string, Control> _pages = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Button> _nav = new(StringComparer.OrdinalIgnoreCase);
@@ -533,7 +537,9 @@ public sealed class MainForm : Form
 
     private AppConfig ReadUiIntoConfig(bool validate)
     {
-        var c = _controller.Config;
+        // Preview, reconnect and failed Save & Apply must never alter the
+        // controller's active settings or shared authentication credentials.
+        var c = Storage.CloneConfig(_controller.Config);
         c.Enabled = _enabled.Checked;
         c.TimerSource = SelectedEnum(_timerSource, c.TimerSource);
         c.CoinTopology = SelectedEnum(_topology, c.CoinTopology);
@@ -589,6 +595,14 @@ public sealed class MainForm : Form
         c.Banner2 = _banner2.Text.Trim();
         c.WallpaperPath = string.IsNullOrWhiteSpace(_wallpaper.Text) ? null : _wallpaper.Text.Trim();
         c.NotificationSchedules = CloneSchedules(_schedules);
+        if (_pendingExactDevice is not null &&
+            c.SerialSelection == SerialSelectionMode.ExactDevice)
+            SerialDiscovery.BindExactDevice(c, _pendingExactDevice);
+        if (_pendingTimerMac is not null)
+        {
+            c.BlazeTimerMac = _pendingTimerMac;
+            c.BlazeTimerName = _pendingTimerName ?? string.Empty;
+        }
         if (validate && c.Enabled && !c.HasAdminPassword) throw new InvalidOperationException("Set an administrator password before enabling SoftTimer.");
         if (validate && c.BlazePwifiMemberAuthorityEnabled)
         {
@@ -607,6 +621,9 @@ public sealed class MainForm : Form
         {
             var config = ReadUiIntoConfig(true);
             _controller.ApplyConfig(config);
+            _pendingExactDevice = null;
+            _pendingTimerMac = null;
+            _pendingTimerName = null;
             RefreshStatus();
             MessageBox.Show("Configuration saved and applied.", "BlazePisonet SoftTimer", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
@@ -629,7 +646,7 @@ public sealed class MainForm : Form
     private void BindExactDevice()
     {
         if (_serialDevices.SelectedItem is not SerialDeviceItem item) { MessageBox.Show("Select a serial device first."); return; }
-        SerialDiscovery.BindExactDevice(_controller.Config, item.Device);
+        _pendingExactDevice = item.Device;
         _serialMode.SelectedItem = SerialSelectionMode.ExactDevice;
         _serialStatus.Text = $"Bound to {item.Device.Display}\nPnP: {item.Device.PnpDeviceId}\nVID/PID: {item.Device.Vid}/{item.Device.Pid}";
     }
@@ -648,9 +665,8 @@ public sealed class MainForm : Form
     {
         if (_blazeDevices.SelectedItem is not BlazeTimerItem item) return;
         _blazeAddress.Text = item.Device.Address;
-        _controller.Config.BlazeTimerAddress = item.Device.Address;
-        _controller.Config.BlazeTimerMac = item.Device.MacAddress;
-        _controller.Config.BlazeTimerName = item.Device.Name;
+        _pendingTimerMac = item.Device.MacAddress;
+        _pendingTimerName = item.Device.Name;
         _timerSource.SelectedItem = TimerSourceMode.BlazePisonetTimer;
         MessageBox.Show($"Paired with {item.Device.Name}. Save & Apply to activate the wireless timer bridge.");
     }
