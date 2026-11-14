@@ -151,7 +151,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
 
-    def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False):
+    def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
+                               preexisting_image=False, preexisting_manifest=False,
+                               manifest_symlink=False):
         """Execute a generated wrapper against a disposable local Makefile."""
         profile = load_profile("gl-mt1300")
         stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
@@ -171,6 +173,22 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             recipe += '\t@printf "SYNTHETIC-NOT-FIRMWARE" > ' + image_subpath + '\n'
         with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
+
+        if preexisting_image:
+            stale_image = os.path.join(fake_builder, "bin", "targets", "ramips", "mt7621", "old.bin")
+            os.makedirs(os.path.dirname(stale_image), exist_ok=True)
+            with open(stale_image, "wb") as fp:
+                fp.write(b"OLD-NOT-CURRENT-IMAGE")
+        if preexisting_manifest or manifest_symlink:
+            manifest_path = os.path.join(fake_builder, "RELEASE_MANIFEST.sha256")
+            if manifest_symlink:
+                outside = os.path.join(self.temp_dir, "outside-manifest.txt")
+                with open(outside, "w", encoding="utf-8") as fp:
+                    fp.write("DO-NOT-OVERWRITE\n")
+                os.symlink(outside, manifest_path)
+            else:
+                with open(manifest_path, "w", encoding="utf-8") as fp:
+                    fp.write("PRIOR-RUN-MANIFEST\n")
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
@@ -198,6 +216,38 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE-BLOCKED: target/subtarget image directory missing", result.stderr)
+
+    def test_generated_wrapper_denies_stale_image_from_prior_build(self):
+        # GNU Make reports success without generating a new image. Old
+        # binaries must never be accepted as this run's deliverable.
+        result, builder, _, _ = self._run_mock_imagebuilder(preexisting_image=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: stale firmware images", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(builder, "bin", "targets", "ramips", "mt7621", "old.bin")
+        ), "release guard must not delete prior operator data")
+
+    def test_generated_wrapper_denies_previous_manifest_without_clobber(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
+            preexisting_manifest=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: previous release manifest", result.stderr)
+        with open(os.path.join(builder, "RELEASE_MANIFEST.sha256"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "PRIOR-RUN-MANIFEST\n")
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")
+        ), "the build must not execute after an existing manifest is detected")
+
+    def test_generated_wrapper_denies_symlinked_manifest(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(manifest_symlink=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: previous release manifest", result.stderr)
+        with open(os.path.join(self.temp_dir, "outside-manifest.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "DO-NOT-OVERWRITE\n")
+        self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
     def test_generated_wrapper_relative_stage_uses_absolute_path(self):
         result, builder, wrapper, stage_absolute = self._run_mock_imagebuilder(
