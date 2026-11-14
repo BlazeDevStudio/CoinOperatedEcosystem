@@ -603,6 +603,10 @@ using (var board = new SerialHardware())
 }
 Console.WriteLine("EXTERNAL_BOARD_SIGNAL_UNKNOWN_DENIED_PASS: high/low/error/RI/disconnect");
 
+// PHX-QA #164: verify the real downstream controller denies unknown status
+// before polarity inversion. Separate from fake OS behavior above; static only.
+ExternalBoardAuthoritySourceGuard.Run();
+
 var cases = new (string Name, int Actual, int Expected)[] {
     ("exact_stable_opened_handle_positive_coin", stableExactOpenedHandleCoins, 1),
     ("manual_com_without_opened_handle_proof_denies_paid_claim", manualUnverifiedPaidClaims, 0),
