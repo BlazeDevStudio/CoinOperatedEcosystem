@@ -20,6 +20,62 @@ var path = Path.Combine(root, "state.json");
 Directory.CreateDirectory(root);
 try
 {
+    // Same production config loader with disposable paths: no installed
+    // ProgramData files, live COM ports or operator credentials are touched.
+    var configPath = Path.Combine(root, "config.json");
+    var initialConfig = Storage.LoadConfigFromPath(configPath);
+    var originalConfigText = File.ReadAllText(configPath);
+    var originalKey = initialConfig.CentralSharedKey;
+    Require(!initialConfig.Enabled && !string.IsNullOrWhiteSpace(originalKey) &&
+        !string.IsNullOrWhiteSpace(initialConfig.BlazePwifiControllerId),
+        "first install must persist disabled config with stable identity");
+    Require(Storage.LoadConfigFromPath(configPath).CentralSharedKey == originalKey,
+        "normal restart must preserve coordinator key");
+
+    File.WriteAllText(configPath, "{");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "corrupt installed configuration must never reset admin or secrets");
+    Require(File.ReadAllText(configPath) == "{",
+        "corrupt installed configuration must be preserved unchanged");
+    File.Delete(configPath);
+
+    File.WriteAllText(configPath + ".bak", originalConfigText);
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "missing installed config with backup evidence");
+    Require(!File.Exists(configPath),
+        "missing primary with backup must not bootstrap a new identity");
+    File.Delete(configPath + ".bak");
+
+    File.WriteAllText(configPath + ".tmp", "uncommitted-config");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "missing installed config with pending write");
+    File.Delete(configPath + ".tmp");
+
+    File.WriteAllText(configPath, originalConfigText);
+    File.WriteAllText(configPath + ".tmp", "uncommitted-secret-update");
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "parseable primary with unresolved key change");
+    Require(File.ReadAllText(configPath) == originalConfigText &&
+        File.ReadAllText(configPath + ".tmp") == "uncommitted-secret-update",
+        "pending configuration evidence must survive rejection");
+    File.Delete(configPath + ".tmp");
+
+    var invalidIdentity = JsonSerializer.Deserialize<AppConfig>(
+        originalConfigText, Storage.JsonOptions)!;
+    invalidIdentity.CentralSharedKey = string.Empty;
+    File.WriteAllText(configPath, JsonSerializer.Serialize(invalidIdentity, Storage.JsonOptions));
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "installed config missing stable coordinator secret");
+    invalidIdentity.CentralSharedKey = originalKey;
+    invalidIdentity.BlazePwifiControllerId = string.Empty;
+    File.WriteAllText(configPath, JsonSerializer.Serialize(invalidIdentity, Storage.JsonOptions));
+    MustReject(() => Storage.LoadConfigFromPath(configPath),
+        "installed config missing stable controller identity");
+    File.WriteAllText(configPath, originalConfigText);
+    Require(Storage.LoadConfigFromPath(configPath).CentralSharedKey == originalKey,
+        "repaired evidence must load original coordinator identity");
+    Console.WriteLine("CONFIG_FAIL_CLOSED_RECOVERY_PASS");
+
     Require(Storage.LoadStateFromPath(path, now).RemainingSeconds == 0,
         "actual first-run should initialize zero");
     File.WriteAllText(path, "{");
