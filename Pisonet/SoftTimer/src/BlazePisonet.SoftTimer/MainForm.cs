@@ -225,7 +225,16 @@ public sealed class MainForm : Form
         var buttons = new FlowLayoutPanel { AutoSize = true, Width = 880 };
         buttons.Controls.Add(Button("RESCAN", (_, _) => RefreshSerialDevices()));
         buttons.Controls.Add(PrimaryButton("BIND EXACT DEVICE", (_, _) => BindExactDevice()));
-        buttons.Controls.Add(Button("RECONNECT", (_, _) => { _controller.Serial.Connect(ReadUiIntoConfig(false)); RefreshStatus(); }));
+        buttons.Controls.Add(Button("RECONNECT", (_, _) =>
+        {
+            // Never apply uncommitted device identity, timing or signal
+            // settings by opening hardware from a preview configuration.
+            var connected = _controller.ReconnectSerialFromCommittedConfig();
+            _serialStatus.Text = connected
+                ? "Reconnected using saved settings."
+                : "Serial reconnect denied or failed. Save & Apply changes first; check hardware.";
+            RefreshStatus();
+        }));
         serialCard.Controls.Add(buttons);
         serialCard.Controls.Add(Field("Coin input signal", _coinSignal));
         serialCard.Controls.Add(_coinHigh);
