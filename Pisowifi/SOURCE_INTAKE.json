@@ -117,9 +117,9 @@
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/controller.sh",
       "source_git_blob": "54bdc59949884bd3e734f8c07ddeb1d7c2cf9848",
-      "destination_git_blob": "a75d4776e50f91d375c9e4361b0d73bd8e68ab7a",
+      "destination_git_blob": "3219f99b02556eddced4bccd644a13baa0633260",
       "git_mode": "100755",
-      "status": "locally_derived_default_deny_exact_id_and_failed_copy_guard"
+      "status": "locally_derived_default_deny_exact_id_failed_copy_guard_and_locked_registry"
     },
     {
       "path": "openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh",
@@ -615,7 +615,7 @@
       "path": "tests/controller_registration_race.sh",
       "git_blob": "1c74e538e72e64525d587a14a42a3a1dfe5d5a80",
       "mode": "100755",
-      "github_actions_status": "EXPECTED_RED_PENDING",
+      "github_actions_status": "RED_CONFIRMED_43634427828__FIX_CI_PENDING",
       "hardware_evidence": false
     }
   ],
@@ -635,5 +635,6 @@
   "note_pass12": "2026-11-15 test-first EXPECTED RED: source-linked disposable failure-injection test controller_registry_write_fault.sh asserts bp_controller_set denies a failed awk copy and preserves all registry rows. It is an intentional failing diagnostic until the separate CORE writer fix is applied. This is NOT production tested.",
   "note_pass13": "2026-11-15: exact original source RED run #43633308345: real-sourced controller_set ACKed failed awk registry-copy. New controller source now checks awk, append, chmod, rename and optional durability status; exact-head CI pending. No fd4, witness, migration or hardware acceptance claimed.",
   "note_pass14": "2026-11-15 exact source+test SHA 98075a22470c0be991978469d8908efb75b91328 GitHub Actions #43633448039 COMPLETED SUCCESS: controller_registration_defaults PASS, controller_registry_write_fault GREEN, provenance/modes and POSIX+BusyBox syntax PASS, full POSIX mocked integration and BusyBox money journal simulated-fault suites PASS. Historical test-first RED #43633308345 preserved. Does NOT attest hardware flash, independent antirollback witness or signed financial admission. This metadata-only checkpoint must be checked independently at its own HEAD.",
-  "note_pass15": "2026-11-15 test-first regression candidate: actual sourced controller_ensure with delayed first awk lookup, two concurrent processes, and exact TSV row count/disabled assertions. Existing code lacks shared lock and is EXPECTED RED until tested. No hardware, financial authority or power-loss acceptance."
+  "note_pass15": "2026-11-15 test-first regression candidate: actual sourced controller_ensure with delayed first awk lookup, two concurrent processes, and exact TSV row count/disabled assertions. Existing code lacks shared lock and is EXPECTED RED until tested. No hardware, financial authority or power-loss acceptance.",
+  "note_pass16": "2026-11-15 actual source-linked concurrency RED at #43634427828 on test-only fc039686: duplicate rows from racing controller_ensure. fd4 controller-admission.lock now guards ensure and set read/modify/write in derived source. This is ONLY a registry mutex, not a port of CORE #252 paid-admission authorization/witness. Exact-head CI verification pending."
 }

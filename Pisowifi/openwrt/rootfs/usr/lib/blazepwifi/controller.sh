@@ -11,21 +11,45 @@ bp_controller_line() {
   awk -F '\t' -v d="$1" '$1==d {print; exit}' "$BP_CONTROLLERS"
 }
 
+# Coordinate controller registration with authenticated admin policy updates.
+# fd4/path matches the newer CORE admission-lock contract (PR #252), but
+# this staged migration still lacks paid-writer admission/witness integration.
+# Registry serialization ALONE must not authorize coin/payment activity.
+bp_controller_admission_lock() {
+  mkdir -p "$BP_RUN" || return 8
+  exec 4>"$BP_RUN/controller-admission.lock" || return 8
+  flock -w 10 4 || { exec 4>&-; return 8; }
+}
+bp_controller_admission_unlock() {
+  flock -u 4 2>/dev/null || true
+  exec 4>&-
+}
+
 bp_controller_ensure() {
   id="$1"
   bp_controller_init || return 8
+  bp_controller_admission_lock || return 8
 
-  # IDs may contain '.', which is a wildcard in the former grep pattern.
-  # Compare the complete first TSV field literally, just like controller_line.
-  # A registry read failure must not be mistaken for a missing identity.
-  known="$(LC_ALL=C awk -F '\t' -v d="$id" '$1==d {print "found"; exit}' "$BP_CONTROLLERS")" || return 8
-  [ -z "$known" ] || return 0
+  # The lookup AND append must share a lock. Racing initial heartbeats used
+  # to insert duplicate policy rows for the same physical identity.
+  known="$(LC_ALL=C awk -F '\t' -v d="$id" '$1==d {print "found"; exit}' "$BP_CONTROLLERS")" || {
+    bp_controller_admission_unlock
+    return 8
+  }
+  if [ -n "$known" ]; then
+    bp_controller_admission_unlock
+    return 0
+  fi
 
-  # Unknown controllers remain unprovisioned. Heartbeats cannot authorize
-  # coin acceptance; only explicit authenticated enrollment may do so.
-  printf '%s\t0\t0\t1\t1\t-1\t-1\t-1\t1\t1\t1\t40\t400\t6\t1\n' "$id" >> "$BP_CONTROLLERS" || return 8
-  chmod 600 "$BP_CONTROLLERS" || return 8
-  bp_durable_sync
+  # Auto-created controllers MUST remain disabled and coin-disabled.
+  if ! printf '%s\t0\t0\t1\t1\t-1\t-1\t-1\t1\t1\t1\t40\t400\t6\t1\n' "$id" >> "$BP_CONTROLLERS" ||
+     ! chmod 600 "$BP_CONTROLLERS" ||
+     ! bp_durable_sync; then
+    bp_controller_admission_unlock
+    return 8
+  fi
+  bp_controller_admission_unlock
+  return 0
 }
 
 bp_controller_bool() {
@@ -84,11 +108,26 @@ bp_controller_set() {
   bp_controller_uint "$debounce" 1 2000 || return 2
   bp_controller_uint "$group" 10 10000 || return 2
   bp_controller_uint "$retries" 1 60 || return 2
-  line="$(bp_controller_line "$id")"
-  rev="$(printf '%s' "$line" | cut -f15)"
+  # Serialize the full read/modify/write, not just publication of the
+  # temporary file. Concurrent admin writes must not lose each other's rows.
+  bp_controller_admission_lock || return 8
+  line="$(bp_controller_line "$id")" || {
+    bp_controller_admission_unlock
+    return 8
+  }
+  rev="$(printf '%s' "$line" | cut -f15)" || {
+    bp_controller_admission_unlock
+    return 8
+  }
   [ -n "$rev" ] || rev=0
   rev=$((rev+1))
-  bp_controller_write "$id" "$enabled" "$coin" "$relay" "$led" "$cpin" "$rpin" "$lpin" "$clow" "$rhigh" "$lhigh" "$debounce" "$group" "$retries" "$rev"
+  if bp_controller_write "$id" "$enabled" "$coin" "$relay" "$led" "$cpin" "$rpin" "$lpin" "$clow" "$rhigh" "$lhigh" "$debounce" "$group" "$retries" "$rev"; then
+    rc=0
+  else
+    rc=8
+  fi
+  bp_controller_admission_unlock
+  return "$rc"
 }
 
 bp_controller_json() {
