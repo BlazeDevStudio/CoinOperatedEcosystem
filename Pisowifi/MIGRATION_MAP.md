@@ -25,7 +25,7 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | `openwrt/rootfs/usr/lib/blazepwifi/common.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/common.sh` | `4ccb10777b08f541d092f7c2c2d2aad4d2f6562e` | `ae00667da26c68c9e44a54a941887191029afc11` | intentionally edited; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/config.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/config.sh` | `7bde717f02d6f1d90ca099ab29bff336824ad81f` | `4535ef6993185208fb3b098842a0f8d69e71d5c7` | intentionally edited; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/console_ops.sh` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | `92a44fa1c7f69a81b750acf6bac4acc98c637a3b` | copied unchanged; source retained |
-| `openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | copied unchanged; source retained |
+| `openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/controller.sh` | `54bdc59949884bd3e734f8c07ddeb1d7c2cf9848` | `6427cb28a7f325b6b1fc9b6744e0449951ccbb5f` | intentionally edited: default-deny exact identity, failed-copy registry preservation, locked concurrent registration/admin writes and symlink-registry fail-closed path; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member_migration.sh` | `058891bf2b13b59333b4247743fcccc8741bf9b4` | `058891bf2b13b59333b4247743fcccc8741bf9b4` | copied unchanged; source retained |
 | `openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/member.sh` | `69af39052959a1d6a349851b4fbd909a9ad53aeb` | `7c2e599996d83751433ef2ceef87646c943bff7c` | locally derived (Issue #31 member transaction journal); source retained; real-router test NOT_RUN |
 | `openwrt/rootfs/usr/lib/blazepwifi/portal.sh` | `Pisowifi/openwrt/rootfs/usr/lib/blazepwifi/portal.sh` | `702bb344d2531eb046c189adebfb193ba7ca4e6e` | `702bb344d2531eb046c189adebfb193ba7ca4e6e` | copied unchanged; source retained |
@@ -57,7 +57,7 @@ Evidence: `SOURCE_INTAKE.json` (schema 8); this table mirrors its pinned Git blo
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/admin-session` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/admin-session` | `00ecb12446fd4a55b8ad206f796eef6e94276e84` | `00ecb12446fd4a55b8ad206f796eef6e94276e84` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/api` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/api` | `a59c0080c04cdb6bd8fd830b623bdc62640fb6a5` | `fabbd6fb28a34c162fb40403aec2a40d6fe1a65b` | intentionally edited; source retained |
 | `openwrt/rootfs/www/blazepwifi/cgi-bin/rental` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/rental` | `644d2c0a16f084f2ce98560d7008b0f20fdd30ff` | `644d2c0a16f084f2ce98560d7008b0f20fdd30ff` | copied unchanged; source retained |
-| `openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `db58041c0575ad0a1101d99cb85403e03c8dcb22` | `0a71c4e253ac6ec2c30d46f1f99faf874dbaab8e` | intentionally edited; source retained |
+| `openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `Pisowifi/openwrt/rootfs/www/blazepwifi/cgi-bin/vendo` | `db58041c0575ad0a1101d99cb85403e03c8dcb22` | `5a4d39c62d019b8c442af9f5cd380c4c0d302c6a` | intentionally edited: signed Vendo success rejected on controller init/heartbeat/policy failure; source retained |
 | `openwrt/rootfs/www/blazepwifi/connecttest.txt` | `Pisowifi/openwrt/rootfs/www/blazepwifi/connecttest.txt` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/games.html` | `Pisowifi/openwrt/rootfs/www/blazepwifi/games.html` | `0ad4532d7853aab7ccbe0143b2ad9f53d2c294ea` | `0ad4532d7853aab7ccbe0143b2ad9f53d2c294ea` | copied unchanged; source retained |
 | `openwrt/rootfs/www/blazepwifi/generate_204` | `Pisowifi/openwrt/rootfs/www/blazepwifi/generate_204` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | `1a64fdd7a5ed97571bf98ac6517741f358810c50` | copied unchanged; source retained |
@@ -113,3 +113,26 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 - No customer configuration, credential material, installed binaries, account databases or signing keys are authorized as migration inputs.
 - Real OpenWrt image/build/package sources remain outside the recovered 61-file overlay. DO NOT equate rootfs recovery with a bootable image.
 - Any unverified file or test remains **NO-GO**. No release, merge, flashing or payment acceptance.
+
+## 2026-11-15 CORE candidate reconciliation (draft, NO-GO)
+
+- Historical source blob 54bdc59949884bd3e734f8c07ddeb1d7c2cf9848 is retained in Experiments and in the provenance field above. Destination controller source changed to 69be1941c66cb619a342785f16177458aedac75e to initialize unknown controllers with `enabled=0` and `coin_enabled=0`, and to match identity using literal TSV field equality instead of a regex. The new disposable regression is `Pisowifi/tests/controller_registration_defaults.sh` (blob 169791816bb2d9633c8216762224728c5aa11ef8); it is invoked by `run_focus.sh`.
+- This is deliberately **not** a wholesale port of the newer CORE controller admission lock, finance ledger or response-authentication stack. Reconcile those differences with the owner of Experiments PR #252 and independent QA before any integration. No commercial financial admission, migration, flash or release is authorized.
+
+### 2026-11-15 controller registry copy failure correction (CORE draft)
+
+- GitHub Actions [test-first RED #43633308345](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/43633308345) on `2c7a2e32b0a106a8ab1e7ffec4c2dca2af21fcc1` exercised a real sourced `bp_controller_set` with fault-injected `awk`. Old `bp_controller_write` returned success after failed copy and could replace a multi-controller registry with an incomplete row. The new controller source Git blob `a75d4776e50f91d375c9e4361b0d73bd8e68ab7a` refuses the incomplete copy and checks every append, chmod, rename and durability step before acknowledging. The same test is still disposable `/tmp` mocked-sync only; physical flash/power-loss acceptance remains NO-GO.
+
+### 2026-11-15 concurrent controller registration containment (PHX-CORE draft)
+
+- Actual source test-first [CI RED #43634427828](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/43634427828) at `fc039686e1e4b9e312e708d833df83c09e0472f4`: two first-time heartbeats returned duplicate rows for one identity in `controllers.tsv` (a delayed real `awk` lookup, no financial or hardware simulation).
+- This patch introduces the fd4 `controller-admission.lock` file path used by existing Experiments CORE PR #252 and locks both first-time ensure and admin read/modify/write. Locking the registry does not port CORE's paid-admission predicate, ambiguous-write barriers, off-device witness, protected signer or flash proof. The source snapshot is preserved; the new derived destination blob is `3219f99b02556eddced4bccd644a13baa0633260`.
+
+### 2026-11-15 controller registry symlink integrity containment
+
+- Source-linked negative CI [#43643240752](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/43643240752) exposed an unsafe symlinked `controllers.tsv`: `bp_controller_init` accepted the path, so ordinary heartbeat could follow an external target. This staged fix checks the regular-file policy before touch/chmod/read/write, uses noclobber for initial creation, and propagates error status from the shared controller helper. Source blob `6427cb28a7f325b6b1fc9b6744e0449951ccbb5f`. Existing source is retained; hardware, protected witness and paid financial admission remain NO-GO.
+
+### 2026-11-15 Vendo controller response fail-closed (PHX-CORE draft)
+
+- Test-first [CI #43653301906](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/43653301906), source commit `5de696dbb85a40542e07748b61b829668766eaf9`, reproduced an authenticated Vendo `register` `ok:true` or malformed response on a symlinked `controllers.tsv` (source-linked disposable test `tests/vendo_controller_failclosed.sh`). This is a real CGI-level software fault, not physical or money testing.
+- New derived Vendo source blob `5a4d39c62d019b8c442af9f5cd380c4c0d302c6a` checks controller initialization, stages/validates the heartbeat under the existing account then controller lock, propagates metadata persistence failure, and refuses register/ping/poll signed success if controller policy JSON fails. Source source/blob provenance and historical origin remain unchanged; commercial controller signed admission and financial authority not present. Exact-head CI pending.
