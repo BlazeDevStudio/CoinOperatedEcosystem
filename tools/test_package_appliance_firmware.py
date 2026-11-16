@@ -267,6 +267,26 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")))
         self.assertFalse(os.path.exists(os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")))
 
+    def test_generated_wrapper_denies_empty_firmware_payload(self):
+        # Empty output is not a usable firmware binary, even with .bin suffix.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "empty-build.sh")
+        generate_build_script(manifest, wrapper)
+        builder = os.path.join(self.temp_dir, "empty-imagebuilder")
+        os.makedirs(builder)
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\n\t@mkdir -p bin/targets/ramips/mt7621\n"
+                     "\t@: > bin/targets/ramips/mt7621/empty.bin\n")
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = subprocess.run(["sh", wrapper], cwd=self.temp_dir, env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: empty firmware image", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
     def test_generated_wrapper_relative_stage_uses_absolute_path(self):
         result, builder, wrapper, stage_absolute = self._run_mock_imagebuilder(
             image_subpath="bin/targets/ramips/mt7621/synthetic.bin"
