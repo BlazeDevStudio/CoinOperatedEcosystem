@@ -148,9 +148,29 @@ def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool =
 
 
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
-    """Stage and customize the rootfs overlay for the target profile."""
-    if os.path.exists(staging_dir):
-        shutil.rmtree(staging_dir)
+    """Stage the rootfs into a fresh, isolated destination without deleting existing data."""
+    source_rootfs = os.path.realpath(os.path.abspath(source_rootfs))
+    requested_staging_dir = os.path.abspath(staging_dir)
+    if not os.path.isdir(source_rootfs):
+        raise FileNotFoundError(f"Source rootfs directory not found: {source_rootfs}")
+    # lexists catches dangling symlinks too; never remove or follow an operator path.
+    if os.path.lexists(requested_staging_dir):
+        raise FileExistsError(
+            f"Staging destination already exists; refusing to overwrite or delete: {requested_staging_dir}"
+        )
+    staging_dir = os.path.realpath(requested_staging_dir)
+    if os.path.lexists(staging_dir):
+        raise FileExistsError(
+            f"Resolved staging destination already exists; refusing to overwrite or delete: {staging_dir}"
+        )
+    try:
+        shared_path = os.path.commonpath((source_rootfs, staging_dir))
+    except ValueError:
+        shared_path = None
+    if shared_path in (source_rootfs, staging_dir):
+        raise ValueError(
+            "Staging destination must be separate from and outside the source rootfs"
+        )
     shutil.copytree(source_rootfs, staging_dir, symlinks=True)
 
     # Inject profile-tailored network configuration
