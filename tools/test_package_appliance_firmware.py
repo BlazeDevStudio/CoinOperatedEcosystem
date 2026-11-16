@@ -277,8 +277,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         builder = os.path.join(self.temp_dir, "empty-imagebuilder")
         os.makedirs(builder)
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
-            fp.write("image:\\n\\t@mkdir -p bin/targets/ramips/mt7621\\n"\n                     "\\t@: > bin/targets/ramips/mt7621/empty.bin\\n")\n        env = os.environ.copy()
-        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+            fp.write("image:\n\t@mkdir -p bin/targets/ramips/mt7621\n"\n                     "\t@: > bin/targets/ramips/mt7621/empty.bin\n")\n        env = os.environ.copy()\n        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
         result = subprocess.run(["sh", wrapper], cwd=self.temp_dir, env=env,
                                 capture_output=True, text=True, check=False)
         self.assertNotEqual(result.returncode, 0)
