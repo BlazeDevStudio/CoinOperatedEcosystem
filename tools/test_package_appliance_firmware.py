@@ -302,6 +302,36 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             contents = fp.read()
         self.assertIn("FILES=" + shlex.quote(stage_absolute), contents)
 
+    def test_generated_wrapper_relative_imagebuilder_dir_uses_absolute_path(self):
+        # A relative environment override must be normalized before the
+        # wrapper changes directory; otherwise BIN_DIR and manifest paths
+        # are accidentally resolved relative to the builder twice.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "relative-builder-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "relative-builder.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "relative-imagebuilder")
+        os.makedirs(builder)
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\\n\\t@mkdir -p bin/targets/ramips/mt7621\\n"
+                     "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n")
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = os.path.relpath(builder, self.temp_dir)
+        result = subprocess.run(
+            ["sh", wrapper], cwd=self.temp_dir, env=env,
+            capture_output=True, text=True, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("Appliance PREVIEW build completed", result.stdout)
+        manifest_path = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        with open(manifest_path, "r", encoding="utf-8") as fp:
+            lines = fp.read().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("synthetic.bin", lines[0])
+
     def test_generate_network_uci_xiaomi(self):
         p = load_profile("xiaomi-4a-gigabit")
         uci = generate_network_uci(p)
