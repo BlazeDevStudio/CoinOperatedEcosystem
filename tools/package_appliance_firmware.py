@@ -246,6 +246,11 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
 set -eu
 
 BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
+# Normalize relative workspace overrides before deriving paths or changing directories.
+case "$BUILD_DIR" in
+    /*) ;;
+    *) BUILD_DIR="$(pwd -P)/$BUILD_DIR" ;;
+esac
 STAGING_DIR={stage_arg}
 if [ ! -f "$BUILD_DIR/Makefile" ]; then
     echo "RELEASE-BLOCKED: ImageBuilder Makefile not found in $BUILD_DIR" >&2
