@@ -193,7 +193,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         if temp_manifest_symlink:
             outside = os.path.join(self.temp_dir, "outside-temp-manifest.txt")
             with open(outside, "w", encoding="utf-8") as fp:
-                fp.write("DO-NOT-OVERWRITE-TEMP\\n")
+                fp.write("DO-NOT-OVERWRITE-TEMP\n")
             os.symlink(outside, os.path.join(fake_builder, "RELEASE_MANIFEST.sha256.tmp"))
 
         env = os.environ.copy()
@@ -263,7 +263,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE-BLOCKED: previous temporary release manifest", result.stderr)
         with open(os.path.join(self.temp_dir, "outside-temp-manifest.txt"), encoding="utf-8") as fp:
-            self.assertEqual(fp.read(), "DO-NOT-OVERWRITE-TEMP\\n")
+            self.assertEqual(fp.read(), "DO-NOT-OVERWRITE-TEMP\n")
         self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")))
         self.assertFalse(os.path.exists(os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")))
 
