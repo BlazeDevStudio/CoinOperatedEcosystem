@@ -261,6 +261,11 @@ fi
 # Refuse stale data without deleting or modifying an operator's files.
 BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
 OUT_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256"
+TMP_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.tmp"
+if [ -e "$TMP_MANIFEST" ] || [ -L "$TMP_MANIFEST" ]; then
+    echo "RELEASE-BLOCKED: previous temporary release manifest exists: $TMP_MANIFEST; use a clean ImageBuilder workspace" >&2
+    exit 1
+fi
 if [ -e "$OUT_MANIFEST" ] || [ -L "$OUT_MANIFEST" ]; then
     echo "RELEASE-BLOCKED: previous release manifest exists: $OUT_MANIFEST; use a clean ImageBuilder workspace" >&2
     exit 1
@@ -283,7 +288,6 @@ if [ ! -d "$BIN_DIR" ]; then
     exit 1
 fi
 
-TMP_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.tmp"
 find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
 if [ ! -s "$TMP_MANIFEST" ]; then
     rm -f "$TMP_MANIFEST"
