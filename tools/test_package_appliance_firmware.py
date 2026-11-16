@@ -348,6 +348,54 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option device 'eth0'", uci)
 
 
+    def test_stage_overlay_refuses_existing_output_without_deleting_contents(self):
+        source_rootfs = os.path.join(self.temp_dir, "safe-source")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "source-preserved.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        staging_dest = os.path.join(self.temp_dir, "existing-staging")
+        os.makedirs(staging_dest)
+        operator_file = os.path.join(staging_dest, "operator-data.txt")
+        with open(operator_file, "w", encoding="utf-8") as fp:
+            fp.write("DO-NOT-DELETE")
+
+        with self.assertRaises(FileExistsError):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        with open(operator_file, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "DO-NOT-DELETE")
+        self.assertTrue(os.path.isfile(source_marker))
+
+    def test_stage_overlay_refuses_source_rootfs_as_output(self):
+        source_rootfs = os.path.join(self.temp_dir, "source-is-output")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "owner-source.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-SOURCE")
+
+        with self.assertRaises(FileExistsError):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, source_rootfs)
+
+        with open(source_marker, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-SOURCE")
+
+    def test_stage_overlay_refuses_new_output_nested_inside_source(self):
+        source_rootfs = os.path.join(self.temp_dir, "nested-source")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "owner-source.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-SOURCE")
+        staging_dest = os.path.join(source_rootfs, "generated-overlay")
+
+        with self.assertRaises(ValueError):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        self.assertTrue(os.path.isfile(source_marker))
+        self.assertFalse(os.path.lexists(staging_dest))
+
+
 if __name__ == "__main__":
     unittest.main()
 
