@@ -153,7 +153,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
     def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
                                preexisting_image=False, preexisting_manifest=False,
-                               manifest_symlink=False):
+                               manifest_symlink=False, temp_manifest_symlink=False):
         """Execute a generated wrapper against a disposable local Makefile."""
         profile = load_profile("gl-mt1300")
         stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
@@ -189,6 +189,12 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             else:
                 with open(manifest_path, "w", encoding="utf-8") as fp:
                     fp.write("PRIOR-RUN-MANIFEST\n")
+
+        if temp_manifest_symlink:
+            outside = os.path.join(self.temp_dir, "outside-temp-manifest.txt")
+            with open(outside, "w", encoding="utf-8") as fp:
+                fp.write("DO-NOT-OVERWRITE-TEMP\\n")
+            os.symlink(outside, os.path.join(fake_builder, "RELEASE_MANIFEST.sha256.tmp"))
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
@@ -248,6 +254,18 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(os.path.join(self.temp_dir, "outside-manifest.txt"), encoding="utf-8") as fp:
             self.assertEqual(fp.read(), "DO-NOT-OVERWRITE\n")
         self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_symlinked_temporary_manifest_before_make(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
+            temp_manifest_symlink=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: previous temporary release manifest", result.stderr)
+        with open(os.path.join(self.temp_dir, "outside-temp-manifest.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "DO-NOT-OVERWRITE-TEMP\\n")
+        self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")))
+        self.assertFalse(os.path.exists(os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")))
 
     def test_generated_wrapper_relative_stage_uses_absolute_path(self):
         result, builder, wrapper, stage_absolute = self._run_mock_imagebuilder(
