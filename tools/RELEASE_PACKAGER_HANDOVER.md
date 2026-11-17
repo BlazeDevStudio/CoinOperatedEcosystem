@@ -348,3 +348,25 @@ The wrapper now scans the existing target output directory for **any** symlink b
 Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover changed. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation, shared interface, firmware source, networking, financial source, signer or publisher workflow was changed. Rollback is limited to reverting the scoped test/source commits on this existing draft branch.
 
 **No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred.** Production remains NO-GO pending protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, real approved target binaries, 150 physical power cuts and a 30-device/24-hour soak.
+
+
+## PHX-RELEASE 2026-11-17 UTC11 — custom-profile UCI injection guard
+
+**DRAFT / exact source-test CI verified / PRODUCTION NO-GO.** Role lock: `PHX-RELEASE/2026-11-17T11Z`. Existing COE release-packager PR #31 remains OPEN / DRAFT / UNMERGED on `phoenix/release-imagebuilder-failclosed-20261115`, based on integration PR #26 head `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+### Defect and bounded correction
+
+`generate_network_uci()` interpolated custom JSON profile values directly into single-quoted OpenWrt UCI syntax. A quote/newline in `networking.wan_interface`, a bridge `ports[].interface`, or a VLAN ID could inject additional UCI configuration into the staged appliance overlay.
+
+- Test-first regression: [`449987fc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/449987fc283bfd9fb701184cba8c72232d4a5796) adds three custom-profile injection cases (WAN interface, bridge port interface, guest VLAN).
+- Expected RED retained: push [#44072555185](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44072555185) and PR [#44072564550](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44072564550) failed in `Validate appliance firmware packaging & tools`; downstream profile staging and board compile jobs were skipped. The test-only commit requires these unsafe values to raise `ValueError`. Case-collision [#44072564552](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44072564552) passed.
+- Source fix: [`c99cc468`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c99cc468ed4edc0545f57558f2cbf8b44cb9c8b7) validates every UCI interface token against a 1–15 character Linux interface-name allowlist and requires each configured VLAN ID to be an integer in 1–4094 (rejecting booleans and strings) before emitting any UCI text. Canonical profiles retain their existing output.
+- Exact source/test-head PR run [#44072905745](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44072905745) and push run [#44072891387](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44072891387) both completed SUCCESS: firmware hardening/syntax, shared contracts/router profiles, appliance packaging/tool tests, all appliance-profile staging, ESP8266 compilation and ESP32 compilation/artifact upload all passed. Case-collision [#44072905603](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44072905603) passed.
+
+This verifies generated UCI validation and CI firmware compilation only. It is not a real OpenWrt ImageBuilder binary, physical router acceptance, coin/electrical test, or production release.
+
+### Ownership and next action
+
+Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover changed. No shared interface, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. PHX-QA should independently review the custom-profile negative cases; PHX-MASTER retains integration and release-gate authority. Keep PR #31 draft and unmerged.
+
+Private Drive registry v11 remains unavailable through the exposed Library search; no older snapshot was substituted. No signer, real key, tag, publication, hardware flash, payment migration or customer deployment occurred. Production remains NO-GO pending protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, real approved target binaries, 150 physical power cuts and a 30-device/24-hour soak.
