@@ -716,3 +716,34 @@ COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/
 - PR sandbox [#44158225148](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158225148), job `134304685630`: **FAILED** with the same UID-map denial. The run reported 54 tests and 20 failures because namespace/ownership-probe setup never succeeded; the symlink-confinement and timeout execution paths were not reached. Do not weaken the approved single-ID model or add sudo/uidmap/subordinate-ID fallback.
 
 **Remaining independent blockers:** canonical private Drive registry v11 remains inaccessible through the exposed Library surface; no older snapshot was substituted. The packager still emits invalid ULA `fd00:db8:blaze::/48`, which requires the MASTER/CORE installation-scoped ULA contract. COE #26 remains unaccepted with eight queued workflow runs (five PR-triggered and three push-triggered; zero completed jobs). The sandbox still needs an authorized disposable no-secret runner with unprivileged user namespaces enabled and independent PHX-QA review. No approved real OpenWrt ImageBuilder image, signer/freshness witness, durable financial migration, physical flash, 150 power cuts, or 30-device/24-hour soak is established. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC20 — reject symlinked ImageBuilder runner paths
+
+**Disposition: TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / SOURCE-HEAD PACKAGING VALIDATION PASS / BOARD BUILDS IN PROGRESS AT HANDOVER WRITE / MANDATORY BUBBLEWRAP STILL HOST-BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on `phoenix/release-imagebuilder-failclosed-20261115`, based on integration #26 at `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+**Defect:** `generate_build_script()` called `realpath()` before `islink()`. That erased evidence that the repository-owned `run_imagebuilder_sandbox.py` candidate was a symlink, including when a parent directory was a symlink. The external target then appeared to be a regular file and its digest/path were embedded in the generated operator wrapper. At runtime the wrapper checked only the final component with `[ -L "$RUNNER_PATH" ]`, so a symlinked parent could still redirect execution.
+
+**Test-first commits**
+- Initial regression: [`8cb368ee`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8cb368ee2b79f2552313aa2985726e8ac5533be0) adds final-component and parent-directory runner symlink cases plus a runtime parent-symlink case.
+- Parent-path fixture correction: [`4c6aae8f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4c6aae8f9e208e10586b3c11bb947b133e2861ac).
+- Deterministic fake-runner fixture: [`1ecb9c1f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1ecb9c1f4de5254e7f5c6878fa2e4f68d49707d5).
+
+**Exact RED at test HEAD `1ecb9c1f`**
+- Push shared/hardware [#44167797588](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44167797588), validation job `134338417867`: **FAILED AS EXPECTED**. 69 packaging tests ran, 3 new assertions failed, 2 sandbox-only tests skipped. Both generation-time cases reported `FileNotFoundError not raised`; the runtime case observed the fake runner execute through the symlinked parent (exit 0) instead of the wrapper rejecting the path.
+- PR shared/hardware [#44167808320](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44167808320): **FAILED** on the same test-first head.
+- The initial test commit's [#44167665421](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44167665421) also failed with 3 assertions; the deterministic fixture correction above removes its earlier runner-side effect ambiguity.
+
+**Source correction**
+- [`e9a5f5fc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e9a5f5fcd90b855d439ec800a7f4c872e4bfc066) preserves the absolute runner candidate before canonicalization, rejects any path whose `realpath` differs, opens with `O_NOFOLLOW`, verifies a regular file with `fstat`, and hashes the opened descriptor. The generated shell now compares the runtime real path with the embedded path before hashing or invoking the runner, rejecting symlinked parent directories as well as final-component symlinks.
+
+**Source/test-head CI at `e9a5f5fc`**
+- Push shared/hardware [#44167890107](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44167890107): validation job `134338741317` **SUCCESS**; 69 packaging tests, 2 intentional sandbox-only skips; shared contracts and 10/10 appliance profiles passed. ESP8266 job `134338875453` and ESP32 job `134338875616` were **IN PROGRESS** when this handover was written.
+- Push case-collision [#44167899992](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44167899992): status was still IN PROGRESS at this handover write.
+- The separate mandatory sandbox [#44167890159](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44167890159) **FAILED** at the existing hosted-runner user-namespace gate: `bwrap: setting up uid map: Permission denied`. The mandatory job reported 20 failures because the ownership probe could not be created; sandbox-dependent symlink and real timeout execution paths were not reached. This does not negate the shared packaging validation, and it is not a sandbox acceptance.
+
+Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover changed. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, shared contract or destination integration source was modified.
+
+**Remaining blockers:** the hosted Actions runner still needs an authorized disposable no-secret environment with unprivileged user namespaces; do not add sudo, uidmap helpers, broad subordinate-ID grants or an unsandboxed fallback. The invalid `fd00:db8:blaze::/48` remains blocked on the MASTER/CORE durable site-scoped RFC 4193 ULA contract. COE #26 still has five queued workflows and no combined integration acceptance. The canonical private Drive registry v11 remains unavailable through the exposed Library surface; older v3–v7 snapshots were not substituted. No real OpenWrt target image, protected signer/freshness witness, financial migration, physical flash, 150 power cuts, or 30-device/24-hour soak is established. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
