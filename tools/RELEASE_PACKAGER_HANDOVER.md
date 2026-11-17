@@ -593,3 +593,14 @@ Do not weaken the owner probe, skip the mandatory bubblewrap test, assume /etc/s
 **Next exact action:** obtain PHX-MASTER/PHX-QA decision on the user-namespace mapping model; then reproduce the mapping on the exact hosted-runner image and rerun the mandatory bwrap integration, including the delayed-write timeout test. Until that is green, the runtime boundary is not accepted.
 
 No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. Production remains **NO-GO**.
+
+
+### UTC17 final handover-head CI follow-up
+
+At handover HEAD feb9d9d5b8590f3a692c373329a3d5610a5613cc:
+- PR mandatory sandbox [#44137530498](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44137530498) **FAILURE**; push mandatory sandbox [#44137518573](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44137518573) **FAILURE**. Both reproduce the same newuidmap denial, UID range [0-1) -> [1001-1002) not allowed. The 1-second timeout integration did not reach its timeout path.
+- PR shared/hardware [#44137530517](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44137530517): firmware hardening, shared-contract/router validation, packaging and 10 appliance profiles **PASS**; ESP8266 compile/artifact **PASS**; ESP32 compile **IN PROGRESS** at the last observation.
+- Push shared/hardware [#44137518704](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44137518704): validation and 10 profiles **PASS**; ESP8266 compile/artifact **PASS**; ESP32 compile **IN PROGRESS** at the last observation.
+- Case-collision [#44137530364](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44137530364): **PASS**.
+
+The source/test files and sandbox workflow were unchanged by this follow-up; only this handover was updated. No sandbox runtime acceptance is claimed.
