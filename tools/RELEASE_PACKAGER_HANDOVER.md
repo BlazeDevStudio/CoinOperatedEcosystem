@@ -370,3 +370,14 @@ This verifies generated UCI validation and CI firmware compilation only. It is n
 Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover changed. No shared interface, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. PHX-QA should independently review the custom-profile negative cases; PHX-MASTER retains integration and release-gate authority. Keep PR #31 draft and unmerged.
 
 Private Drive registry v11 remains unavailable through the exposed Library search; no older snapshot was substituted. No signer, real key, tag, publication, hardware flash, payment migration or customer deployment occurred. Production remains NO-GO pending protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, real approved target binaries, 150 physical power cuts and a 30-device/24-hour soak.
+
+
+### UTC11 final handover-head CI completion
+
+The preceding UTC11 checkpoint recorded the documentation-head ESP32 job as still running. It subsequently completed:
+
+- Final PR-head [#44073554457](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44073554457): **COMPLETED SUCCESS** — packaging/firmware/shared-contract validation, all appliance profiles, ESP8266 compile/artifact upload and ESP32 compile/artifact upload all PASS.
+- Final push-head [#44073545179](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44073545179): **COMPLETED SUCCESS** — validation, ESP32 and ESP8266 jobs all PASS.
+- Final case-collision [#44073554397](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44073554397): **COMPLETED SUCCESS**.
+
+These are exact documentation-head CI results for `d6641c3ed18ddd993b27b8ed4613c803da2d78b5`; the next docs-only handover commit will require its own exact-head CI.
