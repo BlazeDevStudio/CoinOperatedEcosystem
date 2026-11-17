@@ -332,9 +332,22 @@ cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
 echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
 """
 
-    with open(script_path, "w", encoding="utf-8") as f:
+    # Create exclusively: never truncate an operator-owned file or follow a
+    # final-component symlink when the requested output path already exists.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    try:
+        script_fd = os.open(script_path, flags, 0o755)
+    except FileExistsError:
+        raise FileExistsError(
+            f"Build script destination already exists; refusing to overwrite: {script_path}"
+        ) from None
+
+    with os.fdopen(script_fd, "w", encoding="utf-8") as f:
+        if hasattr(os, "fchmod"):
+            os.fchmod(f.fileno(), 0o755)
         f.write(content)
-    os.chmod(script_path, 0o755)
+    if not hasattr(os, "fchmod"):
+        os.chmod(script_path, 0o755)
 
 
 def main():
