@@ -342,6 +342,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                     with open(target_path, "wb") as fp:
                         fp.write(sentinel)
                     os.symlink(real_tools_dir, visible_tools_dir, target_is_directory=True)
+                    runner_candidate = os.path.join(
+                        visible_tools_dir, "run_imagebuilder_sandbox.py"
+                    )
 
                 module_path = os.path.join(
                     visible_tools_dir, "package_appliance_firmware.py"
