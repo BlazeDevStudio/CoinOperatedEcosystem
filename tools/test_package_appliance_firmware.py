@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 import run_imagebuilder_sandbox
+import package_appliance_firmware as packager
 
 from package_appliance_firmware import (
     load_profile,
@@ -312,6 +313,92 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.islink(script_path))
         with open(target_path, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
+
+    def test_generate_build_script_rejects_symlinked_runner_paths(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_symlinked_runner")
+        )
+        sentinel = b"#!/usr/bin/env python3\\n# operator-owned runner\\n"
+
+        for case in ("final-component", "parent-directory"):
+            with self.subTest(case=case):
+                visible_tools_dir = os.path.join(self.temp_dir, f"visible-tools-{case}")
+                target_path = os.path.join(self.temp_dir, f"operator-owned-runner-{case}.py")
+
+                if case == "final-component":
+                    os.makedirs(visible_tools_dir)
+                    with open(target_path, "wb") as fp:
+                        fp.write(sentinel)
+                    runner_candidate = os.path.join(
+                        visible_tools_dir, "run_imagebuilder_sandbox.py"
+                    )
+                    os.symlink(target_path, runner_candidate)
+                else:
+                    real_tools_dir = os.path.join(self.temp_dir, "real-tools-parent")
+                    os.makedirs(real_tools_dir)
+                    target_path = os.path.join(real_tools_dir, "run_imagebuilder_sandbox.py")
+                    with open(target_path, "wb") as fp:
+                        fp.write(sentinel)
+                    os.symlink(real_tools_dir, visible_tools_dir, target_is_directory=True)
+
+                module_path = os.path.join(
+                    visible_tools_dir, "package_appliance_firmware.py"
+                )
+                script_path = os.path.join(self.temp_dir, f"generated-{case}.sh")
+                with mock.patch.object(packager, "__file__", module_path):
+                    with self.assertRaisesRegex(FileNotFoundError, "symlink"):
+                        generate_build_script(manifest, script_path)
+
+                self.assertFalse(os.path.lexists(script_path))
+                self.assertEqual(os.path.realpath(runner_candidate), target_path)
+                with open(target_path, "rb") as fp:
+                    self.assertEqual(fp.read(), sentinel)
+
+    def test_generated_wrapper_rejects_runner_parent_symlink_at_runtime(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_runtime_runner_symlink")
+        )
+        tools_dir = os.path.join(self.temp_dir, "runner-tools")
+        os.makedirs(tools_dir)
+        runner_source = os.path.join(
+            os.path.dirname(run_imagebuilder_sandbox.__file__),
+            "run_imagebuilder_sandbox.py",
+        )
+        shutil.copyfile(
+            runner_source,
+            os.path.join(tools_dir, "run_imagebuilder_sandbox.py"),
+        )
+        module_path = os.path.join(tools_dir, "package_appliance_firmware.py")
+        wrapper = os.path.join(self.temp_dir, "runtime-runner-symlink-build.sh")
+        with mock.patch.object(packager, "__file__", module_path):
+            generate_build_script(manifest, wrapper)
+
+        moved_tools_dir = os.path.join(self.temp_dir, "runner-tools-real")
+        os.rename(tools_dir, moved_tools_dir)
+        os.symlink(moved_tools_dir, tools_dir, target_is_directory=True)
+
+        builder = os.path.join(self.temp_dir, "runtime-runner-symlink-builder")
+        os.makedirs(builder)
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = subprocess.run(
+            ["sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner path contains a symlink", result.stderr)
+        self.assertFalse(
+            os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256"))
+        )
 
     def _run_generated_wrapper(self, wrapper, cwd, env, timeout_seconds=60):
         """Run the generated wrapper inside the release-owned filesystem sandbox in CI."""
