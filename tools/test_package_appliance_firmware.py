@@ -150,6 +150,26 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             content = f.read()
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
+    def test_generated_build_script_passes_posix_shell_syntax_check(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile,
+            DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_shell_syntax")
+        )
+        script_path = os.path.join(self.temp_dir, "shell-syntax-build.sh")
+        generate_build_script(manifest, script_path)
+
+        result = subprocess.run(
+            ["sh", "-n", script_path],
+            capture_output=True,
+            text=True
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"Generated ImageBuilder wrapper is not valid POSIX shell: {result.stderr}"
+        )
 
     def test_generate_build_script_refuses_existing_file_without_overwriting(self):
         profile = load_profile("gl-mt1300")
