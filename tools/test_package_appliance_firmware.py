@@ -718,7 +718,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.symlink(external_dir, parent_link)
         script_path = os.path.join(parent_link, "generated-build.sh")
 
-        with self.assertRaisesRegex(ValueError, "symlink or non-directory in build-script parent path"):
+        with self.assertRaisesRegex(ValueError, "parent path contains a symlink or non-directory"):
             generate_build_script(manifest, script_path)
 
         self.assertTrue(os.path.islink(parent_link))
