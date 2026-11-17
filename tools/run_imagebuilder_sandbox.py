@@ -7,9 +7,17 @@ import json
 import os
 import select
 import shutil
+import signal
 import stat
 import subprocess
 import sys
+
+
+USERNS_INFO_TIMEOUT_SECONDS = 30
+USERMAP_HELPER_TIMEOUT_SECONDS = 10
+PROCESS_TERMINATION_GRACE_SECONDS = 2.0
+DEFAULT_BUILD_TIMEOUT_SECONDS = 3600
+MAX_BUILD_TIMEOUT_SECONDS = 14400
 
 
 def blocked(message: str, detail: str = "") -> int:
@@ -19,12 +27,127 @@ def blocked(message: str, detail: str = "") -> int:
     return 125
 
 
+def _as_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _run_mapping_helper(command: list[str]) -> subprocess.CompletedProcess:
+    """Run one UID/GID mapping helper with a finite wait."""
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=USERMAP_HELPER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            command,
+            124,
+            _as_text(exc.stdout or exc.output),
+            (
+                f"mapping helper timed out after {USERMAP_HELPER_TIMEOUT_SECONDS}s\n"
+                f"{_as_text(exc.stderr)}"
+            ),
+        )
+
+
+def _terminate_process_groups(
+    process: subprocess.Popen,
+    child_pgid: int | None = None,
+    grace_seconds: float = PROCESS_TERMINATION_GRACE_SECONDS,
+) -> tuple[str, str]:
+    """Stop both the outer bwrap group and its --new-session child group."""
+    groups: list[int] = []
+    for raw_pgid in (process.pid, child_pgid):
+        if raw_pgid is None:
+            continue
+        try:
+            pgid = int(raw_pgid)
+        except (TypeError, ValueError):
+            continue
+        if pgid > 0 and pgid not in groups:
+            groups.append(pgid)
+
+    errors: list[str] = []
+
+    def signal_groups(signum: int) -> None:
+        for pgid in groups:
+            try:
+                os.killpg(pgid, signum)
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                errors.append(f"could not signal process group {pgid}: {exc}")
+
+    signal_groups(signal.SIGTERM)
+    try:
+        stdout, stderr = process.communicate(timeout=grace_seconds)
+    except subprocess.TimeoutExpired as first_timeout:
+        stdout = _as_text(first_timeout.output or first_timeout.stdout)
+        stderr = _as_text(first_timeout.stderr)
+        signal_groups(signal.SIGKILL)
+        try:
+            stdout, stderr = process.communicate(timeout=grace_seconds)
+        except subprocess.TimeoutExpired as final_timeout:
+            stdout = _as_text(final_timeout.output or final_timeout.stdout) or stdout
+            stderr = _as_text(final_timeout.stderr) or stderr
+            try:
+                process.kill()
+            except OSError as exc:
+                errors.append(f"could not kill bubblewrap process: {exc}")
+            try:
+                process.wait(timeout=grace_seconds)
+            except subprocess.TimeoutExpired:
+                errors.append("bubblewrap process did not exit after SIGKILL")
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+    else:
+        # The command leader may exit while a detached descendant remains in
+        # the sandbox session. The process group belongs only to this runner.
+        signal_groups(signal.SIGKILL)
+
+    if errors:
+        stderr = "\n".join(part for part in (_as_text(stderr), *errors) if part)
+    return _as_text(stdout), _as_text(stderr)
+
+
+def _communicate_with_timeout(
+    process: subprocess.Popen,
+    timeout_seconds: int,
+    child_pgid: int | None = None,
+) -> tuple[tuple[str, str], bool]:
+    try:
+        return process.communicate(timeout=timeout_seconds), False
+    except subprocess.TimeoutExpired as exc:
+        stdout, stderr = _terminate_process_groups(process, child_pgid)
+        stdout = stdout or _as_text(exc.output or exc.stdout)
+        stderr = stderr or _as_text(exc.stderr)
+        return (stdout, stderr), True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--cwd", required=True)
     parser.add_argument("--builder", required=True)
     parser.add_argument("--wrapper", required=True)
+    parser.add_argument(
+        "--timeout-seconds", type=int, default=DEFAULT_BUILD_TIMEOUT_SECONDS,
+        help=f"maximum ImageBuilder runtime in seconds (1-{MAX_BUILD_TIMEOUT_SECONDS})",
+    )
     args = parser.parse_args()
+
+    if not 1 <= args.timeout_seconds <= MAX_BUILD_TIMEOUT_SECONDS:
+        return blocked(f"build timeout must be between 1 and {MAX_BUILD_TIMEOUT_SECONDS} seconds")
 
     if os.geteuid() != 0:
         return blocked("sandbox runner must be invoked through sudo")
@@ -99,6 +222,7 @@ def main() -> int:
         "sh", "-eu", "-c", sandbox_script, "phx-bwrap", wrapper,
     ]
     process = None
+    sandbox_child_pgid = None
     try:
         process = subprocess.Popen(
             command,
@@ -108,49 +232,64 @@ def main() -> int:
             stderr=subprocess.PIPE,
             text=True,
             pass_fds=(info_write, userns_block_read),
+            start_new_session=True,
         )
         os.close(info_write)
         info_write = -1
         os.close(userns_block_read)
         userns_block_read = -1
 
-        ready, _, _ = select.select([info_read], [], [], 30)
+        ready, _, _ = select.select(
+            [info_read], [], [], USERNS_INFO_TIMEOUT_SECONDS
+        )
         if not ready:
-            process.terminate()
-            _, stderr = process.communicate()
+            _, stderr = _terminate_process_groups(process)
             return blocked("timed out waiting for bubblewrap user namespace", stderr)
         info_payload = os.read(info_read, 65536)
         if not info_payload:
-            _, stderr = process.communicate()
+            _, stderr = _terminate_process_groups(process)
             return blocked("bubblewrap exited before reporting its user namespace", stderr)
         try:
             namespace_info = json.loads(info_payload.decode("utf-8"))
-            child_pid = str(namespace_info["child-pid"])
-        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            process.terminate()
-            _, stderr = process.communicate()
+            child_pid = int(namespace_info["child-pid"])
+            if child_pid <= 0:
+                raise ValueError("child-pid must be a positive integer")
+            sandbox_child_pgid = child_pid
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            _, stderr = _terminate_process_groups(process)
             return blocked(f"invalid bubblewrap namespace information: {exc}", stderr)
 
-        uid_result = subprocess.run(
-            [newuidmap, child_pid, "0", str(caller_uid), "1"],
-            capture_output=True, text=True, check=False,
+        uid_result = _run_mapping_helper(
+            [newuidmap, str(child_pid), "0", str(caller_uid), "1"]
         )
-        gid_result = subprocess.run(
-            [newgidmap, child_pid, "0", str(caller_gid), "1"],
-            capture_output=True, text=True, check=False,
-        )
-        if uid_result.returncode != 0 or gid_result.returncode != 0:
-            process.terminate()
-            _, stderr = process.communicate()
+        if uid_result.returncode != 0:
+            _, stderr = _terminate_process_groups(process, sandbox_child_pgid)
             return blocked(
-                "could not map sandbox root to the invoking runner UID/GID",
-                f"newuidmap: {uid_result.stderr}\\nnewgidmap: {gid_result.stderr}\\nsandbox: {stderr}",
+                "could not map sandbox root UID to the invoking runner",
+                f"newuidmap: {uid_result.stderr}\nsandbox: {stderr}",
+            )
+
+        gid_result = _run_mapping_helper(
+            [newgidmap, str(child_pid), "0", str(caller_gid), "1"]
+        )
+        if gid_result.returncode != 0:
+            _, stderr = _terminate_process_groups(process, sandbox_child_pgid)
+            return blocked(
+                "could not map sandbox root GID to the invoking runner",
+                f"newgidmap: {gid_result.stderr}\nsandbox: {stderr}",
             )
 
         os.write(userns_block_write, b"1")
         os.close(userns_block_write)
         userns_block_write = -1
-        stdout, stderr = process.communicate()
+        (stdout, stderr), timed_out = _communicate_with_timeout(
+            process, args.timeout_seconds, sandbox_child_pgid
+        )
+        if timed_out:
+            return blocked(
+                f"ImageBuilder build exceeded its {args.timeout_seconds}s timeout",
+                f"stdout:\n{stdout}\nstderr:\n{stderr}",
+            )
         if stdout:
             sys.stdout.write(stdout)
         if stderr:
@@ -172,10 +311,13 @@ def main() -> int:
             os.unlink(probe_path)
         return process.returncode
     except (OSError, subprocess.SubprocessError) as exc:
-        if process is not None and process.poll() is None:
-            process.terminate()
-            process.communicate()
-        return blocked(f"sandbox setup failed: {exc}")
+        detail = ""
+        if process is not None:
+            cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                process, sandbox_child_pgid
+            )
+            detail = f"{cleanup_stdout}\n{cleanup_stderr}".strip()
+        return blocked(f"sandbox setup failed: {exc}", detail)
     finally:
         for fd in (info_read, info_write, userns_block_read, userns_block_write):
             if fd >= 0:
@@ -184,8 +326,7 @@ def main() -> int:
                 except OSError:
                     pass
         if process is not None and process.poll() is None:
-            process.terminate()
-            process.communicate()
+            _terminate_process_groups(process, sandbox_child_pgid)
         if os.path.lexists(probe_path):
             try:
                 os.unlink(probe_path)
