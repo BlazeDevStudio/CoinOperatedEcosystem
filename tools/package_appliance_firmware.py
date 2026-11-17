@@ -225,7 +225,12 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
     # Set strict filesystem permissions
     for root, dirs, files in os.walk(staging_dir):
         for d in dirs:
-            os.chmod(os.path.join(root, d), 0o755)
+            directory_path = os.path.join(root, d)
+            # os.walk lists directory symlinks in dirs even when it will not
+            # recurse into them. chmod follows symlinks by default, so skip
+            # them to avoid changing permissions outside the staging tree.
+            if not os.path.islink(directory_path):
+                os.chmod(directory_path, 0o755)
         for f in files:
             fp = os.path.join(root, f)
             if not os.path.islink(fp):
