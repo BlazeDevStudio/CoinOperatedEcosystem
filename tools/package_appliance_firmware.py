@@ -426,6 +426,14 @@ if [ -d "$BIN_DIR" ]; then
         echo "RELEASE-BLOCKED: stale symlinked firmware images exist: $PRIOR_SYMLINK_IMAGE; use a clean ImageBuilder workspace" >&2
         exit 1
     fi
+    # Reject every pre-existing symlink in the target tree before invoking
+    # ImageBuilder. A nested link with an arbitrary name can redirect Makefile
+    # writes outside this workspace before the post-build scan runs.
+    PRIOR_SYMLINK_ENTRY=$(find "$BIN_DIR" -type l -print -quit)
+    if [ -n "$PRIOR_SYMLINK_ENTRY" ]; then
+        echo "RELEASE-BLOCKED: pre-existing symlink entry in ImageBuilder output tree: $PRIOR_SYMLINK_ENTRY" >&2
+        exit 1
+    fi
     PRIOR_IMAGE=$(find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -print -quit)
     if [ -n "$PRIOR_IMAGE" ]; then
         echo "RELEASE-BLOCKED: stale firmware images exist: $PRIOR_IMAGE; use a clean ImageBuilder workspace" >&2
