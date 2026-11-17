@@ -9,6 +9,7 @@ Generates validated OpenWrt rootfs overlays and ImageBuilder profiles for turnke
 """
 import argparse
 import errno
+import hashlib
 import json
 import os
 import shutil
@@ -399,23 +400,96 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
         raise ValueError("Invalid ImageBuilder profile ID")
     if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", target_arch):
         raise ValueError("Invalid ImageBuilder target/subtarget")
+    # The generated operator entrypoint must use this exact release-owned runner.
+    runner_path = os.path.realpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_imagebuilder_sandbox.py")
+    )
+    if not os.path.isfile(runner_path) or os.path.islink(runner_path):
+        raise FileNotFoundError(f"Required ImageBuilder sandbox runner is missing: {runner_path}")
+    with open(runner_path, "rb") as runner_file:
+        runner_sha256 = hashlib.sha256(runner_file.read()).hexdigest()
+
     # This absolute path remains valid after the wrapper changes into ImageBuilder.
     stage_arg = shlex.quote(staging_dir)
+    runner_arg = shlex.quote(runner_path)
 
     content = f"""#!/bin/sh
 # Auto-generated nonproduction ImageBuilder wrapper for {profile_id} ({target_arch})
 # A checksum is not hardware or financial release acceptance.
+# Host root is read-only and only ImageBuilder is writable; network is shared, not isolated.
 set -eu
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "RELEASE-BLOCKED: python3 is required to verify and enter the ImageBuilder boundary" >&2
+    exit 1
+fi
+
+BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
+BUILD_DIR="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$BUILD_DIR")"
+if [ ! -d "$BUILD_DIR" ]; then
+    echo "RELEASE-BLOCKED: ImageBuilder directory not found: $BUILD_DIR" >&2
+    exit 1
+fi
+BUILD_DIR_REAL="$(cd "$BUILD_DIR" && pwd -P)"
+if [ "$BUILD_DIR_REAL" != "$BUILD_DIR" ]; then
+    echo "RELEASE-BLOCKED: ImageBuilder path contains a symlink component: $BUILD_DIR" >&2
+    exit 1
+fi
+
+SCRIPT_PATH="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$0")"
+SCRIPT_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SCRIPT_PATH")"
+if [ "$SCRIPT_REAL" != "$SCRIPT_PATH" ]; then
+    echo "RELEASE-BLOCKED: generated build script path contains a symlink: $SCRIPT_PATH" >&2
+    exit 1
+fi
+
+RUNNER_PATH={runner_arg}
+RUNNER_SHA256={runner_sha256}
+if [ ! -f "$RUNNER_PATH" ] || [ -L "$RUNNER_PATH" ]; then
+    echo "RELEASE-BLOCKED: required ImageBuilder sandbox runner is missing or symlinked: $RUNNER_PATH" >&2
+    exit 1
+fi
+command -v sha256sum >/dev/null 2>&1 || {{
+    echo "RELEASE-BLOCKED: sha256sum is required to verify the sandbox runner" >&2
+    exit 1
+}}
+RUNNER_DIGEST_LINE="$(sha256sum "$RUNNER_PATH")"
+ACTUAL_RUNNER_SHA256="${{RUNNER_DIGEST_LINE%% *}}"
+if [ "$ACTUAL_RUNNER_SHA256" != "$RUNNER_SHA256" ]; then
+    echo "RELEASE-BLOCKED: sandbox runner SHA-256 differs from the generated wrapper" >&2
+    exit 1
+fi
+
+# The runner creates a per-invocation ownership probe inside the writable
+# ImageBuilder bind. A direct operator invocation must re-enter through sudo.
+if [ "${{PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}}" != "1" ] ||
+   [ -z "${{PHX_BWRAP_OWNER_PROBE:-}}" ] ||
+   [ ! -f "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ] ||
+   [ -L "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo "RELEASE-BLOCKED: sudo is required to invoke the ImageBuilder boundary" >&2
+        exit 1
+    fi
+    SANDBOX_ROOT="$(python3 - "$BUILD_DIR" "$SCRIPT_PATH" <<'PY'
+import os, sys
+try:
+    print(os.path.commonpath((os.path.dirname(sys.argv[1]), sys.argv[2])))
+except ValueError:
+    raise SystemExit(1)
+PY
+)"
+    if [ -z "$SANDBOX_ROOT" ]; then
+        echo "RELEASE-BLOCKED: cannot determine a common read-only sandbox root" >&2
+        exit 1
+    fi
+    echo "RELEASE-BOUNDARY: entering bubblewrap; only the ImageBuilder directory is writable; network isolation is not claimed." >&2
+    exec sudo -- python3 "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH"
+fi
+
 # Refuse shell redirections to paths created after the preflight checks.
 # This protects both checksum-manifest paths from symlink substitution by the builder.
 set -C
 
-BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
-# Normalize relative workspace overrides before deriving paths or changing directories.
-case "$BUILD_DIR" in
-    /*) ;;
-    *) BUILD_DIR="$(pwd -P)/$BUILD_DIR" ;;
-esac
 STAGING_DIR={stage_arg}
 if [ ! -f "$BUILD_DIR/Makefile" ]; then
     echo "RELEASE-BLOCKED: ImageBuilder Makefile not found in $BUILD_DIR" >&2
