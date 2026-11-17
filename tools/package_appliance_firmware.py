@@ -147,6 +147,44 @@ def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool =
     )
 
 
+def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
+    """Create a real directory chain beneath staging without traversing copied symlinks."""
+    current = staging_dir
+    for component in relative_path.split("/"):
+        if component in ("", ".", ".."):
+            raise ValueError(f"Invalid staged directory component: {component!r}")
+        current = os.path.join(current, component)
+        try:
+            os.mkdir(current)
+        except FileExistsError:
+            pass
+        mode = os.lstat(current).st_mode
+        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+            raise ValueError(
+                f"Refusing symlink or non-directory in staged configuration path: {current}"
+            )
+    return current
+
+
+def _write_staging_file(directory: str, filename: str, content: str) -> None:
+    """Write a staged configuration file without following a copied final symlink."""
+    path = os.path.join(directory, filename)
+    try:
+        existing_mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        existing_mode = None
+    if existing_mode is not None and not stat.S_ISREG(existing_mode):
+        raise ValueError(
+            f"Refusing symlink or non-regular staged configuration file: {path}"
+        )
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    file_fd = os.open(path, flags, 0o644)
+    with os.fdopen(file_fd, "w", encoding="utf-8") as staged_file:
+        staged_file.write(content)
+
+
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
     """Stage the rootfs into a fresh, isolated destination without deleting existing data."""
     source_rootfs = os.path.realpath(os.path.abspath(source_rootfs))
@@ -173,17 +211,14 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
         )
     shutil.copytree(source_rootfs, staging_dir, symlinks=True)
 
-    # Inject profile-tailored network configuration
-    etc_config = os.path.join(staging_dir, "etc", "config")
-    os.makedirs(etc_config, exist_ok=True)
-    with open(os.path.join(etc_config, "network"), "w", encoding="utf-8") as f:
-        f.write(generate_network_uci(profile))
+    # Inject generated configuration only through real directories and regular files.
+    # copytree preserves symlinks; following one here could overwrite data outside staging.
+    etc_config = _ensure_staging_directory(staging_dir, "etc/config")
+    _write_staging_file(etc_config, "network", generate_network_uci(profile))
 
     # Save target profile specification into appliance metadata
-    etc_blaze = os.path.join(staging_dir, "etc", "blazepwifi")
-    os.makedirs(etc_blaze, exist_ok=True)
-    with open(os.path.join(etc_blaze, "appliance_profile.json"), "w", encoding="utf-8") as f:
-        json.dump(profile, f, indent=2)
+    etc_blaze = _ensure_staging_directory(staging_dir, "etc/blazepwifi")
+    _write_staging_file(etc_blaze, "appliance_profile.json", json.dumps(profile, indent=2))
 
     # Optionally bundle BlazeRental module for unified appliance bundles
     if include_rental:
