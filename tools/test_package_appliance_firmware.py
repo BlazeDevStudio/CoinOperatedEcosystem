@@ -55,6 +55,39 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option device 'br-lan.20'", uci)
         self.assertIn("option device 'wan'", uci)
 
+    def test_generate_network_uci_rejects_profile_uci_injection(self):
+        mutations = [
+            (
+                "wan_interface",
+                lambda profile: profile["networking"].__setitem__(
+                    "wan_interface",
+                    "wan'\\nconfig interface 'injected"
+                ),
+            ),
+            (
+                "port_interface",
+                lambda profile: profile["networking"]["ports"][1].__setitem__(
+                    "interface",
+                    "lan1'\\nconfig interface 'injected"
+                ),
+            ),
+            (
+                "guest_vlan",
+                lambda profile: profile["networking"]["default_vlan_ids"].__setitem__(
+                    "guest",
+                    "10'\\nconfig interface 'injected"
+                ),
+            ),
+        ]
+        for field, mutate in mutations:
+            with self.subTest(field=field):
+                profile = load_profile("ew1200g-pro")
+                mutate(profile)
+                with self.assertRaisesRegex(
+                    ValueError, "Invalid (network interface|VLAN ID)"
+                ):
+                    generate_network_uci(profile)
+
     def test_generate_network_uci_orangepi(self):
         p = load_profile("orangepi-r1-plus-lts")
         uci = generate_network_uci(p)
