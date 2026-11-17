@@ -7,6 +7,7 @@ on:
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
+      - "tools/test_imagebuilder_sandbox_host.py"
       - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
       - ".github/workflows/release-imagebuilder-sandbox.yml"
@@ -16,6 +17,7 @@ on:
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
+      - "tools/test_imagebuilder_sandbox_host.py"
       - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
       - ".github/workflows/release-imagebuilder-sandbox.yml"
@@ -46,6 +48,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bubblewrap
           bwrap --version
+
+      - name: Run sandbox host preflight unit tests
+        run: python3 tools/test_imagebuilder_sandbox_host.py -v
 
       - name: Verify unprivileged single-ID runner identity
         run: |
