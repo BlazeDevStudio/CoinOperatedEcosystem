@@ -1208,33 +1208,31 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
 
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
-    def test_mapping_helper_uses_a_finite_timeout(self):
-        command = ["newuidmap", "123", "0", "1000", "1"]
-        with mock.patch.object(run_imagebuilder_sandbox.subprocess, "run") as run:
-            run.return_value = subprocess.CompletedProcess(command, 0, "", "")
-            result = run_imagebuilder_sandbox._run_mapping_helper(command)
+    def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
+        with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=1001):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=1001):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=1001):
+                        self.assertEqual(
+                            run_imagebuilder_sandbox._invoking_unprivileged_identity(),
+                            (1001, 1001),
+                        )
 
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(
-            run.call_args.kwargs.get("timeout"),
-            run_imagebuilder_sandbox.USERMAP_HELPER_TIMEOUT_SECONDS,
-        )
+    def test_unprivileged_identity_rejects_root_execution(self):
+        with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=0):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=0):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=0):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=0):
+                        with self.assertRaisesRegex(PermissionError, "non-root"):
+                            run_imagebuilder_sandbox._invoking_unprivileged_identity()
 
-    def test_mapping_helper_timeout_is_fail_closed(self):
-        command = ["newgidmap", "123", "0", "1000", "1"]
-        with mock.patch.object(
-            run_imagebuilder_sandbox.subprocess,
-            "run",
-            side_effect=subprocess.TimeoutExpired(
-                command, run_imagebuilder_sandbox.USERMAP_HELPER_TIMEOUT_SECONDS,
-                output="partial mapping output", stderr="mapping helper stalled"
-            ),
-        ):
-            result = run_imagebuilder_sandbox._run_mapping_helper(command)
-
-        self.assertEqual(result.returncode, 124)
-        self.assertIn("timed out", result.stderr)
-        self.assertIn("mapping helper stalled", result.stderr)
+    def test_unprivileged_identity_rejects_mismatched_effective_ids(self):
+        with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=1001):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=0):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=0):
+                        with self.assertRaisesRegex(PermissionError, "mismatched effective"):
+                            run_imagebuilder_sandbox._invoking_unprivileged_identity()
 
     def test_communicate_timeout_kills_bwrap_and_sandbox_process_groups(self):
         class TimedOutProcess:
