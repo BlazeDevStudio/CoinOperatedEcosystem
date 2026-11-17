@@ -14,7 +14,6 @@ import sys
 
 
 USERNS_INFO_TIMEOUT_SECONDS = 30
-USERMAP_HELPER_TIMEOUT_SECONDS = 10
 PROCESS_TERMINATION_GRACE_SECONDS = 2.0
 DEFAULT_BUILD_TIMEOUT_SECONDS = 3600
 MAX_BUILD_TIMEOUT_SECONDS = 14400
@@ -34,27 +33,15 @@ def _as_text(value: object) -> str:
         return value.decode("utf-8", errors="replace")
     return str(value)
 
-
-def _run_mapping_helper(command: list[str]) -> subprocess.CompletedProcess:
-    """Run one UID/GID mapping helper with a finite wait."""
-    try:
-        return subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=USERMAP_HELPER_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return subprocess.CompletedProcess(
-            command,
-            124,
-            _as_text(exc.stdout or exc.output),
-            (
-                f"mapping helper timed out after {USERMAP_HELPER_TIMEOUT_SECONDS}s\n"
-                f"{_as_text(exc.stderr)}"
-            ),
-        )
+def _invoking_unprivileged_identity() -> tuple[int, int]:
+    """Return the single host UID/GID allowed to own sandbox output."""
+    uid = os.getuid()
+    gid = os.getgid()
+    if uid <= 0 or gid <= 0:
+        raise PermissionError("sandbox runner must be invoked by a non-root user")
+    if os.geteuid() != uid or os.getegid() != gid:
+        raise PermissionError("sandbox runner must not use elevated or mismatched effective UID/GID")
+    return uid, gid
 
 
 def _terminate_process_groups(
@@ -149,15 +136,10 @@ def main() -> int:
     if not 1 <= args.timeout_seconds <= MAX_BUILD_TIMEOUT_SECONDS:
         return blocked(f"build timeout must be between 1 and {MAX_BUILD_TIMEOUT_SECONDS} seconds")
 
-    if os.geteuid() != 0:
-        return blocked("sandbox runner must be invoked through sudo")
     try:
-        caller_uid = int(os.environ["SUDO_UID"])
-        caller_gid = int(os.environ["SUDO_GID"])
-    except (KeyError, ValueError):
-        return blocked("sudo caller UID/GID are unavailable")
-    if caller_uid <= 0 or caller_gid <= 0:
-        return blocked("refusing to map a root or invalid caller identity")
+        caller_uid, caller_gid = _invoking_unprivileged_identity()
+    except PermissionError as exc:
+        return blocked(str(exc))
 
     cwd = os.path.realpath(os.path.abspath(args.cwd))
     builder = os.path.abspath(args.builder)
@@ -175,10 +157,8 @@ def main() -> int:
         return blocked("sandbox paths are not on one filesystem root")
 
     bwrap = shutil.which("bwrap")
-    newuidmap = shutil.which("newuidmap")
-    newgidmap = shutil.which("newgidmap")
-    if not bwrap or not newuidmap or not newgidmap:
-        return blocked("bubblewrap and uidmap helpers are required")
+    if not bwrap:
+        return blocked("bubblewrap is required")
 
     probe_name = f".phx-bwrap-owner-probe-{os.getpid()}"
     probe_path = os.path.join(builder, probe_name)
@@ -186,9 +166,7 @@ def main() -> int:
         return blocked("refusing to overwrite an existing ownership probe")
 
     info_read, info_write = os.pipe()
-    userns_block_read, userns_block_write = os.pipe()
     os.set_inheritable(info_write, True)
-    os.set_inheritable(userns_block_read, True)
     sandbox_script = (
         'printf "owner-probe\\n" > "$OPENWRT_IMAGEBUILDER_DIR/$PHX_BWRAP_OWNER_PROBE"; '
         'exec sh "$1"'
@@ -198,7 +176,6 @@ def main() -> int:
         "--unshare-all",
         "--share-net",  # Hosted runner cannot configure loopback; network isolation is not claimed.
         "--unshare-user",
-        "--userns-block-fd", str(userns_block_read),
         "--info-fd", str(info_write),
         "--die-with-parent",
         "--new-session",
@@ -231,14 +208,11 @@ def main() -> int:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            pass_fds=(info_write, userns_block_read),
+            pass_fds=(info_write,),
             start_new_session=True,
         )
         os.close(info_write)
         info_write = -1
-        os.close(userns_block_read)
-        userns_block_read = -1
-
         ready, _, _ = select.select(
             [info_read], [], [], USERNS_INFO_TIMEOUT_SECONDS
         )
@@ -259,29 +233,8 @@ def main() -> int:
             _, stderr = _terminate_process_groups(process)
             return blocked(f"invalid bubblewrap namespace information: {exc}", stderr)
 
-        uid_result = _run_mapping_helper(
-            [newuidmap, str(child_pid), "0", str(caller_uid), "1"]
-        )
-        if uid_result.returncode != 0:
-            _, stderr = _terminate_process_groups(process, sandbox_child_pgid)
-            return blocked(
-                "could not map sandbox root UID to the invoking runner",
-                f"newuidmap: {uid_result.stderr}\nsandbox: {stderr}",
-            )
-
-        gid_result = _run_mapping_helper(
-            [newgidmap, str(child_pid), "0", str(caller_gid), "1"]
-        )
-        if gid_result.returncode != 0:
-            _, stderr = _terminate_process_groups(process, sandbox_child_pgid)
-            return blocked(
-                "could not map sandbox root GID to the invoking runner",
-                f"newgidmap: {gid_result.stderr}\nsandbox: {stderr}",
-            )
-
-        os.write(userns_block_write, b"1")
-        os.close(userns_block_write)
-        userns_block_write = -1
+        # Bubblewrap's unprivileged user namespace maps only this invoking
+        # host UID/GID to namespace root; no external mapping helper is used.
         (stdout, stderr), timed_out = _communicate_with_timeout(
             process, args.timeout_seconds, sandbox_child_pgid
         )
@@ -319,7 +272,7 @@ def main() -> int:
             detail = f"{cleanup_stdout}\n{cleanup_stderr}".strip()
         return blocked(f"sandbox setup failed: {exc}", detail)
     finally:
-        for fd in (info_read, info_write, userns_block_read, userns_block_write):
+        for fd in (info_read, info_write):
             if fd >= 0:
                 try:
                     os.close(fd)
