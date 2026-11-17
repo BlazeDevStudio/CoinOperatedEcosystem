@@ -1,3 +1,26 @@
+## PHX-RELEASE UTC14 — ImageBuilder execution boundary (CI pending)
+
+- Active draft: PR #31, branch `phoenix/release-imagebuilder-failclosed-20261115`.
+- Source/test head at handover preparation: `da93eafde167f6ada9c6c0ea19d1e3e2f285001b`.
+- Scope: release-owned test harness, sandbox runner and CI only. No production packager, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation changed.
+- Regression evidence: run [#44098400955](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44098400955) reproduced a Makefile-created symlink write to an external sentinel (the sentinel changed to `BUILDER-OVERWRITE`). This is the decisive pre-sandbox RED.
+- Earlier sandbox experiments are retained as failed evidence, not successes:
+  - [#44098939249](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44098939249): UID probe could not bind the runner temp path; tests skipped.
+  - [#44102142646](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44102142646): UID probe write denied.
+  - [#44102797110](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44102797110) and [#44102941785](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44102941785): namespace identity reported `1001:1001`, but host-created file owner was `0:0`; caller ownership was not preserved.
+  - [#44103570308](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44103570308): unprivileged bwrap failed loopback setup (`RTM_NEWADDR`).
+  - [#44103764407](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44103764407): unprivileged bwrap failed mount propagation (`Failed to make / slave: Permission denied`).
+- Current candidate implementation:
+  - `tools/run_imagebuilder_sandbox.py` starts privileged bubblewrap, blocks until `newuidmap`/`newgidmap` map namespace UID/GID 0 to the invoking runner identity, then verifies the host owner of a probe file.
+  - Root filesystem is read-only; only the disposable ImageBuilder directory is writable; `/tmp` is tmpfs; the child environment is cleared and rebuilt without runner credentials.
+  - `--share-net` is deliberate because this hosted runner cannot configure loopback. **Network isolation is not claimed**; MASTER/QA must review this boundary.
+  - The test harness routes all eight generated-wrapper executions through this helper when `PHX_REQUIRE_BWRAP=1`.
+- Current exact-head Actions: [sandbox run #44104503489](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503489) is **PENDING with no jobs returned**. No sandbox pass or ownership-preservation result is claimed. Case-collision [#44104503379](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503379) passed; shared-contract/build run [#44104503348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503348) was still in progress at handover.
+- Next: inspect exact-head sandbox CI; require both unchanged external sentinel and host owner == invoking UID/GID. If the privileged mapping fails, stop and ask MASTER to approve an alternative runner/container boundary. Obtain independent PHX-QA review before considering the helper accepted.
+- Separate MASTER blocker: package configuration still carries the invalid placeholder ULA `fd00:db8:blaze::/48`; do not invent a replacement. MASTER/CORE must define the durable site-specific ULA interface before release changes it.
+- Private Drive project registry v11 was not available through the connected Library surface during this activation. No older registry snapshot was substituted.
+
+
 # PHX-RELEASE — ImageBuilder wrapper safety and operator handover
 
 **Checkpoint:** 2026-11-17 UTC08. **Status:** DRAFT / SOURCE-TEST CI VERIFIED / PRODUCTION NO-GO.
