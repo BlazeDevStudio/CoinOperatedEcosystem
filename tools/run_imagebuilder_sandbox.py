@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one generated ImageBuilder wrapper with a read-only host root."""
+"""Run one generated ImageBuilder wrapper with a read-only host root and one writable build tree."""
 from __future__ import annotations
 
 import argparse
@@ -92,6 +92,7 @@ def main() -> int:
         "--setenv", "LC_ALL", "C",
         "--setenv", "OPENWRT_IMAGEBUILDER_DIR", builder,
         "--setenv", "PHX_BWRAP_OWNER_PROBE", probe_name,
+        "--setenv", "PHX_IMAGEBUILDER_SANDBOX_ACTIVE", "1",
         "--uid", "0",
         "--gid", "0",
         "--",
