@@ -280,14 +280,35 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             raise RuntimeError("Generated wrapper is outside the test workspace") from exc
 
         if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
-            return subprocess.run(
-                ["sh", wrapper_path],
-                cwd=cwd_path,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
+            # Unit tests emulate the runner's short-lived ownership probe. The
+            # dedicated PHX_REQUIRE_BWRAP workflow exercises the real helper.
+            raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
+            if not raw_builder:
+                raise RuntimeError("ImageBuilder workspace is required for wrapper tests")
+            builder_path = os.path.abspath(
+                raw_builder if os.path.isabs(raw_builder) else os.path.join(cwd_path, raw_builder)
             )
+            probe_name = ".phx-test-owner-probe"
+            probe_path = os.path.join(builder_path, probe_name)
+            if os.path.lexists(probe_path):
+                raise RuntimeError("Refusing to overwrite the test ownership probe")
+            with open(probe_path, "w", encoding="utf-8") as fp:
+                fp.write("test-only probe\\n")
+            test_env = env.copy()
+            test_env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
+            test_env["PHX_BWRAP_OWNER_PROBE"] = probe_name
+            try:
+                return subprocess.run(
+                    ["sh", wrapper_path],
+                    cwd=cwd_path,
+                    env=test_env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            finally:
+                if os.path.lexists(probe_path):
+                    os.unlink(probe_path)
 
         sudo = shutil.which("sudo")
         sandbox_runner = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
@@ -411,6 +432,62 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
         result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
         return result, fake_builder, wrapper, stage_absolute
+
+    def test_generated_wrapper_routes_operator_invocation_through_sandbox_runner(self):
+        profile = load_profile("gl-mt1300")
+        staging_dir = os.path.join(self.temp_dir, "operator staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging_dir)
+        wrapper = os.path.join(self.temp_dir, "operator-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "operator-imagebuilder")
+        os.makedirs(builder, exist_ok=True)
+        image_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621", "operator.bin")
+        recipe = (
+            "image:\\n"
+            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
+            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        fake_bin = os.path.join(self.temp_dir, "fake-bin")
+        os.makedirs(fake_bin, exist_ok=True)
+        sudo_path = os.path.join(fake_bin, "sudo")
+        args_path = os.path.join(self.temp_dir, "sudo-args.txt")
+        with open(sudo_path, "w", encoding="utf-8") as fp:
+            fp.write(
+                "#!/bin/sh\\n"
+                "printf '%s\\n' \"$@\" > \"$PHX_TEST_SUDO_ARGS\"\\n"
+                "exit 73\\n"
+            )
+        os.chmod(sudo_path, 0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = fake_bin + os.pathsep + env.get("PATH", "")
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        env["PHX_TEST_SUDO_ARGS"] = args_path
+        env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
+        env.pop("PHX_BWRAP_OWNER_PROBE", None)
+        result = subprocess.run(
+            ["sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 73, result.stderr)
+        with open(args_path, "r", encoding="utf-8") as fp:
+            runner_args = [line.rstrip("\\n") for line in fp]
+        runner_path = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
+        self.assertEqual(runner_args[:3], ["--", "python3", runner_path])
+        self.assertEqual(runner_args[runner_args.index("--cwd") + 1], self.temp_dir)
+        self.assertEqual(runner_args[runner_args.index("--builder") + 1], builder)
+        self.assertEqual(runner_args[runner_args.index("--wrapper") + 1], wrapper)
+        self.assertFalse(os.path.exists(image_path), "operator Makefile must not run outside the sandbox")
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
     def test_generated_wrapper_denies_missing_target_images(self):
         result, builder, _, _ = self._run_mock_imagebuilder()
