@@ -38,7 +38,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install bubblewrap
+      - name: Install bubblewrap and uidmap
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bubblewrap uidmap
@@ -51,9 +51,7 @@ jobs:
           command -v newgidmap
           bwrap --version
 
-      - name: Verify privileged bubblewrap preserves caller file ownership
-        shell: bash
-        run      - name: Run packaging regressions with mandatory bubblewrap
+      - name: Run packaging regressions with mandatory bubblewrap
         env:
           PHX_REQUIRE_BWRAP: "1"
           PYTHONDONTWRITEBYTECODE: "1"
