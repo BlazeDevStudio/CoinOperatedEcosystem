@@ -264,6 +264,79 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(target_path, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
 
+    def _run_generated_wrapper(self, wrapper, cwd, env):
+        """Run the generated wrapper with only its ImageBuilder tree writable in CI."""
+        cwd_path = os.path.realpath(os.path.abspath(cwd))
+        wrapper_path = os.path.abspath(
+            wrapper if os.path.isabs(wrapper) else os.path.join(cwd_path, wrapper)
+        )
+        if os.path.realpath(wrapper_path) != wrapper_path or not os.path.isfile(wrapper_path):
+            raise RuntimeError("Generated wrapper must be a regular file inside the test workspace")
+        try:
+            if os.path.commonpath((cwd_path, wrapper_path)) != cwd_path:
+                raise RuntimeError("Generated wrapper must remain inside the test workspace")
+        except ValueError as exc:
+            raise RuntimeError("Generated wrapper is outside the test workspace") from exc
+
+        command = ["sh", wrapper_path]
+        run_env = env
+        if os.environ.get("PHX_REQUIRE_BWRAP") == "1":
+            bwrap = shutil.which("bwrap")
+            sudo = shutil.which("sudo")
+            if not bwrap or not sudo:
+                raise RuntimeError("PHX_REQUIRE_BWRAP=1 requires both bubblewrap and sudo")
+
+            raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
+            if not raw_builder:
+                raise RuntimeError("ImageBuilder workspace is required for sandboxed execution")
+            builder_path = os.path.abspath(
+                raw_builder if os.path.isabs(raw_builder) else os.path.join(cwd_path, raw_builder)
+            )
+            if os.path.realpath(builder_path) != builder_path or not os.path.isdir(builder_path):
+                raise RuntimeError("ImageBuilder workspace must be a real directory without symlink parents")
+            try:
+                if os.path.commonpath((cwd_path, builder_path)) != cwd_path or builder_path == cwd_path:
+                    raise RuntimeError("Writable ImageBuilder workspace must be a strict child of the test workspace")
+            except ValueError as exc:
+                raise RuntimeError("ImageBuilder workspace is outside the test workspace") from exc
+
+            # The host root is read-only. Only the disposable ImageBuilder tree is
+            # writable; /tmp is a fresh tmpfs. Makefile-created symlinks therefore
+            # cannot write to test sentinels or other host-owned paths.
+            command = [
+                sudo, bwrap,
+                "--unshare-all",
+                "--uid", str(os.getuid()),
+                "--gid", str(os.getgid()),
+                "--die-with-parent",
+                "--new-session",
+                "--ro-bind", "/", "/",
+                "--dev", "/dev",
+                "--proc", "/proc",
+                "--tmpfs", "/tmp",
+                "--bind", builder_path, builder_path,
+                "--chdir", cwd_path,
+                "--clearenv",
+                "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "--setenv", "HOME", "/tmp",
+                "--setenv", "TMPDIR", "/tmp",
+                "--setenv", "LC_ALL", "C",
+                "--setenv", "OPENWRT_IMAGEBUILDER_DIR", builder_path,
+                "--",
+                "sh", wrapper_path,
+            ]
+            # Do not forward GitHub tokens or other runner environment into Make.
+            run_env = {"PATH": "/usr/bin:/bin", "LANG": "C"}
+
+        return subprocess.run(
+            command,
+            cwd=cwd_path,
+            env=run_env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
                                preexisting_image=False, preexisting_manifest=False,
                                manifest_symlink=False, temp_manifest_symlink=False,
@@ -346,10 +419,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
-        result = subprocess.run(
-            ["sh", wrapper], cwd=self.temp_dir, env=env,
-            capture_output=True, text=True, check=False
-        )
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
         return result, fake_builder, wrapper, stage_absolute
 
     def test_generated_wrapper_denies_missing_target_images(self):
@@ -465,8 +535,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                      "\t@: > bin/targets/ramips/mt7621/empty.bin\n")
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-        result = subprocess.run(["sh", wrapper], cwd=self.temp_dir, env=env,
-                                capture_output=True, text=True, check=False)
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE-BLOCKED: empty firmware image", result.stderr)
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
@@ -546,14 +615,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-        result = subprocess.run(
-            ["sh", wrapper],
-            cwd=self.temp_dir,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
 
         self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertFalse(
@@ -604,10 +666,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = os.path.relpath(builder, self.temp_dir)
-        result = subprocess.run(
-            ["sh", wrapper], cwd=self.temp_dir, env=env,
-            capture_output=True, text=True, check=False
-        )
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("Appliance PREVIEW build completed", result.stdout)
         manifest_path = os.path.join(builder, "RELEASE_MANIFEST.sha256")
@@ -732,10 +791,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
             env = os.environ.copy()
             env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-            result = subprocess.run(
-                ["sh", wrapper], cwd=workspace, env=env,
-                capture_output=True, text=True, check=False
-            )
+            result = self._run_generated_wrapper(wrapper, workspace, env)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
             manifest_path = os.path.join(builder, "RELEASE_MANIFEST.sha256")
@@ -781,10 +837,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-        result = subprocess.run(
-            ["sh", wrapper], cwd=self.temp_dir, env=env,
-            capture_output=True, text=True, check=False
-        )
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
 
         self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("cannot create", (result.stderr + result.stdout).lower())
@@ -824,10 +877,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-        result = subprocess.run(
-            ["sh", wrapper], cwd=self.temp_dir, env=env,
-            capture_output=True, text=True, check=False
-        )
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
 
         self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("cannot create", (result.stderr + result.stdout).lower())
@@ -988,10 +1038,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
             env = os.environ.copy()
             env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-            result = subprocess.run(
-                ["sh", wrapper], cwd=self.temp_dir, env=env,
-                capture_output=True, text=True, check=False
-            )
+            result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
 
             escaped_path = os.path.join(builder, escaped_image)
             marker_path = os.path.join(builder, symlink_marker)
