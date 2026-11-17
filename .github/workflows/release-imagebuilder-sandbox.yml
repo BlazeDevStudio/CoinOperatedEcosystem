@@ -49,6 +49,16 @@ jobs:
           echo 'NETWORK_ISOLATION=NOT_CLAIMED: checking whether privileged mount isolation is available'
           sudo bwrap --unshare-all --die-with-parent --new-session --ro-bind / / --tmpfs /tmp -- true
 
+      - name: Verify privileged bubblewrap preserves caller file ownership
+        shell: bash
+        run: |
+          probe="$(mktemp -d "$RUNNER_TEMP/phx-bwrap-uid-probe.XXXXXX")"
+          uid="$(id -u)"
+          gid="$(id -g)"
+          sudo bwrap --unshare-all --uid "$uid" --gid "$gid" --die-with-parent --new-session --ro-bind / / --tmpfs /tmp --dir /tmp/phx-workspace --bind "$probe" /tmp/phx-workspace --chdir /tmp/phx-workspace -- sh -eu -c 'printf "%s:%s\\n" "$(id -u)" "$(id -g)" > identity'
+          test "$(cat "$probe/identity")" = "$uid:$gid"
+          test "$(stat -c '%u:%g' "$probe/identity")" = "$uid:$gid"
+
       - name: Run packaging regressions with mandatory bubblewrap
         env:
           PHX_REQUIRE_BWRAP: "1"
