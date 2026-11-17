@@ -7,6 +7,7 @@ on:
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
+      - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
       - ".github/workflows/release-imagebuilder-sandbox.yml"
   push:
@@ -15,6 +16,7 @@ on:
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
+      - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
       - ".github/workflows/release-imagebuilder-sandbox.yml"
   workflow_dispatch:
