@@ -464,10 +464,10 @@ fi
 # ImageBuilder bind. Direct operator invocation re-enters as the same
 # unprivileged host user; it never elevates through sudo.
 PHX_PROBE_VALID=0
-case "${PHX_BWRAP_OWNER_PROBE:-}" in
+case "${{PHX_BWRAP_OWNER_PROBE:-}}" in
     .phx-bwrap-owner-probe-[0-9]*|.phx-test-owner-probe) PHX_PROBE_VALID=1 ;;
 esac
-if [ "${PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}" != "1" ] ||
+if [ "${{PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}}" != "1" ] ||
    [ "$PHX_PROBE_VALID" != "1" ] ||
    [ ! -f "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ] ||
    [ -L "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ]; then
