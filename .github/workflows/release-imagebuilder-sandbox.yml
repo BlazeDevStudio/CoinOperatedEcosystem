@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           probe="$(mktemp -d /var/tmp/phx-bwrap-uid-probe.XXXXXX)"
-          chmod 755 "$probe"
+          chmod 777 "$probe"
           trap 'rm -rf "$probe"' EXIT
           uid="$(id -u)"
           gid="$(id -g)"
