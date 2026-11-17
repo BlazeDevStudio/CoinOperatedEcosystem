@@ -381,3 +381,36 @@ The preceding UTC11 checkpoint recorded the documentation-head ESP32 job as stil
 - Final case-collision [#44073554397](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44073554397): **COMPLETED SUCCESS**.
 
 These are exact documentation-head CI results for `d6641c3ed18ddd993b27b8ed4613c803da2d78b5`; the next docs-only handover commit will require its own exact-head CI.
+
+
+## PHX-RELEASE — 2026-11-17 UTC12 UCI serialization correction
+
+**Status:** source/test-head CI completed successfully; this handover update requires its own exact-head CI. PR #31 remains OPEN / DRAFT / UNMERGED. Production remains NO-GO.
+
+### Defect and bounded correction
+
+At the prior PR head, generate_network_uci() used double-escaped Python string literals for all UCI indentation (\\t) and joined sections with a double-escaped separator (\\n). The returned text therefore contained literal backslash-t/backslash-n characters rather than actual tab indentation and newline separators. Existing tests checked only fragments such as "option name 'br-lan'", so they did not catch the malformed serialized file written into the staged rootfs.
+
+- Test-first regression: [commit 9f831b1d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9f831b1d00c0d07c234604de323a544836686390) adds test_generate_network_uci_uses_real_newlines_and_tabs.
+- Exact-source RED: [Actions #44082821393](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44082821393), validation job 134037492103, **FAILED as expected**. 57 packaging tests ran; exactly the new serializer regression failed because the output contained literal \\n and \\t sequences and no real newline. The other 56 packaging tests passed. Firmware-hardening and shared-contract checks passed; profile staging and ESP32/ESP8266 jobs were skipped after validation failure. [Case-collision #44082821348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44082821348) **SUCCESS**.
+- Source correction: [commit 8edb1034](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8edb10348050e0aaaa59cc8e0c3ddb1b60a6415a) changes only UCI serialization escapes inside generate_network_uci(): actual tab indentation and actual newline section separators. It preserves all existing network values, interface/VLAN validation, profile schema and output ordering.
+
+### Exact source/test-head CI
+
+At source/test HEAD 8edb10348050e0aaaa59cc8e0c3ddb1b60a6415a:
+
+- [Actions #44083065438](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44083065438) **COMPLETED SUCCESS**. Validation job 134038325362 passed: 57/57 packaging/tool tests, 18/18 Shared contract tests, 10/10 appliance profile staging, and firmware-hardening/syntax checks. ESP32 job 134038405788 **SUCCESS**; ESP8266 job 134038405792 **SUCCESS**; both compile and artifact-upload steps passed.
+- [Case-collision #44083065418](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44083065418) **SUCCESS**.
+
+These are hosted synthetic packaging/profile tests and ESP compilation only. No OpenWrt uci parser, real ImageBuilder, actual appliance binary, physical router, electrical/coin test or hardware acceptance was run.
+
+### Coordination and remaining blockers
+
+- The separate MASTER UTC11 audit [commit 5d5ca7a0](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/commit/5d5ca7a04b81abe3e2771c7ba0f4e0ff135164db) identified the still-invalid literal fd00:db8:blaze::/48. This UTC12 correction deliberately did **not** change that value, add a profile field, or redefine the networking contract. PHX-MASTER / networking owners must specify the canonical ULA source and per-profile contract before release-owned code can consume it.
+- #26 remains OPEN / DRAFT at b382d233ff06c8791b1028bed3c617cc7b670d12; its five known workflow runs still return zero jobs. No integration acceptance is inferred.
+- #242 remains at 734b89d9e7792247e8376335c3f3685500ab3f89; its release workflow still grants workflow-level contents: write. #291 at 2c4edff231d9b2819415086825530d80b8801307 has global contents: read and isolates contents: write to the gated publish-release job. Its Windows build/handover passed in [#43744993487](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487); publisher skipped. No independent QA/MASTER reviews are recorded for #242/#291/#31.
+- The canonical private Drive registry v11 was not present in the accessible Library listing. The read-only listing covered 1,422 entries and exposed only registry snapshots v3–v7 plus an unversioned registry file; none was substituted for v11 and no private contents were copied to GitHub.
+
+Only tools/package_appliance_firmware.py, tools/test_package_appliance_firmware.py, and this release-owned handover are in scope. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was modified. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred.
+
+**Next exact action:** obtain PHX-QA and PHX-MASTER review of the serializer correction; separately resolve the canonical ULA contract and the #242/#291 migration ordering before any integration.
