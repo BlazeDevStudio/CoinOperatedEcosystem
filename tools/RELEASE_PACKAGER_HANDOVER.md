@@ -604,3 +604,48 @@ At handover HEAD feb9d9d5b8590f3a692c373329a3d5610a5613cc:
 - Case-collision [#44137530364](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44137530364): **PASS**.
 
 The source/test files and sandbox workflow were unchanged by this follow-up; only this handover was updated. No sandbox runtime acceptance is claimed.
+
+
+## PHX-RELEASE UTC18 — unprivileged single-ID user-namespace trial
+
+**Disposition: SOURCE TRIAL COMMITTED / SHARED CI PASS / HOSTED-RUNNER USERNS BLOCKED / PRODUCTION NO-GO.**
+
+The PHX-MASTER decision at Experiments commit [0b5adc04](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/commit/0b5adc046d6da13e3dd1913e8658e96e712f2bea) approved only an unprivileged single-ID user-namespace implementation trial and independent QA review. It prohibits runner elevation, SUDO_UID/SUDO_GID, newuidmap/newgidmap, subordinate-ID ranges and broad host identity grants.
+
+### Exact release branch and commits
+
+- COE draft PR #31 remains OPEN / DRAFT / UNMERGED, based on integration PR #26 at `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+- Branch: `phoenix/release-imagebuilder-failclosed-20261115`.
+- Final source/test head before this handover: `753326dcad460f7f0a3f7ce81f62a0dfb1890a53`.
+- Test-first direct-unprivileged-entrypoint regression: [d206a700](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d206a7009f7008be9a8b1c142d076a2d00bf72bb).
+- Runner single-ID/non-root implementation: [3a822c25](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3a822c25dde9e5cbca81f3544d20da67528dc549).
+- Generated operator wrapper no longer elevates with sudo: [e238d617](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e238d617bd2673bbae9b6528267bae590be15d67).
+- Identity regression tests: [41ff6805](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/41ff6805017dd56a1275cffcccff3df55c31ea27).
+- CI removes uidmap package dependency and verifies a non-root runner: [86862439](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/86862439a38074d1a8b351422bb07c863be6b6b8).
+- Corrected generated-shell f-string escaping after an intermediate authoring error: [ef05aa44](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ef05aa44e46f46add9519fdf750da2569f93fe23).
+- Corrected test fixture newline escaping: [753326dc](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/753326dcad460f7f0a3f7ce81f62a0dfb1890a53).
+
+Only release-owned runner, packager wrapper, test and sandbox-workflow paths changed. The runner still uses a read-only host-root bind, a writable disposable ImageBuilder tree, an ownership probe, bounded child execution and process-group cleanup. `--share-net` remains explicit: network isolation and host-file confidentiality are **not** claimed.
+
+### RED and exact-source CI
+
+- Test-first RED [#44145358339](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44145358339): **FAILED as expected** before source implementation. The prior runner rejected direct non-root invocation with `sandbox runner must be invoked through sudo`; 21 tests failed on that obsolete privileged assumption. Case-collision [#44145358428](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44145358428): PASS.
+- Intermediate source/workflow head [#44146213670](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44146213670) and shared validation [#44146213704](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44146213704): **FAILED due to a generated-wrapper Python f-string NameError** (`PHX_BWRAP_OWNER_PROBE`). This was an implementation/template authoring error, not an expected security RED; corrected in ef05aa44. Case-collision [#44146213492](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44146213492): PASS.
+- Corrected source/test head [#44146780982](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44146780982): **FAILED at the real bubblewrap setup** with `bwrap: setting up uid map: Permission denied`. The 53-test suite recorded 20 failures because the unprivileged namespace could not be created and the ownership probe was absent. The real symlink and 1-second delayed-write timeout paths were **not reached**. This is an environment-policy blocker, not a passing sandbox result.
+- Shared validation [#44146781248](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44146781248): **SUCCESS**; firmware-hardening/shared-contract validation PASS, ESP32 compile/artifact PASS, ESP8266 compile/artifact PASS.
+- Case-collision [#44146780932](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44146780932): **SUCCESS**.
+
+The unprivileged single-ID trial is therefore **not runtime accepted**. Do not restore sudo, uidmap helpers, subordinate-ID grants or an unsandboxed fallback to make CI green.
+
+### Cross-repository state and owner actions
+
+- MASTER #288 remains OPEN/DRAFT at `0b5adc046d6da13e3dd1913e8658e96e712f2bea`; no PR-triggered run returned.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; exact PR run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472): handover and Windows build PASS.
+- Experiments #291 remains `2c4edff231d9b2819415086825530d80b8801307`; [#43744993487](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487): handover/build PASS; publisher SKIPPED.
+- COE integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain QUEUED with zero jobs returned.
+- Independent PHX-QA review on COE #31: none submitted at this checkpoint.
+- Canonical private Drive registry v11 was not directly retrievable. An accessible private checkpoint references the canonical v11 filename for provenance only; it is not a replacement registry. No private identifiers or contents are copied here.
+
+**Next exact owner action:** PHX-MASTER / repository owner must provision or authorize a disposable, isolated, no-secret runner whose unprivileged user-namespace policy is explicitly enabled and independently reviewed. PHX-QA must independently review the exact candidate SHA and prove single-ID mapping, host ownership, external-sentinel containment, timeout cleanup and fail-closed behavior there. If no such runner is authorized, keep the sandbox acceptance BLOCKED.
+
+No merge, signing, publication, hardware flashing, payment migration, customer deployment or physical acceptance occurred. **PRODUCTION NO-GO remains mandatory.**
