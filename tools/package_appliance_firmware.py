@@ -166,8 +166,8 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
     return current
 
 
-def _write_staging_file(directory: str, filename: str, content: str) -> None:
-    """Write a staged configuration file without following a copied final symlink."""
+def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+    """Write a staged file without following a copied final-component symlink."""
     path = os.path.join(directory, filename)
     try:
         existing_mode = os.lstat(path).st_mode
@@ -175,14 +175,28 @@ def _write_staging_file(directory: str, filename: str, content: str) -> None:
         existing_mode = None
     if existing_mode is not None and not stat.S_ISREG(existing_mode):
         raise ValueError(
-            f"Refusing symlink or non-regular staged configuration file: {path}"
+            f"Refusing symlink or non-regular staged file destination: {path}"
         )
 
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     flags |= getattr(os, "O_NOFOLLOW", 0)
     file_fd = os.open(path, flags, 0o644)
-    with os.fdopen(file_fd, "w", encoding="utf-8") as staged_file:
+    with os.fdopen(file_fd, "wb") as staged_file:
         staged_file.write(content)
+
+
+def _write_staging_file(directory: str, filename: str, content: str) -> None:
+    """Write UTF-8 staged configuration without following copied symlinks."""
+    _write_staging_bytes(directory, filename, content.encode("utf-8"))
+
+
+def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
+    """Copy a regular source file into a verified staging directory safely."""
+    source_mode = os.lstat(source_path).st_mode
+    if not stat.S_ISREG(source_mode):
+        raise ValueError(f"Refusing symlink or non-regular rental source file: {source_path}")
+    with open(source_path, "rb") as source_file:
+        _write_staging_bytes(directory, filename, source_file.read())
 
 
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
@@ -226,23 +240,29 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
             raise FileNotFoundError(f"Rental source directory not found: {rental_source_dir}")
 
         # usr/lib/blazerental/core.sh
-        rental_lib = os.path.join(staging_dir, "usr", "lib", "blazerental")
-        os.makedirs(rental_lib, exist_ok=True)
-        shutil.copy2(os.path.join(rental_source_dir, "lib", "core.sh"), os.path.join(rental_lib, "core.sh"))
+        rental_lib = _ensure_staging_directory(staging_dir, "usr/lib/blazerental")
+        _copy_staging_file(
+            os.path.join(rental_source_dir, "lib", "core.sh"), rental_lib, "core.sh"
+        )
 
         # usr/sbin/blazerentalctl
-        rental_sbin = os.path.join(staging_dir, "usr", "sbin")
-        os.makedirs(rental_sbin, exist_ok=True)
-        shutil.copy2(os.path.join(rental_source_dir, "bin", "blazerentalctl"), os.path.join(rental_sbin, "blazerentalctl"))
+        rental_sbin = _ensure_staging_directory(staging_dir, "usr/sbin")
+        _copy_staging_file(
+            os.path.join(rental_source_dir, "bin", "blazerentalctl"),
+            rental_sbin,
+            "blazerentalctl",
+        )
 
         # www/cgi-bin/blazerental
-        rental_cgi = os.path.join(staging_dir, "www", "cgi-bin")
-        os.makedirs(rental_cgi, exist_ok=True)
-        shutil.copy2(os.path.join(rental_source_dir, "cgi-bin", "blazerental"), os.path.join(rental_cgi, "blazerental"))
+        rental_cgi = _ensure_staging_directory(staging_dir, "www/cgi-bin")
+        _copy_staging_file(
+            os.path.join(rental_source_dir, "cgi-bin", "blazerental"),
+            rental_cgi,
+            "blazerental",
+        )
 
         # etc/blazerental
-        rental_etc = os.path.join(staging_dir, "etc", "blazerental")
-        os.makedirs(rental_etc, exist_ok=True)
+        rental_etc = _ensure_staging_directory(staging_dir, "etc/blazerental")
         os.chmod(rental_etc, 0o700)
 
     # Calculate overlay size and verify flash constraints
