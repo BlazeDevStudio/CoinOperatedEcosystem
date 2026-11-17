@@ -322,6 +322,14 @@ if [ ! -d "$IMAGE_REL_DIR" ]; then
     exit 1
 fi
 
+# Firmware filename candidates must be regular files; find -type f alone
+# silently omits symlinks, leaving unmanifested .bin/.img.gz paths in output.
+SYMLINK_IMAGE=$(find "$IMAGE_REL_DIR" -type l \\( -name "*.bin" -o -name "*.img.gz" \\) -print -quit)
+if [ -n "$SYMLINK_IMAGE" ]; then
+    echo "RELEASE-BLOCKED: symlinked firmware image: $SYMLINK_IMAGE" >&2
+    exit 1
+fi
+
 EMPTY_IMAGE=$(find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then\n    echo "RELEASE-BLOCKED: empty firmware image: $EMPTY_IMAGE" >&2\n    exit 1\nfi\nfind "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
 if [ ! -s "$TMP_MANIFEST" ]; then
     rm -f "$TMP_MANIFEST"
