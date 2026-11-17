@@ -945,6 +945,62 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertFalse(os.path.lexists(os.path.join(external_dir, "generated-build.sh")))
 
 
+
+    def test_generated_wrapper_contains_make_created_symlink_write_to_host(self):
+        # This test runs only in the dedicated bubblewrap workflow. The sentinel
+        # is deliberately outside both the ImageBuilder workspace and /tmp.
+        if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
+            self.skipTest("Run in the dedicated release-imagebuilder-sandbox workflow")
+        if not shutil.which("bwrap"):
+            self.fail("PHX_REQUIRE_BWRAP=1 but bubblewrap is not installed")
+        if not os.path.isdir("/var/tmp") or not os.access("/var/tmp", os.W_OK):
+            self.fail("The dedicated Linux sandbox runner must provide writable /var/tmp")
+
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "sandbox-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "sandbox-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "sandbox-imagebuilder")
+        os.makedirs(builder)
+        external_dir = tempfile.mkdtemp(prefix="phx-imagebuilder-external-", dir="/var/tmp")
+        try:
+            external_target = os.path.join(external_dir, "operator-owned-sentinel.txt")
+            sentinel = "KEEP-OPERATOR-OWNED-SENTINEL\\n"
+            with open(external_target, "w", encoding="utf-8") as fp:
+                fp.write(sentinel)
+
+            escaped_image = "bin/targets/ramips/mt7621/cache/escape.img.gz"
+            recipe = (
+                "image:\\n"
+                "\\t@mkdir -p bin/targets/ramips/mt7621/cache\\n"
+                "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n"
+                "\\t@ln -s " + shlex.quote(external_target) + " " + escaped_image + "\\n"
+                "\\t@printf 'BUILDER-OVERWRITE' > " + escaped_image + "\\n"
+            )
+            with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+                fp.write(recipe)
+
+            env = os.environ.copy()
+            env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+            result = subprocess.run(
+                ["sh", wrapper], cwd=self.temp_dir, env=env,
+                capture_output=True, text=True, check=False
+            )
+
+            escaped_path = os.path.join(builder, escaped_image)
+            self.assertIn("Building Appliance Firmware", result.stdout)
+            self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertTrue(os.path.islink(escaped_path), "Makefile-created symlink should remain inside the disposable workspace")
+            with open(external_target, "r", encoding="utf-8") as fp:
+                self.assertEqual(
+                    fp.read(), sentinel,
+                    "ImageBuilder must not write through a symlink to a host-owned file",
+                )
+        finally:
+            shutil.rmtree(external_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -1,0 +1,55 @@
+name: Release ImageBuilder Sandbox (NO-GO)
+
+on:
+  pull_request:
+    branches:
+      - integration/ecosystem-nonproprietary-candidate-20261111
+    paths:
+      - "tools/package_appliance_firmware.py"
+      - "tools/test_package_appliance_firmware.py"
+      - "tools/RELEASE_PACKAGER_HANDOVER.md"
+      - ".github/workflows/release-imagebuilder-sandbox.yml"
+  push:
+    branches:
+      - phoenix/release-imagebuilder-failclosed-20261115
+    paths:
+      - "tools/package_appliance_firmware.py"
+      - "tools/test_package_appliance_firmware.py"
+      - "tools/RELEASE_PACKAGER_HANDOVER.md"
+      - ".github/workflows/release-imagebuilder-sandbox.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-imagebuilder-sandbox-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  imagebuilder-sandbox:
+    name: ImageBuilder write-boundary regression (NO-GO)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          bwrap --version
+
+      - name: Verify unprivileged namespace isolation
+        run: |
+          bwrap --unshare-all --die-with-parent --new-session --ro-bind / / --tmpfs /tmp -- true
+
+      - name: Run packaging regressions with mandatory bubblewrap
+        env:
+          PHX_REQUIRE_BWRAP: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python3 tools/test_package_appliance_firmware.py -v
