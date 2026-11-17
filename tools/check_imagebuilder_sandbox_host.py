@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Fail-fast capability probe for the release-owned ImageBuilder sandbox host."""
+import shutil
+import subprocess
+import sys
+
+PROBE_TIMEOUT_SECONDS = 10
+PROBE_SCRIPT = (
+    'test "$(id -u)" = "0" && '
+    'test "$(id -g)" = "0" && '
+    'printf "ready\\\\n" > /tmp/.phx-userns-preflight && '
+    'test -s /tmp/.phx-userns-preflight && '
+    'rm -f /tmp/.phx-userns-preflight'
+)
+SANDBOX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def build_probe_command(bwrap_path: str) -> list[str]:
+    """Mirror the runner's unprivileged namespace and minimal mount setup."""
+    return [
+        bwrap_path,
+        "--unshare-all",
+        "--share-net",
+        "--unshare-user",
+        "--die-with-parent",
+        "--new-session",
+        "--ro-bind", "/", "/",
+        "--dev", "/dev",
+        "--proc", "/proc",
+        "--tmpfs", "/tmp",
+        "--chdir", "/tmp",
+        "--clearenv",
+        "--setenv", "PATH", SANDBOX_PATH,
+        "--setenv", "HOME", "/tmp",
+        "--setenv", "TMPDIR", "/tmp",
+        "--setenv", "LC_ALL", "C",
+        "--uid", "0",
+        "--gid", "0",
+        "--",
+        "sh", "-eu", "-c", PROBE_SCRIPT,
+    ]
+
+
+def _as_text(value) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value or ""
+
+
+def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIMEOUT_SECONDS) -> tuple[bool, str]:
+    """Return readiness and an actionable reason without any privileged fallback."""
+    executable = bwrap_path or shutil.which("bwrap")
+    if not executable:
+        return False, "bubblewrap executable not found"
+    if timeout_seconds <= 0:
+        return False, "bubblewrap preflight timeout must be positive"
+
+    try:
+        result = subprocess.run(
+            build_probe_command(executable),
+            cwd="/",
+            env={"PATH": SANDBOX_PATH, "LANG": "C"},
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        detail = (_as_text(exc.stderr) or _as_text(exc.stdout)).strip()
+        message = f"bubblewrap namespace probe timed out after {timeout_seconds:g} seconds"
+        return False, f"{message}: {detail}" if detail else message
+    except OSError as exc:
+        return False, f"could not execute bubblewrap namespace probe: {exc}"
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        message = f"bubblewrap namespace probe exited with status {result.returncode}"
+        return False, f"{message}: {detail}" if detail else message
+
+    return True, "unprivileged user namespace and isolated tmpfs write probe passed"
+
+
+def main() -> int:
+    ready, detail = check_host()
+    if not ready:
+        print(
+            "RELEASE-BLOCKED: required unprivileged bubblewrap user namespace is unavailable; "
+            "refusing to run sandbox-dependent packaging regressions without the approved boundary.",
+            file=sys.stderr,
+        )
+        print(detail, file=sys.stderr)
+        return 125
+
+    print(f"SANDBOX-HOST-READY: {detail}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

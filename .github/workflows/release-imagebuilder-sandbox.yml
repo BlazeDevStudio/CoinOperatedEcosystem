@@ -8,6 +8,7 @@ on:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
       - "tools/test_imagebuilder_sandbox_host.py"
+      - "tools/check_imagebuilder_sandbox_host.py"
       - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
       - ".github/workflows/release-imagebuilder-sandbox.yml"
@@ -18,6 +19,7 @@ on:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
       - "tools/test_imagebuilder_sandbox_host.py"
+      - "tools/check_imagebuilder_sandbox_host.py"
       - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
       - ".github/workflows/release-imagebuilder-sandbox.yml"
@@ -62,6 +64,9 @@ jobs:
             echo "Release runner must not depend on privileged or subordinate-ID mapping" >&2
             exit 1
           fi
+
+      - name: Preflight unprivileged bubblewrap namespace (fail fast; no fallback)
+        run: python3 tools/check_imagebuilder_sandbox_host.py
 
       - name: Run packaging regressions with mandatory bubblewrap
         env:
