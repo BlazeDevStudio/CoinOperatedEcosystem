@@ -313,12 +313,13 @@ cd "$BUILD_DIR"
 {cmd}
 
 echo "=== Verifying Built Firmware Binaries & Generating Manifest ==="
-if [ ! -d "$BIN_DIR" ]; then
-    echo "RELEASE-BLOCKED: target/subtarget image directory missing: $BIN_DIR" >&2
+IMAGE_REL_DIR="bin/targets/{target_arch}"
+if [ ! -d "$IMAGE_REL_DIR" ]; then
+    echo "RELEASE-BLOCKED: target/subtarget image directory missing: $BUILD_DIR/$IMAGE_REL_DIR" >&2
     exit 1
 fi
 
-EMPTY_IMAGE=$(find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then\n    echo "RELEASE-BLOCKED: empty firmware image: $EMPTY_IMAGE" >&2\n    exit 1\nfi\nfind "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
+EMPTY_IMAGE=$(find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then\n    echo "RELEASE-BLOCKED: empty firmware image: $EMPTY_IMAGE" >&2\n    exit 1\nfi\nfind "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
 if [ ! -s "$TMP_MANIFEST" ]; then
     rm -f "$TMP_MANIFEST"
     echo "RELEASE-BLOCKED: no firmware images found for {target_arch}" >&2
