@@ -1,8 +1,10 @@
-# BLAZE PISONET — ESP8266 timer firmware (V1.2)
+# BLAZE PISONET — ESP8266 timer firmware (V1.3)
 
 **Status:** source review / physical validation pending. This is a separate ESP8266 coin-operated timer controller, **not** the Windows `Pisonet/` SoftTimer project in this repository.
 
 ## Source
+
+- **Latest:** [BLAZE_PISONET_IDLE_V1_3/BLAZE_PISONET_IDLE_V1_3.ino](BLAZE_PISONET_IDLE_V1_3/BLAZE_PISONET_IDLE_V1_3.ino) — V1.3 with weighted nonblocking idle animations. SHA-256 of the local file: `8cc7de2edb29f897cd07a82957687bae62c6b238c3d6eadc1499a418274331dc`.
 
 - [BLAZE_PISONET_WELCOME_V1_2/BLAZE_PISONET_WELCOME_V1_2.ino](BLAZE_PISONET_WELCOME_V1_2/BLAZE_PISONET_WELCOME_V1_2.ino) — complete single-file Arduino sketch, based on the owner-tested V1.1 repair build and updated with the V1.2 display animation.
 - SHA-256 of the original local V1.2 single-file source artifact: `3ad2bf2b702b67ac6d2a9f94dd4fa113cf54629ff5f53e55881964a97f84fff4`. GitHub's text transport may normalize a newline; verify the uploaded version independently before using this checksum as a binary identity assertion.
@@ -10,6 +12,10 @@
 ## What it does
 
 ESP8266 Wi-Fi access point with browser controls, a coin-credit countdown, two relay outputs, TM1637 four-digit display, audible alerts, saved settings, and admin-protected manual **Add Time** / **Set Time** controls. The V1.2 boot display shows the TM1637 brightness sweep followed by `8888`, `1234`, `bLAZ`, `LAZE`, `AZE`, `ZE`, `E` with trailing digits unlit. The seven-segment module approximates Z using 2-shaped segments.
+
+## Idle TM1637 effects (V1.3)
+
+After the welcome sequence, the idle display lights **one segment at a time** when no paid time remains. Each cycle randomly chooses **Snake (70%)**, **Chaotic (25%)**, or **Sparkle (5%)**. Snake walks all 28 segments in order; Chaotic shuffles the 28 positions without repetition; Sparkle randomly visits segments. Each frame lasts 115 ms, followed by a 380 ms blank pause between cycles. Starting paid time immediately restores the countdown. These animations do not block coin or web processing.
 
 ## Default NodeMCU / ESP-12E-F connections
 
@@ -27,7 +33,7 @@ Settings saved in EEPROM can override some assignments. **GPIO0 is boot-sensitiv
 ## Build and run
 
 1. Install the ESP8266 Arduino board core and **TM1637Display** by Avishay Orpaz.
-2. Put `BLAZE_PISONET_WELCOME_V1_2.ino` in a folder with the same name and open it in Arduino IDE.
+2. Put `BLAZE_PISONET_IDLE_V1_3.ino` in a folder with the same name and open it in Arduino IDE.
 3. Select the correct ESP8266 board and flash size. Preserve flash/EEPROM contents when upgrading from a known-good image.
 4. Check relay polarity, coin input electrical levels, and the initial display sequence before attaching powered equipment.
 5. Join the configured ESP8266 AP and visit `http://192.168.4.1` for management.
