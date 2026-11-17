@@ -25,7 +25,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-imagebuilder-sandbox-${{ github.event.pull_request.number || github.ref }}
+  # New key prevents stale pre-timeout runs from blocking this bounded-runner revision.
+  group: release-imagebuilder-sandbox-timeouts-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
