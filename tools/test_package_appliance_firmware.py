@@ -505,6 +505,91 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "identical image bytes must produce workspace-independent checksum manifests",
         )
 
+
+    def test_generated_wrapper_refuses_temp_manifest_symlink_created_by_make(self):
+        # The Makefile runs after the wrapper's preflight checks. A compromised
+        # builder must not replace the temporary manifest path with a symlink
+        # and redirect the checksum write into an operator-owned file.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "race-temp-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "race-temp-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "race-temp-imagebuilder")
+        os.makedirs(builder)
+        external_target = os.path.join(self.temp_dir, "operator-temp-manifest.txt")
+        sentinel = "KEEP-OPERATOR-TEMP-MANIFEST\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        recipe = (
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+            "\t@ln -s " + shlex.quote(external_target) + " RELEASE_MANIFEST.sha256.tmp\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = subprocess.run(
+            ["sh", wrapper], cwd=self.temp_dir, env=env,
+            capture_output=True, text=True, check=False
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("cannot create", (result.stderr + result.stdout).lower())
+        self.assertTrue(os.path.islink(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")
+        ))
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+
+    def test_generated_wrapper_refuses_final_manifest_symlink_created_by_make(self):
+        # The final manifest path is also re-opened after the build. It must
+        # not follow a symlink created after the earlier preflight check.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "race-final-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "race-final-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "race-final-imagebuilder")
+        os.makedirs(builder)
+        external_target = os.path.join(self.temp_dir, "operator-final-manifest.txt")
+        sentinel = "KEEP-OPERATOR-FINAL-MANIFEST\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        recipe = (
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+            "\t@ln -s " + shlex.quote(external_target) + " RELEASE_MANIFEST.sha256\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = subprocess.run(
+            ["sh", wrapper], cwd=self.temp_dir, env=env,
+            capture_output=True, text=True, check=False
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("cannot create", (result.stderr + result.stdout).lower())
+        self.assertTrue(os.path.islink(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
 if __name__ == "__main__":
     unittest.main()
 
