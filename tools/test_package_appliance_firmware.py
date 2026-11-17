@@ -947,6 +947,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
 
 
+
     def test_generated_wrapper_contains_make_created_symlink_write_to_host(self):
         # This test runs only in the dedicated bubblewrap workflow. The sentinel
         # is deliberately outside both the ImageBuilder workspace and /tmp.
@@ -968,19 +969,19 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         external_dir = tempfile.mkdtemp(prefix="phx-imagebuilder-external-", dir="/var/tmp")
         try:
             external_target = os.path.join(external_dir, "operator-owned-sentinel.txt")
-            sentinel = "KEEP-OPERATOR-OWNED-SENTINEL\\n"
+            sentinel = "KEEP-OPERATOR-OWNED-SENTINEL\n"
             with open(external_target, "w", encoding="utf-8") as fp:
                 fp.write(sentinel)
 
             escaped_image = "bin/targets/ramips/mt7621/cache/escape.img.gz"
             symlink_marker = "bin/targets/ramips/mt7621/cache/symlink-created.txt"
             recipe = (
-                "image:\\n"
-                "\\t@mkdir -p bin/targets/ramips/mt7621/cache\\n"
-                "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n"
-                "\\t@ln -s " + shlex.quote(external_target) + " " + escaped_image + "\\n"
-                "\\t@printf 'SYMLINK-CREATED' > " + symlink_marker + "\\n"
-                "\\t@printf 'BUILDER-OVERWRITE' > " + escaped_image + "\\n"
+                "image:\n"
+                "\t@mkdir -p bin/targets/ramips/mt7621/cache\n"
+                "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+                "\t@ln -s " + shlex.quote(external_target) + " " + escaped_image + "\n"
+                "\t@printf 'SYMLINK-CREATED' > " + symlink_marker + "\n"
+                "\t@printf 'BUILDER-OVERWRITE' > " + escaped_image + "\n"
             )
             with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
                 fp.write(recipe)
@@ -998,7 +999,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertTrue(
                 os.path.islink(escaped_path),
-                result.stderr + result.stdout + "\\nMakefile-created symlink should remain inside the disposable workspace",
+                result.stderr + result.stdout + "\nMakefile-created symlink should remain inside the disposable workspace",
             )
             self.assertTrue(os.path.isfile(marker_path), result.stderr + result.stdout)
             with open(external_target, "r", encoding="utf-8") as fp:
