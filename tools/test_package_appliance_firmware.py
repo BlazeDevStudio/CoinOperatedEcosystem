@@ -448,9 +448,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.makedirs(builder, exist_ok=True)
         image_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621", "operator.bin")
         recipe = (
-            "image:\\n"
-            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
-            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\\n"
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\n"
         )
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
@@ -463,18 +463,18 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         sudo_called_path = os.path.join(self.temp_dir, "sudo-was-called")
         with open(python3_path, "w", encoding="utf-8") as fp:
             fp.write(
-                "#!/bin/sh\\n"
-                "case \"$1\" in\\n"
-                "  -c|-) exec \"$PHX_TEST_REAL_PYTHON3\" \"$@\" ;;\\n"
-                "esac\\n"
-                "printf '%s\\n' \"$@\" > \"$PHX_TEST_PYTHON_ARGS\"\\n"
-                "exit 73\\n"
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  -c|-) exec \"$PHX_TEST_REAL_PYTHON3\" \"$@\" ;;\n"
+                "esac\n"
+                "printf '%s\n' \"$@\" > \"$PHX_TEST_PYTHON_ARGS\"\n"
+                "exit 73\n"
             )
         with open(sudo_path, "w", encoding="utf-8") as fp:
             fp.write(
-                "#!/bin/sh\\n"
-                "printf called > \"$PHX_TEST_SUDO_CALLED\"\\n"
-                "exit 91\\n"
+                "#!/bin/sh\n"
+                "printf called > \"$PHX_TEST_SUDO_CALLED\"\n"
+                "exit 91\n"
             )
         os.chmod(python3_path, 0o755)
         os.chmod(sudo_path, 0o755)
@@ -498,7 +498,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(result.returncode, 73, result.stderr)
         with open(args_path, "r", encoding="utf-8") as fp:
-            runner_args = [line.rstrip("\\n") for line in fp]
+            runner_args = [line.rstrip("\n") for line in fp]
         runner_path = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
         self.assertEqual(runner_args[0], runner_path)
         self.assertEqual(runner_args[runner_args.index("--cwd") + 1], self.temp_dir)
