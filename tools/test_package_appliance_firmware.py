@@ -326,10 +326,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         external_image = os.path.join(self.temp_dir, "operator-owned-prior-image.img.gz")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("RELEASE-BLOCKED: stale symlinked firmware images", result.stderr)
         self.assertTrue(os.path.islink(link_path))
         with open(external_image, "rb") as fp:
             self.assertEqual(fp.read(), b"KEEP-OPERATOR-IMAGE")
+        self.assertIn("RELEASE-BLOCKED: stale symlinked firmware images", result.stderr)
         self.assertFalse(os.path.exists(
             os.path.join(builder, "RELEASE_MANIFEST.sha256")
         ))
@@ -343,11 +343,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         external_dir = os.path.join(self.temp_dir, "operator-owned-image-output")
         external_output = os.path.join(external_dir, "synthetic.bin")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("RELEASE-BLOCKED: symlinked ImageBuilder output directory", result.stderr)
         self.assertTrue(os.path.islink(link_path))
         self.assertFalse(os.path.exists(external_output))
         with open(os.path.join(external_dir, "operator-owned.bin"), "rb") as fp:
             self.assertEqual(fp.read(), b"KEEP-OPERATOR-DIRECTORY")
+        self.assertIn("RELEASE-BLOCKED: symlinked ImageBuilder output directory", result.stderr)
         self.assertFalse(os.path.exists(
             os.path.join(builder, "RELEASE_MANIFEST.sha256")
         ))
