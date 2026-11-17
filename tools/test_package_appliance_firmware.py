@@ -314,10 +314,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 if os.path.lexists(probe_path):
                     os.unlink(probe_path)
 
-        sudo = shutil.which("sudo")
         sandbox_runner = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
-        if not sudo or not os.path.isfile(sandbox_runner):
-            raise RuntimeError("PHX_REQUIRE_BWRAP=1 requires sudo and the release sandbox runner")
+        if not os.path.isfile(sandbox_runner):
+            raise RuntimeError("PHX_REQUIRE_BWRAP=1 requires the release sandbox runner")
 
         raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
         if not raw_builder:
@@ -333,10 +332,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         except ValueError as exc:
             raise RuntimeError("ImageBuilder workspace is outside the test workspace") from exc
 
-        # The privileged helper creates a user namespace mapped back to this
-        # runner UID/GID, then makes only the disposable ImageBuilder tree writable.
+        # Run as the invoking unprivileged account. Bubblewrap maps only this
+        # single host UID/GID to namespace root; no sudo or subordinate-ID helper.
         command = [
-            sudo,
             sys.executable,
             sandbox_runner,
             "--cwd", cwd_path,
@@ -439,7 +437,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
         return result, fake_builder, wrapper, stage_absolute
 
-    def test_generated_wrapper_routes_operator_invocation_through_sandbox_runner(self):
+    def test_generated_wrapper_routes_operator_invocation_through_unprivileged_runner(self):
         profile = load_profile("gl-mt1300")
         staging_dir = os.path.join(self.temp_dir, "operator staging")
         manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging_dir)
@@ -450,29 +448,43 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.makedirs(builder, exist_ok=True)
         image_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621", "operator.bin")
         recipe = (
-            "image:\n"
-            "\t@mkdir -p bin/targets/ramips/mt7621\n"
-            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\n"
+            "image:\\n"
+            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
+            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\\n"
         )
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
 
         fake_bin = os.path.join(self.temp_dir, "fake-bin")
         os.makedirs(fake_bin, exist_ok=True)
+        python3_path = os.path.join(fake_bin, "python3")
         sudo_path = os.path.join(fake_bin, "sudo")
-        args_path = os.path.join(self.temp_dir, "sudo-args.txt")
+        args_path = os.path.join(self.temp_dir, "python3-runner-args.txt")
+        sudo_called_path = os.path.join(self.temp_dir, "sudo-was-called")
+        with open(python3_path, "w", encoding="utf-8") as fp:
+            fp.write(
+                "#!/bin/sh\\n"
+                "case \"$1\" in\\n"
+                "  -c|-) exec \"$PHX_TEST_REAL_PYTHON3\" \"$@\" ;;\\n"
+                "esac\\n"
+                "printf '%s\\n' \"$@\" > \"$PHX_TEST_PYTHON_ARGS\"\\n"
+                "exit 73\\n"
+            )
         with open(sudo_path, "w", encoding="utf-8") as fp:
             fp.write(
-                "#!/bin/sh\n"
-                "printf '%s\n' \"$@\" > \"$PHX_TEST_SUDO_ARGS\"\n"
-                "exit 73\n"
+                "#!/bin/sh\\n"
+                "printf called > \"$PHX_TEST_SUDO_CALLED\"\\n"
+                "exit 91\\n"
             )
+        os.chmod(python3_path, 0o755)
         os.chmod(sudo_path, 0o755)
 
         env = os.environ.copy()
         env["PATH"] = fake_bin + os.pathsep + env.get("PATH", "")
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
-        env["PHX_TEST_SUDO_ARGS"] = args_path
+        env["PHX_TEST_REAL_PYTHON3"] = shutil.which("python3") or sys.executable
+        env["PHX_TEST_PYTHON_ARGS"] = args_path
+        env["PHX_TEST_SUDO_CALLED"] = sudo_called_path
         env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
         env.pop("PHX_BWRAP_OWNER_PROBE", None)
         result = subprocess.run(
@@ -486,12 +498,13 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(result.returncode, 73, result.stderr)
         with open(args_path, "r", encoding="utf-8") as fp:
-            runner_args = [line.rstrip("\n") for line in fp]
+            runner_args = [line.rstrip("\\n") for line in fp]
         runner_path = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
-        self.assertEqual(runner_args[:3], ["--", "python3", runner_path])
+        self.assertEqual(runner_args[0], runner_path)
         self.assertEqual(runner_args[runner_args.index("--cwd") + 1], self.temp_dir)
         self.assertEqual(runner_args[runner_args.index("--builder") + 1], builder)
         self.assertEqual(runner_args[runner_args.index("--wrapper") + 1], wrapper)
+        self.assertFalse(os.path.exists(sudo_called_path), "operator entrypoint must never invoke sudo")
         self.assertFalse(os.path.exists(image_path), "operator Makefile must not run outside the sandbox")
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
