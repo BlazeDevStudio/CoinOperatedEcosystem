@@ -617,6 +617,70 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(external_target, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
 
+
+    def test_stage_overlay_rejects_network_file_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-network-source")
+        config_dir = os.path.join(source_rootfs, "etc", "config")
+        os.makedirs(config_dir)
+        external_target = os.path.join(self.temp_dir, "operator-network.conf")
+        sentinel = "KEEP-OPERATOR-NETWORK-CONFIG\\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_target, os.path.join(config_dir, "network"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-network-staging"),
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_stage_overlay_rejects_config_directory_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-config-dir-source")
+        etc_dir = os.path.join(source_rootfs, "etc")
+        external_dir = os.path.join(self.temp_dir, "operator-config-dir")
+        os.makedirs(etc_dir)
+        os.makedirs(external_dir)
+        external_target = os.path.join(external_dir, "network")
+        sentinel = "KEEP-OPERATOR-CONFIG-DIRECTORY\\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_dir, os.path.join(etc_dir, "config"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-config-dir-staging"),
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_stage_overlay_rejects_appliance_profile_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-profile-source")
+        os.makedirs(os.path.join(source_rootfs, "etc", "config"))
+        profile_dir = os.path.join(source_rootfs, "etc", "blazepwifi")
+        os.makedirs(profile_dir)
+        external_target = os.path.join(self.temp_dir, "operator-appliance-profile.json")
+        sentinel = '{"operator":"preserve"}\\n'
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_target, os.path.join(profile_dir, "appliance_profile.json"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-profile-staging"),
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
 if __name__ == "__main__":
     unittest.main()
 
