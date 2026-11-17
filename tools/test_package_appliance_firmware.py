@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -268,7 +269,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(target_path, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
 
-    def _run_generated_wrapper(self, wrapper, cwd, env):
+    def _run_generated_wrapper(self, wrapper, cwd, env, timeout_seconds=60):
         """Run the generated wrapper inside the release-owned filesystem sandbox in CI."""
         cwd_path = os.path.realpath(os.path.abspath(cwd))
         wrapper_path = os.path.abspath(
@@ -341,6 +342,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "--cwd", cwd_path,
             "--builder", builder_path,
             "--wrapper", wrapper_path,
+            "--timeout-seconds", str(timeout_seconds),
         ]
         return subprocess.run(
             command,
@@ -349,6 +351,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+            timeout=90,
         )
 
     def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
@@ -1089,6 +1092,47 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
 
 
+
+
+    def test_generated_wrapper_timeout_terminates_make_process_group(self):
+        if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
+            self.skipTest("Run in the dedicated release-imagebuilder-sandbox workflow")
+        if not shutil.which("bwrap"):
+            self.fail("PHX_REQUIRE_BWRAP=1 but bubblewrap is not installed")
+
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "timeout-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "timeout-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "timeout-imagebuilder")
+        os.makedirs(builder)
+        late_image = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "late.img.gz"
+        )
+        recipe = (
+            "image:\n"
+            "\t@sleep 2\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'LATE-WRITE' > bin/targets/ramips/mt7621/late.img.gz\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(
+            wrapper, self.temp_dir, env, timeout_seconds=1
+        )
+
+        self.assertEqual(result.returncode, 125, result.stdout + result.stderr)
+        self.assertIn("exceeded its 1s timeout", result.stderr)
+        time.sleep(2.2)
+        self.assertFalse(
+            os.path.lexists(late_image),
+            "timed-out ImageBuilder child process continued writing after the runner returned",
+        )
 
     def test_generated_wrapper_contains_make_created_symlink_write_to_host(self):
         # This test runs only in the dedicated bubblewrap workflow. The sentinel
