@@ -151,6 +151,43 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
 
+    def test_generate_build_script_refuses_existing_file_without_overwriting(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_existing_build_script")
+        )
+        script_path = os.path.join(self.temp_dir, "operator-owned-build.sh")
+        sentinel = "# operator-owned build instructions\\n"
+        with open(script_path, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        with self.assertRaises(FileExistsError):
+            generate_build_script(manifest, script_path)
+
+        with open(script_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_generate_build_script_refuses_symlink_without_overwriting_target(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_symlink_build_script")
+        )
+        target_path = os.path.join(self.temp_dir, "operator-owned-target.sh")
+        script_path = os.path.join(self.temp_dir, "generated-build-link.sh")
+        sentinel = "# external operator-owned target\\n"
+        with open(target_path, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(target_path, script_path)
+
+        with self.assertRaises(FileExistsError):
+            generate_build_script(manifest, script_path)
+
+        self.assertTrue(os.path.islink(script_path))
+        with open(target_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
     def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
                                preexisting_image=False, preexisting_manifest=False,
                                manifest_symlink=False, temp_manifest_symlink=False):
