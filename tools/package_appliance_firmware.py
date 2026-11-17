@@ -103,53 +103,53 @@ def generate_network_uci(profile: dict) -> str:
 
     out = [
         "config interface 'loopback'",
-        "\\toption device 'lo'",
-        "\\toption proto 'static'",
-        "\\toption ipaddr '127.0.0.1'",
-        "\\toption netmask '255.0.0.0'",
+        "\toption device 'lo'",
+        "\toption proto 'static'",
+        "\toption ipaddr '127.0.0.1'",
+        "\toption netmask '255.0.0.0'",
         "",
         "config globals 'globals'",
-        "\\toption ula_prefix 'fd00:db8:blaze::/48'",
+        "\toption ula_prefix 'fd00:db8:blaze::/48'",
         "",
         "config device 'br_lan'",
-        "\\toption name 'br-lan'",
-        "\\toption type 'bridge'",
+        "\toption name 'br-lan'",
+        "\toption type 'bridge'",
     ]
 
     # Handle DSA vs generic switch bridge ports
     if ports:
-        out.append(f"\\tlist ports '{' '.join(ports)}'")
+        out.append(f"\tlist ports '{' '.join(ports)}'")
 
     if net.get("vlan_supported", False):
-        out.append("\\toption vlan_filtering '1'")
+        out.append("\toption vlan_filtering '1'")
 
     out.extend([
         "",
         "config interface 'lan'",
-        "\\toption device 'br-lan'",
-        "\\toption proto 'static'",
-        "\\toption ipaddr '10.0.0.1'",
-        "\\toption netmask '255.255.255.0'",
+        "\toption device 'br-lan'",
+        "\toption proto 'static'",
+        "\toption ipaddr '10.0.0.1'",
+        "\toption netmask '255.255.255.0'",
         "",
         "config interface 'guest'",
-        f"\\toption device 'br-lan.{guest_vlan}'",
-        "\\toption proto 'static'",
-        "\\toption ipaddr '10.10.0.1'",
-        "\\toption netmask '255.255.255.0'",
+        f"\toption device 'br-lan.{guest_vlan}'",
+        "\toption proto 'static'",
+        "\toption ipaddr '10.10.0.1'",
+        "\toption netmask '255.255.255.0'",
         "",
         "config interface 'vendo'",
-        f"\\toption device 'br-lan.{vendo_vlan}'",
-        "\\toption proto 'static'",
-        "\\toption ipaddr '10.20.0.1'",
-        "\\toption netmask '255.255.255.0'",
+        f"\toption device 'br-lan.{vendo_vlan}'",
+        "\toption proto 'static'",
+        "\toption ipaddr '10.20.0.1'",
+        "\toption netmask '255.255.255.0'",
         "",
         "config interface 'wan'",
-        f"\\toption device '{wan_interface}'",
-        "\\toption proto 'dhcp'",
+        f"\toption device '{wan_interface}'",
+        "\toption proto 'dhcp'",
         "",
     ])
 
-    return "\\n".join(out)
+    return "\n".join(out)
 
 
 def calculate_overlay_size(staging_dir: str) -> int:
