@@ -442,8 +442,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             os.makedirs(builder)
             with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
                 fp.write(
-                    "image:\\n\\t@mkdir -p bin/targets/ramips/mt7621\\n"
-                    "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n"
+                    "image:\n\t@mkdir -p bin/targets/ramips/mt7621\n"
+                    "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
                 )
 
             env = os.environ.copy()
