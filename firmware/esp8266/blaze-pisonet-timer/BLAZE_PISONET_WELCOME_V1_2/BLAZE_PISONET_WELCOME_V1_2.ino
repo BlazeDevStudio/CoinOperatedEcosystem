@@ -997,6 +997,7 @@ void queueProgmemPattern(const uint16_t* freqs, const uint16_t* durs,
     stopChime();
     return;
   }
+
   stopChime();
   progmemChimeFreqs = freqs;
   progmemChimeDurs = durs;
