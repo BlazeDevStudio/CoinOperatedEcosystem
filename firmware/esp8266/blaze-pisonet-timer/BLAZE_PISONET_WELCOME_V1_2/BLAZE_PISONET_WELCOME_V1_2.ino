@@ -1,0 +1,1644 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <EEPROM.h>
+#include <TM1637Display.h>
+#include <LittleFS.h>
+#include <vector>
+
+
+// ------ AudioPatterns.h (bundled) ------
+
+// Generated buzzer-safe tone approximations of the supplied MP3 files.
+// A single GPIO tone output cannot reproduce speech/music as literal MP3 audio;
+// these compact patterns preserve timing and dominant pitch movement.
+
+static const uint16_t tacosFreq[] PROGMEM = {
+  0, 320, 311, 233, 311, 392, 415, 392, 466, 622, 659, 311, 622, 311, 622, 311, 
+  330, 392, 880, 311, 233, 392, 311, 0, 539, 311, 330, 392, 0, 349, 311, 247, 
+  233, 294, 233, 311, 262, 208, 196, 262, 233, 294, 277, 196, 262, 294, 196, 392, 
+  262, 494, 262, 277, 311, 277, 208, 415, 659, 392, 233, 349, 311, 208, 0, 202, 
+  208, 262, 208, 415, 427, 0, 202, 208, 392, 233, 349, 220, 311, 0, 214, 208, 
+  220, 1175, 1385, 0, 308, 247, 370, 233, 0, 668, 0, 284, 0, 727, 0, 807, 
+  0, 720, 311, 621, 0, 196, 685, 0, 845, 294, 196, 0, 245, 196, 409, 0, 
+  196, 190, 0, 196, 262, 247, 0, 524, 0, 1017, 0, 417, 523, 449, 0, 697, 
+  311, 259, 0, 305, 196, 190, 0, 294, 0, 196, 0, 320, 0, 1523, 1319, 1659, 
+  0, 208, 0, 269, 0, 598, 831, 523, 587, 1293, 0, 1142, 1175, 1109, 1111, 0, 
+  233, 587, 410, 0, 351, 0, 1109, 466, 343, 0, 229, 262, 523, 538, 0, 229, 
+  262, 460, 0, 364, 262, 349, 440, 714, 0, 196, 214, 0, 970, 831, 262, 229, 
+  0, 325, 0, 337, 466, 453, 0, 324, 440, 208, 0, 359, 196, 208, 196, 294, 
+  0, 815, 0, 248, 311, 0, 698, 466, 407, 0, 408, 0, 592, 0, 262, 0, 
+  196, 796, 0, 378, 262, 363
+};
+static const uint16_t tacosDur[] PROGMEM = {
+  80, 80, 80, 240, 80, 240, 240, 240, 80, 320, 160, 320, 160, 240, 160, 480, 
+  320, 80, 160, 80, 320, 80, 240, 80, 80, 400, 160, 160, 80, 160, 240, 80, 
+  160, 480, 560, 320, 80, 80, 400, 480, 160, 160, 80, 240, 160, 640, 480, 160, 
+  240, 240, 80, 160, 240, 80, 640, 80, 160, 240, 160, 160, 1120, 320, 80, 80, 
+  240, 160, 160, 80, 80, 80, 80, 80, 240, 240, 640, 80, 320, 80, 80, 80, 
+  80, 160, 80, 80, 80, 80, 80, 240, 1120, 160, 160, 160, 560, 160, 240, 160, 
+  80, 80, 160, 80, 160, 400, 80, 720, 80, 160, 240, 80, 80, 320, 80, 80, 
+  160, 80, 160, 240, 240, 80, 160, 160, 80, 160, 80, 80, 80, 80, 80, 80, 
+  160, 80, 240, 80, 80, 80, 160, 160, 80, 160, 80, 160, 80, 80, 80, 80, 
+  480, 240, 80, 160, 160, 80, 160, 160, 160, 80, 80, 80, 80, 80, 80, 80, 
+  320, 80, 80, 240, 160, 240, 160, 80, 80, 160, 80, 560, 80, 80, 80, 80, 
+  80, 80, 160, 80, 80, 480, 80, 80, 80, 160, 80, 80, 80, 80, 80, 80, 
+  240, 160, 240, 80, 240, 80, 80, 80, 240, 400, 160, 80, 160, 240, 80, 80, 
+  160, 160, 240, 80, 320, 80, 80, 80, 80, 240, 160, 240, 160, 80, 160, 80, 
+  160, 80, 160, 80, 80, 80
+};
+static const size_t tacosCount = sizeof(tacosFreq) / sizeof(tacosFreq[0]);
+
+static const uint16_t timeoutFreq[] PROGMEM = {
+  0, 284, 220, 330, 659, 330, 220, 330, 349, 370, 392, 196, 330, 196, 330, 220, 
+  330, 220, 330, 659, 330, 311, 330, 196, 220, 330, 622, 659, 330, 220, 622, 659, 
+  330, 220, 330, 349, 330, 392, 262, 330, 220, 349, 330, 587, 523, 494, 247, 494, 
+  988, 494, 621, 0, 263, 196, 0, 254, 0
+};
+static const uint16_t timeoutDur[] PROGMEM = {
+  560, 80, 400, 320, 160, 480, 160, 1600, 80, 400, 80, 880, 160, 160, 240, 160, 
+  640, 160, 560, 160, 2400, 320, 160, 240, 320, 400, 320, 240, 80, 160, 80, 240, 
+  640, 320, 400, 160, 240, 480, 880, 240, 160, 240, 720, 320, 880, 560, 240, 160, 
+  160, 160, 80, 80, 80, 1200, 560, 160, 876
+};
+static const size_t timeoutCount = sizeof(timeoutFreq) / sizeof(timeoutFreq[0]);
+
+static const uint16_t faaFreq[] PROGMEM = {
+  0, 906, 1319, 1397, 1319, 1480, 1570, 0
+};
+static const uint16_t faaDur[] PROGMEM = {
+  240, 80, 960, 320, 80, 160, 80, 7
+};
+static const size_t faaCount = sizeof(faaFreq) / sizeof(faaFreq[0]);
+
+
+
+
+
+// ------ DisplayManager.h (bundled) ------
+
+// Four-digit TM1637 display controller (CLK first, DIO second).
+// Startup/self-test is nonblocking: coin handling, countdown and web continue.
+// Glyph note: a 7-segment digit cannot draw a true Z; Z uses the segments for 2.
+// This driver does not expose the TM1637 ACK, so a self-test is visual only.
+class DisplayManager {
+public:
+  // 0 is the lowest illuminated level, 7 the brightest (not an off switch).
+  static constexpr uint8_t kSweepLevels = 8;
+  static constexpr uint16_t kSweepStepMs = 220;
+  static constexpr uint8_t kScrollFrames = 7;
+  static constexpr uint16_t kScrollFrameMs = 650;
+  static constexpr uint32_t kSweepDurationMs = (uint32_t)kSweepLevels * kSweepStepMs;
+  static constexpr uint32_t kScrollDurationMs = (uint32_t)kScrollFrames * kScrollFrameMs;
+
+  void begin(uint8_t clockPin, uint8_t dataPin, uint8_t level = 7) {
+    configuredClk = clockPin;
+    configuredDio = dataPin;
+    brightness = level <= 7 ? level : 7;
+    activate(configuredClk, configuredDio);
+    beginTest(false);
+  }
+
+  void setBrightness(uint8_t level) {
+    brightness = level <= 7 ? level : 7;
+    // Keep saved level separate from temporary brightness sweep levels.
+    // During a sweep, the next step restores its own level automatically.
+    if (driver && !testing) driver->setBrightness(brightness, true);
+    lastValue = UINT32_MAX;
+  }
+
+  // Available through the authenticated /display/test endpoint, as before.
+  void beginTest(bool swapped) {
+    if (!driver || swapped != currentlySwapped) {
+      activate(swapped ? configuredDio : configuredClk,
+               swapped ? configuredClk : configuredDio);
+    }
+    currentlySwapped = swapped;
+    testing = true;
+    testStarted = millis();
+    lastSweepStep = 255;
+    lastScrollFrame = 255;
+    lastTick = 0;
+    lastValue = UINT32_MAX;
+    drawSweepStep(0);  // Make the first 8888 visible immediately.
+    Serial.printf("[DISPLAY] START %s CLK=GPIO%u DIO=GPIO%u: brightness 0-7 then 8888 / 1234 / bLA2 / LA2E / A2E_ / 2E__ / E___\n",
+                  swapped ? "SWAPPED" : "NORMAL", currentClk, currentDio);
+  }
+
+  void update(uint32_t seconds) {
+    if (!driver) return;
+    const uint32_t now = millis();
+    if (testing) {
+      // Unsigned subtraction works correctly even across millis() rollover.
+      const uint32_t elapsed = (uint32_t)(now - testStarted);
+      if (elapsed < kSweepDurationMs) {
+        const uint8_t step = (uint8_t)(elapsed / kSweepStepMs);
+        if (step != lastSweepStep) drawSweepStep(step);
+        return;
+      }
+      if (elapsed < kSweepDurationMs + kScrollDurationMs) {
+        const uint8_t frame = (uint8_t)((elapsed - kSweepDurationMs) / kScrollFrameMs);
+        if (frame != lastScrollFrame) drawScrollFrame(frame);
+        return;
+      }
+      // End of welcome scroll: restore configured brightness and countdown.
+      testing = false;
+      if (currentlySwapped) {
+        currentlySwapped = false;
+        activate(configuredClk, configuredDio);
+      } else {
+        driver->setBrightness(brightness, true);
+      }
+      lastValue = UINT32_MAX;
+      Serial.println(F("[DISPLAY] Welcome complete; countdown resumed"));
+    }
+
+    // TM1637 is a bit-banged display: avoid continuously retransmitting.
+    if (seconds == lastValue && (uint32_t)(now - lastTick) < 3000UL) return;
+    if ((uint32_t)(now - lastTick) < 160UL && lastValue != UINT32_MAX) return;
+    lastTick = now;
+    lastValue = seconds;
+    if (seconds > 5999UL) {
+      // HH:MM for sessions over 99:59; hours are capped at 99 for 4 digits.
+      uint32_t hh = seconds / 3600UL;
+      if (hh > 99) hh = 99;
+      uint32_t mm = (seconds % 3600UL) / 60UL;
+      driver->showNumberDecEx((int)(hh * 100 + mm), 0x40, true);
+    } else {
+      driver->showNumberDecEx((int)((seconds / 60UL) * 100UL + seconds % 60UL),
+                              0x40, true);
+    }
+  }
+
+  bool testActive() const { return testing; }
+  uint8_t clockPin() const { return configuredClk; }
+  uint8_t dataPin() const { return configuredDio; }
+  uint8_t level() const { return brightness; }
+  const char* mode() const {
+    if (!testing) return "countdown";
+    const uint32_t elapsed = (uint32_t)(millis() - testStarted);
+    if (elapsed < kSweepDurationMs) return currentlySwapped ? "brightness swapped" : "brightness normal";
+    return currentlySwapped ? "welcome swapped" : "welcome normal";
+  }
+
+private:
+  TM1637Display* driver = nullptr;
+  uint8_t configuredClk = 12, configuredDio = 13;
+  uint8_t currentClk = 12, currentDio = 13, brightness = 7;
+  uint8_t lastSweepStep = 255, lastScrollFrame = 255;
+  bool testing = false, currentlySwapped = false;
+  uint32_t testStarted = 0, lastTick = 0, lastValue = UINT32_MAX;
+
+  void activate(uint8_t clk, uint8_t dio) {
+    if (driver) { driver->clear(); delete driver; driver = nullptr; }
+    currentClk = clk;
+    currentDio = dio;
+    driver = new TM1637Display(clk, dio, 100);
+    if (driver) driver->setBrightness(brightness, true);
+  }
+
+  void drawSweepStep(uint8_t step) {
+    if (!driver) return;
+    lastSweepStep = step;
+    driver->setBrightness(step, true);
+    const uint8_t eight[] = {0x7F, 0x7F, 0x7F, 0x7F};
+    driver->setSegments(eight); // Re-send data to apply each brightness command.
+    Serial.printf("[DISPLAY] Brightness %u/7\n", step);
+  }
+
+  void drawScrollFrame(uint8_t frame) {
+    if (!driver) return;
+    lastScrollFrame = frame;
+    driver->setBrightness(brightness, true); // Return to user setting after sweep.
+    // Each ZERO segment byte turns that digit completely off, not character '0'.
+    static const uint8_t glyph_b = 0x7C;
+    static const uint8_t glyph_L = 0x38;
+    static const uint8_t glyph_A = 0x77;
+    static const uint8_t glyph_Z = 0x5B; // looks like '2' on a 7-segment module
+    static const uint8_t glyph_E = 0x79;
+    static const uint8_t frames[kScrollFrames][4] = {
+      {0x7F,    0x7F,    0x7F,    0x7F},    // 8888
+      {0x06,    0x5B,    0x4F,    0x66},    // 1234
+      {glyph_b, glyph_L, glyph_A, glyph_Z}, // bLAZ
+      {glyph_L, glyph_A, glyph_Z, glyph_E}, // LAZE
+      {glyph_A, glyph_Z, glyph_E, 0x00},    // AZE_ (right digit OFF)
+      {glyph_Z, glyph_E, 0x00,   0x00},     // ZE__
+      {glyph_E, 0x00,    0x00,   0x00},     // E___
+    };
+    driver->setSegments(frames[frame]);
+    Serial.printf("[DISPLAY] Welcome frame %u/7\n", frame + 1);
+  }
+};
+
+
+// ------ TimeControls.h (bundled) ------
+
+// Stateless, tested time validation and arithmetic. Kept separate from GPIO,
+// EEPROM, and HTTP so manual adjustments cannot affect sales accounting.
+static const uint32_t BLAZE_MAX_SESSION_SECONDS = 7UL * 24UL * 60UL * 60UL;
+static const uint64_t BLAZE_TIME_UNITS_PER_SECOND = 100000ULL; // 100x milliseconds
+
+// Strict decimals only: no negative signs, spaces, trailing junk, or overflow.
+static inline bool blazeParseTimeField(const String& value, uint16_t maxValue, uint16_t& parsed) {
+  if (value.length() == 0 || value.length() > 3) return false;
+  uint16_t n = 0;
+  for (size_t i = 0; i < value.length(); i++) {
+    const char c = value[i];
+    if (c < '0' || c > '9') return false;
+    n = (uint16_t)(n * 10 + (c - '0'));
+  }
+  if (n > maxValue) return false;
+  parsed = n;
+  return true;
+}
+
+static inline bool blazeParseManualDuration(const String& hours,
+                                             const String& minutes,
+                                             const String& seconds,
+                                             uint32_t& totalSeconds) {
+  uint16_t h=0, m=0, s=0;
+  if (!blazeParseTimeField(hours, 168, h) ||
+      !blazeParseTimeField(minutes, 59, m) ||
+      !blazeParseTimeField(seconds, 59, s)) return false;
+  const uint32_t n = (uint32_t)h * 3600UL + (uint32_t)m * 60UL + s;
+  if (n == 0 || n > BLAZE_MAX_SESSION_SECONDS) return false;
+  totalSeconds = n;
+  return true;
+}
+
+// Adds to the precise internal counter without rounding away fractional time;
+// Set replaces it. Rejects an add that exceeds 7 days (never silently clips).
+static inline bool blazeComputeManualTarget(bool replace, uint64_t currentUnits,
+                                             uint32_t inputSeconds, uint64_t& targetUnits) {
+  if (inputSeconds == 0 || inputSeconds > BLAZE_MAX_SESSION_SECONDS) return false;
+  const uint64_t additional = (uint64_t)inputSeconds * BLAZE_TIME_UNITS_PER_SECOND;
+  const uint64_t limit = (uint64_t)BLAZE_MAX_SESSION_SECONDS * BLAZE_TIME_UNITS_PER_SECOND;
+  if (replace) { targetUnits = additional; return true; }
+  if (currentUnits > limit || additional > limit - currentUnits) return false;
+  targetUnits = currentUnits + additional;
+  return true;
+}
+
+
+// ------ WebUI.h (bundled) ------
+
+// Served directly from program flash. No CDN, gradients, filters or dynamic HTML concatenation.
+static const char WEB_UI[] PROGMEM = R"BLAZEHTML(<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#15263b"><title>BLAZE | PisoNet Controller</title>
+<style>
+:root{--navy:#15263b;--navy2:#223a53;--blue:#185a83;--bg:#edf1f5;--panel:#fff;--ink:#17283a;--muted:#54687b;--line:#cbd5de;--ok:#146647;--bad:#a52f2f;--amber:#865000}
+*{box-sizing:border-box}html{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif}body{margin:0;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:white;padding:20px max(16px,calc((100% - 1050px)/2));border-bottom:4px solid var(--blue)}
+header h1{font-size:21px;letter-spacing:.3px;margin:0 0 4px}header p{margin:0;color:#c8d8e5;font-size:13px}
+main{max-width:1050px;margin:auto;padding:15px}.nav{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 16px}
+button,.button{font:inherit;cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:11px 14px;min-height:43px;color:var(--ink);background:white;font-weight:650}
+button:hover,.button:hover{border-color:var(--blue)}button:disabled{opacity:.55;cursor:not-allowed}
+.nav button{flex:1}.nav button[aria-current="page"]{background:var(--navy);color:white;border-color:var(--navy)}
+.panel{display:none}.panel.active{display:block}.card{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:19px;margin-bottom:14px}
+h2{font-size:17px;margin:0 0 14px}h3{font-size:14px;margin:15px 0 7px}.muted,small{color:var(--muted)}.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:750;color:var(--muted)}
+.timer{text-align:center;padding:24px 12px}.digits{font-size:clamp(44px,10vw,76px);line-height:1.25;letter-spacing:2px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--navy)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:none}
+.state{font-weight:800;padding:4px 10px;border-radius:4px;background:#e9eff4;color:var(--navy)}.state.on{color:var(--ok);background:#dcefe5}.state.off{color:var(--bad);background:#f5e4e4}
+.primary{background:var(--blue);color:white;border-color:var(--blue)}.danger{background:var(--bad);color:white;border-color:var(--bad)}.quiet{background:#e9eff4;border-color:#bdcbd5}.wide{width:100%}
+form{margin:0}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:block;font-size:13px;font-weight:650;color:var(--ink)}
+input,select{font:inherit;color:var(--ink);border:1px solid #a9bac9;border-radius:4px;background:#fff;padding:10px;width:100%;margin-top:5px;min-width:0}input[type=checkbox]{width:auto;margin:0 7px 0 0}.checks{display:flex;flex-wrap:wrap;gap:12px;padding:10px 0}.checks label{display:inline-flex;align-items:center}
+.help{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}.metric{font-size:27px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums}
+.notice{font-size:13px;background:#fff4dd;border:1px solid #e3cc8c;padding:11px;border-radius:5px;margin-bottom:14px}.note{font-size:13px;line-height:1.55}
+#toast{display:none;padding:12px;margin-bottom:14px;background:var(--navy);color:white;border-radius:5px}#toast.show{display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}td{padding:8px 4px;border-bottom:1px solid var(--line)}td:first-child{color:var(--muted)}.buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
+@media(max-width:680px){.grid,.three,.fields{grid-template-columns:1fr}.fields.three{grid-template-columns:repeat(3,minmax(0,1fr))}.card{padding:15px}.nav button{font-size:12px;padding:9px 5px}.buttons button{flex:1}}
+</style></head><body>
+<header><h1>BLAZE PISONET</h1><p>ESP8266 Station Controller · Local access point · V1.1 time controls</p></header>
+<main><div id="toast" role="status"></div>
+<div class="nav" role="navigation" aria-label="Sections">
+<button aria-current="page" data-tab="dashboard">Overview</button><button data-tab="hardware">Display &amp; GPIO</button>
+<button data-tab="settings">Settings</button><button data-tab="sales">Sales</button><button data-tab="audio">Sounds</button></div>
+<section id="dashboard" class="panel active">
+ <div class="card timer"><div class="eyebrow">Remaining rental time</div><div class="digits" id="time">00:00</div>
+ <div id="running" class="muted">Reading station…</div></div>
+ <div class="card" id="time-controls"><h2>Manage rental time</h2>
+ <p class="note">Add extra time to the active session, or set an exact remaining time. Works while the station is idle or running.</p>
+ <div class="buttons" role="group" aria-label="Quick time additions">
+ <button type="button" onclick="quickAdd(5)">+5 min</button>
+ <button type="button" onclick="quickAdd(10)">+10 min</button>
+ <button type="button" onclick="quickAdd(30)">+30 min</button>
+ <button type="button" onclick="quickAdd(60)">+1 hour</button></div>
+ <form id="manualTimeForm"><h3>Enter custom time</h3>
+ <div class="fields three"><label>Hours<input type="number" name="hours" min="0" max="168" value="0" step="1" inputmode="numeric" required></label>
+ <label>Minutes<input type="number" name="minutes" min="0" max="59" value="5" step="1" inputmode="numeric" required></label>
+ <label>Seconds<input type="number" name="seconds" min="0" max="59" value="0" step="1" inputmode="numeric" required></label></div>
+ <div class="buttons" style="margin-top:12px"><button class="primary" type="submit" value="add" name="timeMode">Add time</button>
+ <button class="quiet" type="submit" value="set" name="timeMode">Set remaining time</button></div>
+ <p class="help">Add keeps the existing countdown. Set replaces it and asks for confirmation. Both activate the relays for nonzero time; neither adds to sales or coin counts. Maximum session: 7 days.</p>
+ <p class="help" id="timeFeedback" role="status" aria-live="polite"></p></form></div>
+ <div class="grid"><div class="card"><h2>Relay outputs</h2><div class="row"><strong>Relay 1 · Main</strong><span id="r1" class="state">…</span></div>
+ <div class="row"><strong>Relay 2 · Secondary</strong><span id="r2" class="state">…</span></div>
+ <p class="help">Relays follow paid time. Manual switching is disabled during an active session to prevent an accidental disconnection.</p>
+ <div class="buttons"><button onclick="act('relay1')">Toggle 1 (idle only)</button><button onclick="act('relay2')">Toggle 2 (idle only)</button></div></div>
+ <div class="card"><h2>Station actions</h2><p class="note">Admin-only actions. A reset ends paid time immediately.</p>
+ <div class="buttons"><button onclick="act('warn')">Play warning</button><button class="danger" onclick="confirmAction('resetTimer','End the paid session?')">Reset timer</button></div>
+ <p class="help" id="statusline">Status not yet available</p></div></div>
+</section>
+<section id="hardware" class="panel">
+ <div class="notice">A blank TM1637 display is not automatically a firmware failure. Confirm CLK, DIO, VCC, GND and the actual module type. Never apply 5 V to ESP8266 GPIO inputs.</div>
+ <div class="grid"><div class="card"><h2>Display diagnosis</h2><table><tr><td>Configured CLK</td><td id="clk">—</td></tr><tr><td>Configured DIO</td><td id="dio">—</td></tr><tr><td>Brightness</td><td id="bright">—</td></tr><tr><td>Test mode</td><td id="displaymode">—</td></tr></table>
+ <p class="help">Test runs: all segments 8888, 1234, bLA2, LA2E, 00:00. On a seven-segment display some letters resemble numbers.</p>
+ <div class="buttons"><button class="primary" onclick="testDisplay('normal')">Test configured pins</button><button onclick="testDisplay('swapped')">Test CLK / DIO swapped</button></div>
+ <p class="help">Swapped testing is temporary. The firmware restores saved pins after its five-second sequence.</p></div>
+ <div class="card"><h2>Wiring reference</h2><table><tr><td>TM1637 CLK</td><td>GPIO12 / D6</td></tr><tr><td>TM1637 DIO</td><td>GPIO13 / D7</td></tr><tr><td>Buzzer</td><td>GPIO14 / D5 (fixed)</td></tr><tr><td>Relay 1</td><td>GPIO5 / D1</td></tr><tr><td>Relay 2</td><td>GPIO4 / D2</td></tr><tr><td>Coin</td><td>GPIO0 / D3 (boot-sensitive)</td></tr></table>
+ <p class="help">If old EEPROM settings have changed the display pin mapping, restoring D6/D7 does not affect paid time or sales.</p>
+ <div class="buttons"><button onclick="restoreDisplay()">Restore D6 / D7</button></div></div></div>
+</section>
+<section id="settings" class="panel"><form id="settingsForm"><div class="card"><h2>Rental settings</h2>
+ <div class="fields"><label>Minutes per accepted coin<input name="addMinutes" type="number" min="0" max="180" required></label>
+ <label>Seconds per accepted coin<input name="addSeconds" type="number" min="0" max="59" required></label>
+ <label>Warning at (seconds)<input name="warningSeconds" type="number" min="0" max="120" required></label>
+ <label>Countdown speed bonus (%)<input name="speedPct" type="number" min="0" max="50" required></label>
+ <label>Chime maximum (seconds)<input name="chimeDurationSeconds" type="number" min="1" max="120" required></label>
+ <label>Display brightness (1–7)<input name="brightness" type="number" min="1" max="7" required></label></div>
+ <p class="help">Time per coin must not be 00:00. A speed bonus shortens actual play time and is disabled by default.</p></div>
+ <div class="card"><h2>Hardware assignments</h2><div class="fields">
+ <label>Coin GPIO<input name="coinPin" type="number" min="0" max="16" required></label>
+ <label>Relay 1 GPIO<input name="relayPin" type="number" min="0" max="16" required></label>
+ <label>Relay 2 GPIO<input name="relay2Pin" type="number" min="0" max="16" required></label>
+ <label>Display CLK GPIO<input name="displayClk" type="number" min="0" max="16" required></label>
+ <label>Display DIO GPIO<input name="displayDio" type="number" min="0" max="16" required></label>
+ </div><div class="checks"><label><input name="coinActiveLow" type="checkbox">Coin active-low</label>
+ <label><input name="relayActiveLow" type="checkbox">Relay 1 active-low</label><label><input name="relay2ActiveLow" type="checkbox">Relay 2 active-low</label>
+ <label><input name="buzzerActiveLow" type="checkbox">Buzzer active-low</label></div>
+ <p class="help">GPIO6–11 are reserved for flash. GPIO0/2/15 have boot restrictions. GPIO14 is reserved for the buzzer. Changing pins on a live station can interrupt equipment; only save when idle.</p></div>
+ <div class="card"><h2>Wi-Fi and administrator</h2><div class="fields"><label>Wi-Fi AP name<input name="apName" maxlength="32" required></label>
+ <label>New AP password (blank = unchanged)<input name="apPassword" type="password" maxlength="63" placeholder="At least 8 characters"></label>
+ <label>New admin password (blank = unchanged)<input name="adminPassword" type="password" minlength="10" maxlength="32" placeholder="10–32 characters"></label></div>
+ <p class="help">Changing Wi-Fi AP name or password requires restarting the ESP8266. Change the initial admin password before putting the station in service.</p></div>
+ <button type="submit" class="primary wide">Save settings</button></form></section>
+<section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
+ <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
+ <div class="card"><div class="eyebrow">Legacy monthly bucket</div><div class="metric" id="saleMonth">0</div></div></div>
+ <div class="notice">This offline ESP8266 does not have a reliable calendar clock. Daily/monthly bucket labels are legacy counters, NOT verified calendar-day/month sales. Values are pulses, not pesos.</div>
+ <div class="card"><h2>Sales maintenance</h2><p class="note">Clearing counters cannot be undone. Timer and hardware settings are preserved.</p><button class="danger" onclick="confirmAction('clearSales','Permanently clear all sales counters?')">Clear all sales counters</button></div></section>
+<section id="audio" class="panel"><div class="card"><h2>Chime configuration</h2><p class="note">Firmware supports short tone lists and 8-bit mono PCM WAV-to-tone approximations. It cannot reproduce MP3 or human speech through a single GPIO buzzer.</p>
+ <form id="uploadForm" enctype="multipart/form-data"><div class="fields"><label>Event<select name="patternName"><option value="welcome">Welcome</option><option value="coin">Coin</option><option value="warning">Warning</option><option value="timeup">Time expired</option></select></label>
+ <label>Audio pattern file<input type="file" name="file" accept=".txt,.wav" required></label></div>
+ <p class="help">TXT syntax: 880,120;1000,140;0,100 (frequency Hz, duration ms). Maximum file size 64 KB. Uploaded files take priority over built-in chimes.</p>
+ <button class="primary" type="submit">Upload pattern</button></form></div></section>
+<footer>Offline controller · Station management over local Wi-Fi · No cloud dependency</footer>
+</main><script>
+const $=id=>document.getElementById(id);let lastStatus=null;
+function msg(t){let e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),5500)}
+function chooseTab(tab){document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===tab));document.querySelectorAll('.nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'))}
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>chooseTab(b.dataset.tab)));
+async function request(path,data){const options={credentials:'same-origin',cache:'no-store'};if(data){options.method='POST';options.body=data}
+ const r=await fetch(path,options);let txt=await r.text();if(!r.ok)throw new Error(txt||('HTTP '+r.status));try{return JSON.parse(txt)}catch(e){return txt}}
+function put(k,v){let e=$(k);if(e)e.textContent=v}
+function populateForm(o){let f=$('settingsForm');for(const k of ['apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
+ for(const k of ['coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow'])if(f.elements[k])f.elements[k].checked=!!o[k]}
+function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':'IDLE / AWAITING COIN');put('statusline','Uptime '+o.uptimeSeconds+'s · Free heap '+o.heap+' bytes · AP '+o.ip);
+ for(const [id,key] of [['r1','relay1On'],['r2','relay2On']]){let e=$(id);e.textContent=o[key]?'ON':'OFF';e.className='state '+(o[key]?'on':'off')}
+ put('clk','GPIO'+o.displayClk);put('dio','GPIO'+o.displayDio);put('bright',o.brightness);put('displaymode',o.displayMode);
+ put('saleAll',o.salesOverall);put('saleDay',o.salesToday);put('saleMonth',o.salesMonth)}
+async function poll(){try{let o=await request('/api/status');render(o);if(!window.formLoaded){populateForm(o);window.formLoaded=true}}catch(e){put('running','Disconnected: '+e.message)}}
+// Changes the real ESP8266 timer; these are not browser-only calculations.
+function validDuration(h,m,s){
+ return [h,m,s].every(Number.isInteger)&&h>=0&&h<=168&&m>=0&&m<=59&&s>=0&&s<=59&&
+        (h*3600+m*60+s)>0&&(h*3600+m*60+s)<=604800;
+}
+async function submitManualTime(mode,h,m,s){
+ if(!validDuration(h,m,s)){msg('Enter a positive time up to 7 days.');return}
+ if(mode==='set'&&!confirm('Replace the existing remaining time with '+h+'h '+m+'m '+s+'s? This overrides any paid time left.'))return;
+ const buttons=$('manualTimeForm').querySelectorAll('button');
+ buttons.forEach(b=>b.disabled=true);
+ try{
+  const result=await request('/api/time',new URLSearchParams({mode,hours:String(h),minutes:String(m),seconds:String(s)}));
+  put('timeFeedback',String(result)+' · '+h+'h '+m+'m '+s+'s · Sales unchanged');
+  msg(String(result));await poll();
+ }catch(e){put('timeFeedback','Adjustment failed: '+e.message);msg('Adjustment failed: '+e.message)}
+ finally{buttons.forEach(b=>b.disabled=false)}
+}
+async function quickAdd(minutes){await submitManualTime('add',Math.floor(minutes/60),minutes%60,0)}
+$('manualTimeForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const f=e.currentTarget;
+ const mode=e.submitter&&e.submitter.value==='set'?'set':'add';
+ await submitManualTime(mode,Number(f.elements.hours.value),Number(f.elements.minutes.value),Number(f.elements.seconds.value));
+});
+async function act(name){try{await request('/action',new URLSearchParams({name}));await poll()}catch(e){msg('Action failed: '+e.message)}}
+function confirmAction(a,t){if(confirm(t))act(a)}
+async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
+async function restoreDisplay(){if(!confirm('Restore display pins to GPIO12 (CLK) and GPIO13 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the 5-second test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
+$('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Wi-Fi changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+$('uploadForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);let result=await request('/upload?patternName='+encodeURIComponent(f.get('patternName')),f);msg(String(result))}catch(err){msg('Upload failed: '+err.message)}});
+poll();setInterval(poll,1500);
+</script></body></html>)BLAZEHTML";
+
+
+// ------------------------------
+// EEPROM + persistent storage
+// ------------------------------
+// Keep the existing EEPROM layout and saved timer/sales data. The buzzer pin is
+// forced to GPIO14 separately so stale GPIO3 settings cannot return.
+const uint32_t EEPROM_MAGIC = 0x5049534F;
+
+struct PersistentState {
+  uint32_t magic;
+  char apName[33];
+  char apPassword[65];
+
+  uint8_t coinPin;
+  uint8_t relayPin;
+  uint8_t relay2Pin;
+  uint8_t buzzerPin;
+  uint8_t displayClk;
+  uint8_t displayDio;
+
+  bool coinActiveLow;
+  bool relayActiveLow;
+  bool relay2ActiveLow;
+  bool buzzerActiveLow;
+
+  uint16_t addMinutes;
+  uint16_t addSeconds;
+  uint16_t warningSeconds;
+  uint16_t chimeDurationSeconds;
+  uint8_t countdownSpeedPercent;
+
+  uint32_t remainingSeconds;
+  bool timerRunning;
+  uint32_t salesOverall;
+  uint32_t salesToday;
+  uint32_t salesMonth;
+  uint32_t salesDayKey;
+  uint32_t salesMonthKey;
+  uint8_t displayBrightness;
+};
+
+PersistentState state;
+
+// ------------------------------
+// Board defaults
+// ------------------------------
+char AP_NAME[33] = "ESP8266-Control";
+char AP_PASSWORD[65] = "12345678";
+
+ESP8266WebServer server(80);
+
+// Default board mapping
+uint8_t coinPin = 0;      // GPIO0 / FLASH button
+uint8_t relayPin = 5;     // D1
+uint8_t relay2Pin = 4;    // D2
+const uint8_t FIXED_BUZZER_PIN = 14;  // D5, kept fixed for the speaker/buzzer module
+uint8_t buzzerPin = FIXED_BUZZER_PIN;
+uint8_t displayClk = 12;  // D6
+uint8_t displayDio = 13;  // D7
+
+bool coinActiveLow = true;
+bool relayActiveLow = true;
+bool relay2ActiveLow = false;
+bool buzzerActiveLow = false;
+
+// Timer config
+uint16_t addMinutes = 1;
+uint16_t addSeconds = 0;
+uint16_t warningSeconds = 10;
+uint16_t chimeDurationSeconds = 30;
+uint8_t countdownSpeedPercent = 0;   // 0 = normal, max 50
+
+// Runtime state
+uint32_t remainingSeconds = 0;
+bool timerRunning = false;
+bool relayState = false;
+bool relay2State = false;
+// Interrupt records complete active pulses; processing stays outside the ISR.
+volatile uint32_t coinPulseStartUs = 0;
+volatile uint8_t coinQueued = 0;
+volatile uint32_t lastAcceptedPulseUs = 0;
+const uint32_t COIN_MIN_PULSE_US = 10000UL;
+const uint32_t COIN_MAX_PULSE_US = 600000UL;
+const uint32_t COIN_REFRACTORY_US = 80000UL;
+
+
+uint32_t lastCountdownMillis = 0;
+// Remaining time is tracked in remainingMs100, not lossy float seconds.
+
+uint32_t buzzerUntil = 0;
+uint8_t displayBrightness = 7;
+uint64_t remainingMs100 = 0; // milliseconds times 100: exact speed scaling without float drift
+uint32_t lastRecoveryCheckpoint = 0;
+uint32_t chimePlayedMs = 0;
+uint32_t lastCoin = 0;
+
+DisplayManager displayUnit;
+File uploadFile;
+bool uploadSucceeded = false;
+String uploadMessage = "No upload received";
+
+// Non-blocking chime scheduler
+enum class ChimeKind : uint8_t { None, Welcome, Coin, NearEnd, Timeout, Manual };
+enum class ChimeSource : uint8_t { None, Ram, Progmem };
+
+std::vector<int> chimeFreqs;
+std::vector<int> chimeDurs;
+const uint16_t* progmemChimeFreqs = nullptr;
+const uint16_t* progmemChimeDurs = nullptr;
+size_t progmemChimeCount = 0;
+ChimeSource chimeSource = ChimeSource::None;
+ChimeKind currentChime = ChimeKind::None;
+uint32_t chimeStepStartedAt = 0;
+uint32_t chimeStepDurationMs = 0;
+bool chimePlaying = false;
+size_t chimeIndex = 0;
+uint32_t lastNearEndStartedAt = 0;
+
+// sales counters
+uint32_t salesOverall = 0;
+uint32_t salesToday = 0;
+uint32_t salesMonth = 0;
+uint32_t salesDayKey = 0;
+uint32_t salesMonthKey = 0;
+
+// Separate auth area does not change the legacy PersistentState layout.
+const uint32_t AUTH_MAGIC = 0x424C415AUL; // BLAZ
+const int AUTH_EEPROM_OFFSET = 320;
+struct AuthState { uint32_t magic; char pass[33]; uint32_t checksum; };
+AuthState authState;
+char adminPassword[33] = "blaze-admin";
+uint32_t authChecksum(const AuthState& a) {
+  uint32_t h = 2166136261UL;
+  for (size_t i=0;i<sizeof(a.magic)+sizeof(a.pass);i++) {
+    const uint8_t* bytes = (const uint8_t*)&a;
+    h = (h ^ bytes[i]) * 16777619UL;
+  }
+  return h;
+}
+void saveAdminPassword() {
+  memset(&authState, 0, sizeof(authState));
+  authState.magic = AUTH_MAGIC;
+  strncpy(authState.pass, adminPassword, sizeof(authState.pass)-1);
+  authState.checksum = authChecksum(authState);
+  EEPROM.put(AUTH_EEPROM_OFFSET, authState);
+  EEPROM.commit();
+}
+void loadAdminPassword() {
+  EEPROM.get(AUTH_EEPROM_OFFSET, authState);
+  authState.pass[sizeof(authState.pass)-1]='\0';
+  if (authState.magic != AUTH_MAGIC || authState.checksum != authChecksum(authState) ||
+      strlen(authState.pass)<10 || strlen(authState.pass)>32) {
+    strcpy(adminPassword,"blaze-admin");
+    saveAdminPassword();
+  } else { strcpy(adminPassword,authState.pass); }
+}
+bool requireAdmin() {
+  if (server.authenticate("admin",adminPassword)) return true;
+  server.requestAuthentication();
+  return false;
+}
+
+
+// Forward declarations used before their definitions. Arduino usually
+// auto-generates these for .ino files, but explicit declarations make the
+// sketch safer to move between build systems.
+void savePersistentState();
+void updateBuzzer();
+void stopChime();
+void resetTimer();
+void queueProgmemPattern(const uint16_t* freqs, const uint16_t* durs, size_t count, ChimeKind kind);
+
+// ------------------------------
+// Utilities
+// ------------------------------
+String formatTimeMMSS(uint32_t totalSeconds) {
+  uint32_t mm = totalSeconds / 60;
+  uint32_t ss = totalSeconds % 60;
+
+  String s;
+  if (mm < 10) s += "0";
+  s += String(mm);
+  s += ":";
+  if (ss < 10) s += "0";
+  s += String(ss);
+
+  return s;
+}
+
+String htmlEscape(String input) {
+  input.replace("&", "&amp;");
+  input.replace("\"", "&quot;");
+  input.replace("<", "&lt;");
+  input.replace(">", "&gt;");
+  return input;
+}
+
+// Validate AP credentials before storing them. ESP8266 softAP WPA passwords
+// should be 8..63 characters. An empty password means an open AP.
+bool apConfigIsValid(const String& name, const String& password) {
+  if (name.length() < 1 || name.length() > 32) return false;
+  if (password.length() == 0) return true;
+  return password.length() >= 8 && password.length() <= 63;
+}
+
+bool pinSetIsUnique(uint8_t c, uint8_t r1, uint8_t r2, uint8_t bz, uint8_t clk, uint8_t dio) {
+  uint8_t pins[] = { c, r1, r2, bz, clk, dio };
+  for (uint8_t i = 0; i < 6; i++) {
+    if (pins[i] > 16) return false;
+    if (pins[i] == 1 || pins[i] == 3) return false; // UART serial reserved
+    // GPIO6..GPIO11 are normally wired to the ESP8266 SPI flash.
+    if (pins[i] >= 6 && pins[i] <= 11) return false;
+    for (uint8_t j = i + 1; j < 6; j++) {
+      if (pins[i] == pins[j]) return false;
+    }
+  }
+  // GPIO16 cannot support edge interrupts / input pull-up used by coin reader.
+  if (c == 16 || c == 15 || c == 2) return false;
+  // Never drive boot strapping GPIOs as relays.
+  if (r1 == 0 || r1 == 2 || r1 == 15 || r2 == 0 || r2 == 2 || r2 == 15) return false;
+  // Display lines must be regular ESP8266 GPIOs with normal input mode.
+  if (clk == 0 || clk == 2 || clk == 15 || clk == 16 ||
+      dio == 0 || dio == 2 || dio == 15 || dio == 16) return false;
+  if (bz != FIXED_BUZZER_PIN) return false;
+  return true;
+}
+
+// ------------------------------
+// EEPROM load/save
+// ------------------------------
+void applyStateToRuntime() {
+  // copy from persistent struct to runtime vars
+  // EEPROM may contain stale/corrupt bytes even when the magic matches.
+  // Copy defensively and force NUL termination.
+  strncpy(AP_NAME, state.apName, sizeof(AP_NAME) - 1);
+  AP_NAME[sizeof(AP_NAME) - 1] = '\0';
+  strncpy(AP_PASSWORD, state.apPassword, sizeof(AP_PASSWORD) - 1);
+  AP_PASSWORD[sizeof(AP_PASSWORD) - 1] = '\0';
+
+  coinPin = state.coinPin;
+  relayPin = state.relayPin;
+  relay2Pin = state.relay2Pin;
+  buzzerPin = FIXED_BUZZER_PIN;
+  displayClk = state.displayClk;
+  displayDio = state.displayDio;
+
+  coinActiveLow = state.coinActiveLow;
+  relayActiveLow = state.relayActiveLow;
+  relay2ActiveLow = state.relay2ActiveLow;
+  buzzerActiveLow = state.buzzerActiveLow;
+
+  addMinutes = state.addMinutes;
+  addSeconds = state.addSeconds;
+  warningSeconds = state.warningSeconds;
+  chimeDurationSeconds = state.chimeDurationSeconds;
+  countdownSpeedPercent = state.countdownSpeedPercent;
+
+  remainingSeconds = state.remainingSeconds;
+  timerRunning = state.timerRunning;
+  salesOverall = state.salesOverall;
+  salesToday = state.salesToday;
+  salesMonth = state.salesMonth;
+  salesDayKey = state.salesDayKey;
+  salesMonthKey = state.salesMonthKey;
+  // Old sketches left this byte at zero; treat zero as maximum brightness for recovery.
+  displayBrightness = (state.displayBrightness >= 1 && state.displayBrightness <= 7) ? state.displayBrightness : 7;
+  // Sanity check legacy fields without erasing counters.
+  if (!apConfigIsValid(String(AP_NAME), String(AP_PASSWORD))) {
+    strcpy(AP_NAME,"ESP8266-Control"); strcpy(AP_PASSWORD,"12345678");
+  }
+  if ((uint32_t)addMinutes*60UL + addSeconds == 0 || addMinutes > 180 || addSeconds > 59) {
+    addMinutes=1; addSeconds=0;
+  }
+  if (warningSeconds>120) warningSeconds=10;
+  if (chimeDurationSeconds<1 || chimeDurationSeconds>120) chimeDurationSeconds=30;
+  if (countdownSpeedPercent>50) countdownSpeedPercent=0;
+  if (remainingSeconds>604800UL) { remainingSeconds=0; timerRunning=false; }
+
+}
+
+void loadDefaults() {
+  strcpy(AP_NAME, "ESP8266-Control");
+  strcpy(AP_PASSWORD, "12345678");
+
+  coinPin = 0;
+  relayPin = 5;
+  relay2Pin = 4;
+  buzzerPin = FIXED_BUZZER_PIN;
+  displayClk = 12;
+  displayDio = 13;
+
+  coinActiveLow = true;
+  relayActiveLow = true;
+  relay2ActiveLow = false;
+  buzzerActiveLow = false;
+
+  addMinutes = 1;
+  addSeconds = 0;
+  warningSeconds = 10;
+  chimeDurationSeconds = 30;
+  countdownSpeedPercent = 0;
+  displayBrightness = 7;
+
+  remainingSeconds = 0;
+  timerRunning = false;
+
+  salesOverall = 0;
+  salesToday = 0;
+  salesMonth = 0;
+  salesDayKey = 0;
+  salesMonthKey = 0;
+
+  memset(&state, 0, sizeof(state));
+  state.magic = EEPROM_MAGIC;
+  strcpy(state.apName, AP_NAME);
+  strcpy(state.apPassword, AP_PASSWORD);
+
+  state.coinPin = coinPin;
+  state.relayPin = relayPin;
+  state.relay2Pin = relay2Pin;
+  state.buzzerPin = FIXED_BUZZER_PIN;
+  state.displayClk = displayClk;
+  state.displayDio = displayDio;
+
+  state.coinActiveLow = coinActiveLow;
+  state.relayActiveLow = relayActiveLow;
+  state.relay2ActiveLow = relay2ActiveLow;
+  state.buzzerActiveLow = buzzerActiveLow;
+
+  state.addMinutes = addMinutes;
+  state.addSeconds = addSeconds;
+  state.warningSeconds = warningSeconds;
+  state.chimeDurationSeconds = chimeDurationSeconds;
+  state.countdownSpeedPercent = countdownSpeedPercent;
+
+  state.remainingSeconds = remainingSeconds;
+  state.timerRunning = timerRunning;
+  state.salesOverall = salesOverall;
+  state.salesToday = salesToday;
+  state.salesMonth = salesMonth;
+  state.salesDayKey = salesDayKey;
+  state.salesMonthKey = salesMonthKey;
+  state.displayBrightness = displayBrightness;
+}
+
+void loadPersistentState() {
+  EEPROM.begin(512);
+  EEPROM.get(0, state);
+
+  if (state.magic != EEPROM_MAGIC) {
+    loadDefaults();
+    savePersistentState();
+    return;
+  }
+
+  applyStateToRuntime();
+}
+
+void savePersistentState() {
+  state.magic = EEPROM_MAGIC;
+  strcpy(state.apName, AP_NAME);
+  strcpy(state.apPassword, AP_PASSWORD);
+
+  state.coinPin = coinPin;
+  state.relayPin = relayPin;
+  state.relay2Pin = relay2Pin;
+  state.buzzerPin = FIXED_BUZZER_PIN;
+  state.displayClk = displayClk;
+  state.displayDio = displayDio;
+
+  state.coinActiveLow = coinActiveLow;
+  state.relayActiveLow = relayActiveLow;
+  state.relay2ActiveLow = relay2ActiveLow;
+  state.buzzerActiveLow = buzzerActiveLow;
+
+  state.addMinutes = addMinutes;
+  state.addSeconds = addSeconds;
+  state.warningSeconds = warningSeconds;
+  state.chimeDurationSeconds = chimeDurationSeconds;
+  state.countdownSpeedPercent = countdownSpeedPercent;
+
+  state.remainingSeconds = remainingSeconds;
+  state.timerRunning = timerRunning;
+  state.salesOverall = salesOverall;
+  state.salesToday = salesToday;
+  state.salesMonth = salesMonth;
+  state.salesDayKey = salesDayKey;
+  state.salesMonthKey = salesMonthKey;
+
+  state.displayBrightness = displayBrightness;
+  EEPROM.put(0, state);
+  EEPROM.commit();
+}
+
+bool pinsAreValid() {
+  return pinSetIsUnique(coinPin, relayPin, relay2Pin, buzzerPin, displayClk, displayDio);
+}
+
+void revertToDefaults() {
+  // Recover only the hardware map. Do not destroy sales or a paid timer just
+  // because a stored pin assignment became invalid.
+  coinPin = 0;
+  relayPin = 5;
+  relay2Pin = 4;
+  buzzerPin = FIXED_BUZZER_PIN;
+  displayClk = 12;
+  displayDio = 13;
+
+  coinActiveLow = true;
+  relayActiveLow = true;
+  relay2ActiveLow = false;
+  buzzerActiveLow = false;
+
+  savePersistentState();
+}
+
+
+// ------------------------------
+// Display: periodic refresh + boot/test sequence (DisplayManager.h)
+// ------------------------------
+void setupDisplay() {
+  displayUnit.begin(displayClk, displayDio, displayBrightness);
+}
+void showRemaining() { displayUnit.update(remainingSeconds); }
+
+// ------------------------------
+// Relays + Buzzer
+// ------------------------------
+void setRelay1(bool on) {
+  relayState = on;
+  digitalWrite(relayPin, (on ^ relayActiveLow) ? HIGH : LOW);
+  pinMode(relayPin, OUTPUT);
+}
+
+void setRelay2(bool on) {
+  relay2State = on;
+  digitalWrite(relay2Pin, (on ^ relay2ActiveLow) ? HIGH : LOW);
+  pinMode(relay2Pin, OUTPUT);
+}
+
+void setRelays(bool on) {
+  setRelay1(on);
+  setRelay2(on);
+}
+
+void setBuzzer(bool on) {
+  pinMode(buzzerPin, OUTPUT);
+  digitalWrite(buzzerPin, (on ^ buzzerActiveLow) ? HIGH : LOW);
+}
+
+void noBuzzer() {
+  noTone(buzzerPin);
+  setBuzzer(false);
+}
+
+// ------------------------------
+// Chime scheduler
+// ------------------------------
+void stopChime() {
+  chimePlaying = false;
+  chimePlayedMs = 0;
+  chimeIndex = 0;
+  chimeSource = ChimeSource::None;
+  currentChime = ChimeKind::None;
+  progmemChimeFreqs = nullptr;
+  progmemChimeDurs = nullptr;
+  progmemChimeCount = 0;
+  noTone(buzzerPin);
+  setBuzzer(false);
+}
+
+size_t activeChimeCount() {
+  if (chimeSource == ChimeSource::Progmem) return progmemChimeCount;
+  if (chimeSource == ChimeSource::Ram) return chimeFreqs.size();
+  return 0;
+}
+
+uint16_t activeChimeFrequency(size_t index) {
+  if (chimeSource == ChimeSource::Progmem) {
+    return pgm_read_word(&progmemChimeFreqs[index]);
+  }
+  return (uint16_t)chimeFreqs[index];
+}
+
+uint16_t activeChimeDuration(size_t index) {
+  if (chimeSource == ChimeSource::Progmem) {
+    return pgm_read_word(&progmemChimeDurs[index]);
+  }
+  return (uint16_t)chimeDurs[index];
+}
+
+void beginCurrentChimeStep() {
+  if (!chimePlaying || chimeIndex >= activeChimeCount()) {
+    stopChime();
+    return;
+  }
+
+  uint16_t frequency = activeChimeFrequency(chimeIndex);
+  uint32_t maxMs = (uint32_t)chimeDurationSeconds * 1000UL;
+  if (chimePlayedMs >= maxMs) { stopChime(); return; }
+  chimeStepDurationMs = activeChimeDuration(chimeIndex);
+  if (chimeStepDurationMs > maxMs - chimePlayedMs)
+    chimeStepDurationMs = maxMs - chimePlayedMs;
+  chimeStepStartedAt = millis();
+
+  if (frequency == 0) {
+    noTone(buzzerPin);  // A zero-frequency entry is a deliberate rest.
+    setBuzzer(false);
+  } else {
+    tone(buzzerPin, frequency, chimeStepDurationMs + 10UL);
+  }
+}
+
+void queuePattern(const std::vector<int>& freqs, const std::vector<int>& durs,
+                  ChimeKind kind = ChimeKind::Manual) {
+  if (freqs.empty() || durs.empty() || freqs.size() != durs.size()) {
+    stopChime();
+    return;
+  }
+
+  stopChime();
+  chimeFreqs.clear();
+  chimeDurs.clear();
+
+  // Uploaded/custom patterns retain the configurable safety limit.
+  uint32_t maxDurationMs = (uint32_t)chimeDurationSeconds * 1000UL;
+  uint32_t totalMs = 0;
+
+  chimeFreqs.reserve(freqs.size());
+  chimeDurs.reserve(durs.size());
+
+  for (size_t i = 0; i < freqs.size(); i++) {
+    if (totalMs >= maxDurationMs) break;
+
+    int frequency = freqs[i];
+    uint32_t duration = durs[i] > 0 ? (uint32_t)durs[i] : 0;
+    if (frequency < 0 || frequency > 5000 || duration == 0) continue;
+    if (totalMs + duration > maxDurationMs) duration = maxDurationMs - totalMs;
+    if (duration == 0) break;
+
+    chimeFreqs.push_back(frequency);
+    chimeDurs.push_back((int)duration);
+    totalMs += duration;
+  }
+
+  if (chimeFreqs.empty()) {
+    stopChime();
+    return;
+  }
+
+  chimeSource = ChimeSource::Ram;
+  chimePlayedMs = 0;
+  currentChime = kind;
+  chimeIndex = 0;
+  chimePlaying = true;
+  beginCurrentChimeStep();
+}
+
+void queueProgmemPattern(const uint16_t* freqs, const uint16_t* durs,
+                         size_t count, ChimeKind kind) {
+  if (!freqs || !durs || count == 0) {
+    stopChime();
+    return;
+  }
+
+  stopChime();
+  progmemChimeFreqs = freqs;
+  progmemChimeDurs = durs;
+  progmemChimeCount = count;
+  chimeSource = ChimeSource::Progmem;
+  chimePlayedMs = 0;
+  currentChime = kind;
+  chimeIndex = 0;
+  chimePlaying = true;
+  beginCurrentChimeStep();
+}
+
+void updateChimePlayer() {
+  if (!chimePlaying) return;
+
+  uint32_t now = millis();
+  if ((uint32_t)(now - chimeStepStartedAt) < chimeStepDurationMs) return;
+
+  chimePlayedMs += chimeStepDurationMs;
+  chimeIndex++;
+  if (chimeIndex >= activeChimeCount()) {
+    stopChime();
+    return;
+  }
+
+  beginCurrentChimeStep();
+}
+
+// ------------------------------
+// Chime parser
+// supports:
+  // 1) note text format: frequency,duration;frequency,duration;...
+  // 2) 8-bit mono WAV files: /welcome.wav, /coin.wav, /warning.wav, /timeup.wav
+// ------------------------------
+std::vector<int> parsedFreqs;
+std::vector<int> parsedDurs;
+
+bool parseNoteListFile(const String& path, std::vector<int>& outFreqs, std::vector<int>& outDurs) {
+  outFreqs.clear();
+  outDurs.clear();
+
+  if (!LittleFS.exists(path)) return false;
+
+  File f = LittleFS.open(path, "r");
+  if (!f) return false;
+
+  String data = f.readString();
+  f.close();
+
+  data.trim();
+  if (data.length() == 0) return false;
+
+  int start = 0;
+  const int dataLength = (int)data.length();
+  while (start < dataLength) {
+    int end = data.indexOf(';', start);
+    if (end < 0) end = dataLength;
+
+    String token = data.substring(start, end);
+    token.trim();
+
+    if (token.length() > 0) {
+      int comma = token.indexOf(',');
+      if (comma > 0) {
+        String freqStr = token.substring(0, comma);
+        String durStr = token.substring(comma + 1);
+
+        int freq = freqStr.toInt();
+        int dur = durStr.toInt();
+
+        if ((freq == 0 || (freq >= 20 && freq <= 5000)) && dur >= 10 && dur <= 10000) {
+          outFreqs.push_back(freq);
+          outDurs.push_back(dur);
+          if (outFreqs.size() >= 300) break;
+        }
+      }
+    }
+
+    if (end >= dataLength) break;
+    start = end + 1;
+  }
+
+  return outFreqs.size() > 0;
+}
+
+bool parseWave8BitMonoFile(const String& path, std::vector<int>& outFreqs, std::vector<int>& outDurs) {
+  outFreqs.clear();
+  outDurs.clear();
+
+  if (!LittleFS.exists(path)) return false;
+
+  File f = LittleFS.open(path, "r");
+  if (!f) return false;
+
+  char id[5] = {0};
+  uint8_t tmp[4];
+
+  if (f.readBytes(id, 4) != 4 || strncmp(id, "RIFF", 4) != 0) {
+    f.close();
+    return false;
+  }
+
+  if (f.readBytes((char*)tmp, 4) != 4) {
+    f.close();
+    return false;
+  }
+
+  char wave[5] = {0};
+  if (f.readBytes(wave, 4) != 4 || strncmp(wave, "WAVE", 4) != 0) {
+    f.close();
+    return false;
+  }
+
+  uint32_t dataOffset = 0;
+  uint32_t dataSize = 0;
+  uint32_t sampleRate = 0;
+  uint16_t audioFormat = 0;
+  uint16_t numChannels = 0;
+  uint16_t bitsPerSample = 0;
+  bool haveFmt = false;
+
+  while (f.available() >= 8) {
+    char chunkId[5] = {0};
+    if (f.readBytes(chunkId, 4) != 4) break;
+    if (f.readBytes((char*)tmp, 4) != 4) break;
+
+    uint32_t chunkSize = ((uint32_t)tmp[3] << 24) |
+                         ((uint32_t)tmp[2] << 16) |
+                         ((uint32_t)tmp[1] << 8)  |
+                         (uint32_t)tmp[0];
+
+    uint32_t chunkDataStart = f.position();
+
+    if (strncmp(chunkId, "fmt ", 4) == 0) {
+      if (chunkSize < 16) {
+        f.close();
+        return false;
+      }
+
+      uint8_t fmtBuf[16];
+      if (f.read(fmtBuf, 16) != 16) {
+        f.close();
+        return false;
+      }
+
+      audioFormat = (uint16_t)fmtBuf[0] | ((uint16_t)fmtBuf[1] << 8);
+      numChannels = (uint16_t)fmtBuf[2] | ((uint16_t)fmtBuf[3] << 8);
+      sampleRate = (uint32_t)fmtBuf[4] |
+                   ((uint32_t)fmtBuf[5] << 8) |
+                   ((uint32_t)fmtBuf[6] << 16) |
+                   ((uint32_t)fmtBuf[7] << 24);
+      bitsPerSample = (uint16_t)fmtBuf[14] | ((uint16_t)fmtBuf[15] << 8);
+      haveFmt = true;
+    } else if (strncmp(chunkId, "data", 4) == 0) {
+      dataOffset = chunkDataStart;
+      dataSize = chunkSize;
+      break;
+    }
+
+    // RIFF chunks are padded to an even byte boundary. Seek to the end of
+    // this chunk rather than adding chunkSize after already reading data.
+    uint32_t nextChunk = chunkDataStart + chunkSize + (chunkSize & 1U);
+    if (!f.seek(nextChunk, SeekSet)) {
+      f.close();
+      return false;
+    }
+  }
+
+  f.close();
+
+  if (!haveFmt || audioFormat != 1 || numChannels != 1 ||
+      bitsPerSample != 8 || sampleRate == 0 || dataSize == 0) {
+    return false;
+  }
+
+  File wav = LittleFS.open(path, "r");
+  if (!wav) return false;
+
+  const uint32_t maxSteps = 300;
+  uint32_t step = (dataSize + maxSteps - 1) / maxSteps;
+  if (step < 1) step = 1;
+
+  uint32_t durationMs = (step * 1000UL + sampleRate / 2) / sampleRate;
+  if (durationMs < 8) durationMs = 8;
+  if (durationMs > 100) durationMs = 100;
+
+  outFreqs.reserve(maxSteps);
+  outDurs.reserve(maxSteps);
+
+  for (uint32_t i = 0; i < dataSize && outFreqs.size() < maxSteps; i += step) {
+    if (!wav.seek(dataOffset + i, SeekSet)) break;
+
+    int sample = wav.read();
+    if (sample < 0) break;
+
+    int centered = sample - 128;
+    int amplitude = abs(centered);
+
+    // This is intentionally a buzzer-safe approximation, not WAV playback.
+    // Stronger sample amplitudes are mapped to higher buzzer frequencies.
+    int freq = 220 + amplitude * 12;
+    if (freq > 1800) freq = 1800;
+
+    outFreqs.push_back(freq);
+    outDurs.push_back((int)durationMs);
+  }
+
+  wav.close();
+  return !outFreqs.empty();
+}
+
+bool loadChimePattern(const String& path, std::vector<int>& outFreqs, std::vector<int>& outDurs) {
+  if (path.endsWith(".wav")) {
+    return parseWave8BitMonoFile(path, outFreqs, outDurs);
+  }
+  return parseNoteListFile(path, outFreqs, outDurs);
+}
+
+// ------------------------------
+// More fun welcome / warning / near-ending tones
+// ------------------------------
+// Keep insert coin tone as-is (liked already)
+bool tryUploadedChime(const char* basename, ChimeKind kind) {
+  String txt = String("/")+basename+".txt";
+  String wav = String("/")+basename+".wav";
+  if (LittleFS.exists(txt) && loadChimePattern(txt,parsedFreqs,parsedDurs)) {
+    queuePattern(parsedFreqs,parsedDurs,kind); return true;
+  }
+  if (LittleFS.exists(wav) && loadChimePattern(wav,parsedFreqs,parsedDurs)) {
+    queuePattern(parsedFreqs,parsedDurs,kind); return true;
+  }
+  return false;
+}
+void playCoinChime() {
+  if (tryUploadedChime("coin",ChimeKind::Coin)) return;
+  // Keep the original insert-coin chime exactly as requested.
+  std::vector<int> freqs = { 880, 1180, 880, 1180 };
+  std::vector<int> durs  = { 110, 150, 110, 180 };
+  queuePattern(freqs, durs, ChimeKind::Coin);
+}
+
+void playWelcomeChime() {
+  if (tryUploadedChime("welcome",ChimeKind::Welcome)) return;
+  // Compact GPIO14 buzzer approximation of tacos.mp3, capped at 40 seconds.
+  queueProgmemPattern(tacosFreq, tacosDur, tacosCount, ChimeKind::Welcome);
+}
+
+void playWarningChime() {
+  if (tryUploadedChime("warning",ChimeKind::Manual)) return;
+  // Manual warning uses the same supplied faa.mp3-derived pattern.
+  queueProgmemPattern(faaFreq, faaDur, faaCount, ChimeKind::Manual);
+}
+
+void playNearEndingChime() {
+  if (tryUploadedChime("warning",ChimeKind::NearEnd)) { lastNearEndStartedAt=millis(); return; }
+  queueProgmemPattern(faaFreq, faaDur, faaCount, ChimeKind::NearEnd);
+  lastNearEndStartedAt = millis();
+}
+
+void playTimeEndingChime() {
+  if (tryUploadedChime("timeup",ChimeKind::Timeout)) return;
+  // Plays the complete timeout.mp3-derived sequence. It is interrupted only
+  // when another chime is deliberately started, such as inserting a coin.
+  queueProgmemPattern(timeoutFreq, timeoutDur, timeoutCount, ChimeKind::Timeout);
+}
+
+// ------------------------------
+// Timer, sales, and interrupt-assisted coin pulse accounting
+// ------------------------------
+void startTimerFromSeconds(uint32_t secs) {
+  if (secs == 0) { resetTimer(); return; }
+  stopChime();
+  remainingSeconds = secs;
+  remainingMs100 = (uint64_t)secs * 100000ULL;
+  timerRunning = true;
+  lastCountdownMillis = millis();
+  setRelays(true);
+  savePersistentState();
+}
+void addCoinTime() {
+  const uint32_t secs = (uint32_t)addMinutes * 60UL + addSeconds;
+  if (secs == 0) return;
+  const uint64_t add = (uint64_t)secs * 100000ULL;
+  const uint64_t cap = (uint64_t)604800UL * 100000ULL; // 7-day session upper bound
+  remainingMs100 = (remainingMs100 + add > cap) ? cap : remainingMs100 + add;
+  remainingSeconds = (uint32_t)((remainingMs100 + 99999ULL) / 100000ULL);
+  timerRunning = true;
+  lastCountdownMillis = millis();
+  setRelays(true);
+  lastCoin = millis();
+  lastNearEndStartedAt = lastCoin;
+  stopChime();
+  playCoinChime();
+  // Commit AFTER incrementSales() so both paid time and coin count share one write.
+}
+void updateTimerState() {
+  if (!timerRunning) return;
+  const uint32_t now = millis();
+  const uint32_t elapsed = (uint32_t)(now - lastCountdownMillis);
+  if (!elapsed) return;
+  lastCountdownMillis = now;
+  const uint64_t debit = (uint64_t)elapsed * (100U + countdownSpeedPercent);
+  if (debit >= remainingMs100) {
+    remainingMs100=0; remainingSeconds=0; timerRunning=false;
+    setRelays(false); playTimeEndingChime(); savePersistentState();
+    return;
+  }
+  remainingMs100 -= debit;
+  remainingSeconds = (uint32_t)((remainingMs100 + 99999ULL) / 100000ULL);
+  if (remainingSeconds <= warningSeconds && remainingSeconds > 0) {
+    if (!chimePlaying && (uint32_t)(now-lastNearEndStartedAt)>=2000UL) playNearEndingChime();
+  }
+  // A bounded checkpoint reduces staleness after power loss at a flash-wear cost.
+  // 5min checkpoints, in addition to transactional coin writes.
+  if ((uint32_t)(now-lastRecoveryCheckpoint)>=300000UL) {
+    lastRecoveryCheckpoint=now; savePersistentState();
+  }
+}
+void resetTimer() {
+  stopChime(); remainingSeconds=0; remainingMs100=0; timerRunning=false;
+  setRelays(false); savePersistentState();
+}
+// Manual admin time adjustment: no coin event, no sale/count increment.
+// Called after settling elapsed countdown and pending coins from /api/time.
+bool applyManualTime(bool replace, uint32_t inputSeconds) {
+  uint64_t targetUnits = 0;
+  if (!blazeComputeManualTarget(replace, remainingMs100, inputSeconds, targetUnits)) return false;
+  stopChime();
+  remainingMs100 = targetUnits;
+  remainingSeconds = (uint32_t)((remainingMs100 + 99999ULL) / 100000ULL);
+  timerRunning = true;
+  const uint32_t now = millis();
+  lastCountdownMillis = now;
+  lastRecoveryCheckpoint = now;
+  lastNearEndStartedAt = now;
+  setRelays(true);
+  showRemaining();
+  savePersistentState(); // Single commit, also restores the manually granted time after restart.
+  Serial.printf("[TIME] Manual %s: +/=%lu s, now %lu s remaining (no sale)\n",
+                replace ? "SET" : "ADD", (unsigned long)inputSeconds,
+                (unsigned long)remainingSeconds);
+  return true;
+}
+
+void incrementSales() {
+  // No calendar RTC: keep legacy bucket values rather than misreporting uptime
+  // as a real day or month. A DS3231 is required for trustworthy date sales.
+  if (salesOverall<UINT32_MAX) salesOverall++;
+  if (salesToday<UINT32_MAX) salesToday++;
+  if (salesMonth<UINT32_MAX) salesMonth++;
+  savePersistentState();
+}
+void clearSales() {
+  salesOverall=0; salesToday=0; salesMonth=0;
+  salesDayKey=0; salesMonthKey=0;
+  savePersistentState();
+}
+
+void IRAM_ATTR onCoinEdge() {
+  const uint32_t now = micros();
+  const bool active = (digitalRead(coinPin) == (coinActiveLow ? LOW : HIGH));
+  if (active) {
+    coinPulseStartUs=now;
+    return;
+  }
+  const uint32_t started=coinPulseStartUs;
+  coinPulseStartUs=0;
+  if (!started) return;
+  const uint32_t width=(uint32_t)(now-started);
+  if (width<COIN_MIN_PULSE_US || width>COIN_MAX_PULSE_US) return;
+  if ((uint32_t)(now-lastAcceptedPulseUs)<COIN_REFRACTORY_US) return;
+  lastAcceptedPulseUs=now;
+  if (coinQueued<250) coinQueued++;
+}
+void configureCoinInput() {
+  pinMode(coinPin,coinActiveLow?INPUT_PULLUP:INPUT);
+  coinPulseStartUs=0; coinQueued=0;
+  attachInterrupt(digitalPinToInterrupt(coinPin),onCoinEdge,CHANGE);
+}
+void handleCoinInput() {
+  uint8_t count=0;
+  noInterrupts(); count=coinQueued; coinQueued=0; interrupts();
+  for (uint8_t n=0;n<count;n++) { addCoinTime(); incrementSales(); }
+}
+
+// ------------------------------
+// Web/API helper functions: UI is a static PROGMEM asset in WebUI.h
+// ------------------------------
+String jsonQuote(const String& value) {
+  String s="\"";
+  for (size_t i=0;i<value.length();i++) {
+    char c=value[i];
+    if (c=='"' || c=='\\') {s+='\\';s+=c;}
+    else if ((uint8_t)c<32) s+=' ';
+    else s+=c;
+  }
+  return s+'"';
+}
+void sendStatus() {
+  String s; s.reserve(1050);
+  s += F("{\"time\":");s+=jsonQuote(formatTimeMMSS(remainingSeconds));
+  s += F(",\"remainingSeconds\":");s+=remainingSeconds;
+  s += F(",\"timerRunning\":");s+=(timerRunning?"true":"false");
+  s += F(",\"relay1On\":");s+=(relayState?"true":"false");
+  s += F(",\"relay2On\":");s+=(relay2State?"true":"false");
+  s += F(",\"displayMode\":");s+=jsonQuote(displayUnit.mode());
+  s += F(",\"ip\":");s+=jsonQuote(WiFi.softAPIP().toString());
+  #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
+  JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
+  JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);
+  JNUM("coinPin",coinPin);JNUM("relayPin",relayPin);JNUM("relay2Pin",relay2Pin);
+  JNUM("addMinutes",addMinutes);JNUM("addSeconds",addSeconds);
+  JNUM("warningSeconds",warningSeconds);JNUM("speedPct",countdownSpeedPercent);
+  JNUM("chimeDurationSeconds",chimeDurationSeconds);
+  JNUM("salesOverall",salesOverall);JNUM("salesToday",salesToday);JNUM("salesMonth",salesMonth);
+  #undef JNUM
+  s += F(",\"apName\":");s+=jsonQuote(String(AP_NAME));
+  s += F(",\"coinActiveLow\":");s+=(coinActiveLow?"true":"false");
+  s += F(",\"relayActiveLow\":");s+=(relayActiveLow?"true":"false");
+  s += F(",\"relay2ActiveLow\":");s+=(relay2ActiveLow?"true":"false");
+  s += F(",\"buzzerActiveLow\":");s+=(buzzerActiveLow?"true":"false");
+  s += '}';
+  server.sendHeader("Cache-Control","no-store");
+  server.send(200,"application/json",s);
+}
+void redirect() { server.sendHeader("Location","/");server.send(303,"text/plain",""); }
+void reject(const String& reason,int code=400) { server.send(code,"text/plain",reason); }
+
+// ------------------------------
+// LittleFS upload, bounded and validated before replacing existing chimes
+// ------------------------------
+String uploadDestination;
+uint32_t uploadLength=0;
+const uint32_t MAX_UPLOAD_BYTES=65536UL;
+void handleFileUpload() {
+  HTTPUpload& upload = server.upload();
+  if (!server.authenticate("admin",adminPassword)) return;
+  if (upload.status==UPLOAD_FILE_START) {
+    uploadSucceeded=false;uploadMessage="Upload rejected";uploadLength=0;uploadDestination="";
+    String which=server.arg("patternName");
+    if (which!="welcome" && which!="coin" && which!="warning" && which!="timeup") return;
+    String name=String(upload.filename);name.toLowerCase();
+    if (!name.endsWith(".txt") && !name.endsWith(".wav")) return;
+    uploadDestination="/"+which+(name.endsWith(".wav")?".wav":".txt");
+    if (LittleFS.exists("/upload.tmp")) LittleFS.remove("/upload.tmp");
+    uploadFile=LittleFS.open("/upload.tmp","w");
+    if (!uploadFile) {uploadMessage="Storage unavailable";return;}
+    uploadMessage="Uploading";
+  } else if (upload.status==UPLOAD_FILE_WRITE) {
+    if (uploadFile) {
+      if (uploadLength+upload.currentSize>MAX_UPLOAD_BYTES || uploadFile.write(upload.buf,upload.currentSize)!=upload.currentSize) {
+        uploadFile.close();LittleFS.remove("/upload.tmp"); uploadMessage="Upload exceeds 64 KB or storage failed";
+      } else uploadLength+=upload.currentSize;
+    }
+  } else if (upload.status==UPLOAD_FILE_END) {
+    if (uploadFile) {
+      uploadFile.close();
+      if (uploadLength==0) {LittleFS.remove("/upload.tmp");uploadMessage="Empty file";return;}
+      std::vector<int> freq,dur;
+      bool valid=false;
+      // The temporary name lacks an extension, so parse using the intended format.
+      if (uploadDestination.endsWith(".wav")) valid=parseWave8BitMonoFile("/upload.tmp",freq,dur);
+      else valid=parseNoteListFile("/upload.tmp",freq,dur);
+      if (!valid) {LittleFS.remove("/upload.tmp"); uploadMessage="File has no valid tones or unsupported WAV format";return;}
+      if (LittleFS.exists(uploadDestination)) LittleFS.remove(uploadDestination);
+      if (!LittleFS.rename("/upload.tmp",uploadDestination)) {uploadMessage="Unable to commit uploaded file";return;}
+      String alt=uploadDestination.substring(0,uploadDestination.lastIndexOf('.'))+(uploadDestination.endsWith(".wav")?".txt":".wav");
+      if (LittleFS.exists(alt)) LittleFS.remove(alt);
+      uploadSucceeded=true; uploadMessage="Upload saved; selected chime will use this file";
+    }
+  } else if (upload.status==UPLOAD_FILE_ABORTED) {
+    if (uploadFile)uploadFile.close();LittleFS.remove("/upload.tmp");
+    uploadSucceeded=false;uploadMessage="Upload cancelled";
+  }
+}
+
+// ------------------------------
+// Setup and HTTP endpoints
+// ------------------------------
+void setup() {
+  Serial.begin(115200);Serial.println();
+  Serial.println(F("[BLAZE] V1.2 brightness sweep and BLAZE scroll"));
+  bool fsReady=LittleFS.begin();
+  if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
+  loadPersistentState();
+  loadAdminPassword();
+  if (!pinsAreValid()) {
+    Serial.println(F("[CONFIG] Unsafe/invalid pins; reverting to known default map"));
+    revertToDefaults();
+  }
+  Serial.printf("[GPIO] Display CLK=%u DIO=%u; coin=%u; relays=%u,%u; buzzer=%u\n",
+                 displayClk,displayDio,coinPin,relayPin,relay2Pin,buzzerPin);
+  // Set OFF level before output direction to avoid relay glitches on initialization.
+  digitalWrite(relayPin,relayActiveLow?HIGH:LOW);pinMode(relayPin,OUTPUT);relayState=false;
+  digitalWrite(relay2Pin,relay2ActiveLow?HIGH:LOW);pinMode(relay2Pin,OUTPUT);relay2State=false;
+  digitalWrite(buzzerPin,buzzerActiveLow?HIGH:LOW);pinMode(buzzerPin,OUTPUT);
+  setupDisplay();
+  configureCoinInput();
+  if (remainingSeconds>0 && state.timerRunning) {
+    timerRunning=true;remainingMs100=(uint64_t)remainingSeconds*100000ULL;
+    lastCountdownMillis=millis();setRelays(true);
+  } else {remainingSeconds=0;timerRunning=false;remainingMs100=0;setRelays(false);}
+  lastRecoveryCheckpoint=millis();
+
+  WiFi.mode(WIFI_AP);
+  bool apStarted=(strlen(AP_PASSWORD)==0)?WiFi.softAP(AP_NAME):WiFi.softAP(AP_NAME,AP_PASSWORD);
+  if (!apStarted) {
+    Serial.println(F("[WIFI] Failed to start saved AP; using defaults"));
+    strcpy(AP_NAME,"ESP8266-Control");strcpy(AP_PASSWORD,"12345678");
+    WiFi.softAP(AP_NAME,AP_PASSWORD);
+  }
+  Serial.print(F("[WIFI] AP IP: "));Serial.println(WiFi.softAPIP());
+  server.on("/",HTTP_GET,[](){if(!requireAdmin())return;server.send_P(200,PSTR("text/html"),WEB_UI);});
+  server.on("/api/status",HTTP_GET,[](){if(!requireAdmin())return;sendStatus();});
+  server.on("/display/test",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    String mode=server.arg("mode");
+    if(mode!="normal" && mode!="swapped") {reject("Expected normal or swapped");return;}
+    displayUnit.beginTest(mode=="swapped");server.send(200,"text/plain","Display test started");
+  });
+  server.on("/display/default",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.arg("confirm")!="yes") {reject("Confirmation required");return;}
+    if(timerRunning) {reject("Finish paid session before changing display pins",409);return;}
+    if(!pinSetIsUnique(coinPin,relayPin,relay2Pin,buzzerPin,12,13)) {
+      reject("GPIO12/13 overlap another device. Reconfigure pins safely first",409);return;
+    }
+    displayClk=12;displayDio=13;displayBrightness=7;
+    savePersistentState();setupDisplay();
+    server.send(200,"text/plain","Display pin map restored");
+  });
+  server.on("/api/time",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    // Drain completed paid coins first and settle elapsed time before changing
+    // a live session. A manual credit is not recorded as a purchased coin.
+    handleCoinInput();
+    updateTimerState();
+    if(!server.hasArg("mode") || !server.hasArg("hours") ||
+       !server.hasArg("minutes") || !server.hasArg("seconds")) {
+      reject("Missing time fields",400);return;
+    }
+    const String mode = server.arg("mode");
+    if(mode != "add" && mode != "set") {reject("Mode must be add or set",400);return;}
+    uint32_t duration = 0;
+    if(!blazeParseManualDuration(server.arg("hours"),server.arg("minutes"),
+                                 server.arg("seconds"),duration)) {
+      reject("Use a positive duration: hours 0-168, minutes/seconds 0-59; maximum 7 days",400);return;
+    }
+    if(!applyManualTime(mode=="set",duration)) {
+      reject("Total time would exceed the 7-day limit; no change was made",409);return;
+    }
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain",mode=="set" ? "Remaining time replaced" : "Time added");
+  });
+  server.on("/action",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    String a=server.arg("name");
+    if(a=="resetTimer") resetTimer();
+    else if(a=="clearSales") clearSales();
+    else if(a=="warn")playWarningChime();
+    else if(a=="relay1" || a=="relay2") {
+      if(timerRunning) {reject("Manual relay changes disabled during paid time",409);return;}
+      if(a=="relay1")setRelay1(!relayState);else setRelay2(!relay2State);
+    } else {reject("Unknown action",404);return;}
+    server.send(200,"text/plain","OK");
+  });
+  server.on("/settings",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(!server.hasArg("save")) {reject("Save flag missing");return;}
+    if(timerRunning) {reject("Do not change settings during paid time",409);return;}
+    String newName=server.arg("apName");newName.trim();
+    String newPass=server.arg("apPassword");
+    if(newPass.length()==0)newPass=String(AP_PASSWORD);
+    if(!apConfigIsValid(newName,newPass) || newPass.length()==0) {reject("AP name 1-32; password 8-63 characters");return;}
+    String newAdmin=server.arg("adminPassword");
+    if(newAdmin.length()!=0 && (newAdmin.length()<10 || newAdmin.length()>32)) {reject("Admin password must be 10-32 characters");return;}
+    uint8_t nc=(uint8_t)constrain(server.arg("coinPin").toInt(),0,16);
+    uint8_t nr1=(uint8_t)constrain(server.arg("relayPin").toInt(),0,16);
+    uint8_t nr2=(uint8_t)constrain(server.arg("relay2Pin").toInt(),0,16);
+    uint8_t nclk=(uint8_t)constrain(server.arg("displayClk").toInt(),0,16);
+    uint8_t ndio=(uint8_t)constrain(server.arg("displayDio").toInt(),0,16);
+    if(!pinSetIsUnique(nc,nr1,nr2,FIXED_BUZZER_PIN,nclk,ndio)) {reject("Unsafe GPIO assignment, duplication, or boot/flash pin conflict");return;}
+    int nm=constrain(server.arg("addMinutes").toInt(),0,180);
+    int ns=constrain(server.arg("addSeconds").toInt(),0,59);
+    if(nm==0 && ns==0) {reject("Coin time cannot be zero");return;}
+    int nb=constrain(server.arg("brightness").toInt(),1,7);
+    bool newCoinLow=server.hasArg("coinActiveLow");
+    bool newR1Low=server.hasArg("relayActiveLow");
+    bool newR2Low=server.hasArg("relay2ActiveLow");
+    bool newBuzLow=server.hasArg("buzzerActiveLow");
+    bool mapChanged=nc!=coinPin || nr1!=relayPin || nr2!=relay2Pin || nclk!=displayClk || ndio!=displayDio;
+    bool polarChanged=newCoinLow!=coinActiveLow || newR1Low!=relayActiveLow || newR2Low!=relay2ActiveLow || newBuzLow!=buzzerActiveLow;
+    if(mapChanged || polarChanged){
+      detachInterrupt(digitalPinToInterrupt(coinPin));
+      setRelays(false);stopChime();
+      // Disconnect old outputs before configuring new relay pins.
+      pinMode(relayPin,INPUT);pinMode(relay2Pin,INPUT);
+    }
+    newName.toCharArray(AP_NAME,sizeof(AP_NAME));
+    newPass.toCharArray(AP_PASSWORD,sizeof(AP_PASSWORD));
+    coinPin=nc;relayPin=nr1;relay2Pin=nr2;displayClk=nclk;displayDio=ndio;
+    coinActiveLow=newCoinLow;relayActiveLow=newR1Low;relay2ActiveLow=newR2Low;buzzerActiveLow=newBuzLow;
+    addMinutes=(uint16_t)nm;addSeconds=(uint16_t)ns;
+    warningSeconds=(uint16_t)constrain(server.arg("warningSeconds").toInt(),0,120);
+    chimeDurationSeconds=(uint16_t)constrain(server.arg("chimeDurationSeconds").toInt(),1,120);
+    countdownSpeedPercent=(uint8_t)constrain(server.arg("speedPct").toInt(),0,50);
+    displayBrightness=(uint8_t)nb;
+    if(mapChanged || polarChanged){
+      digitalWrite(relayPin,relayActiveLow?HIGH:LOW);pinMode(relayPin,OUTPUT);
+      digitalWrite(relay2Pin,relay2ActiveLow?HIGH:LOW);pinMode(relay2Pin,OUTPUT);
+      setBuzzer(false);configureCoinInput();setupDisplay();
+    } else displayUnit.setBrightness(displayBrightness);
+    savePersistentState();
+    if(newAdmin.length()>0){newAdmin.toCharArray(adminPassword,sizeof(adminPassword));saveAdminPassword();}
+    server.send(200,"text/plain","Settings saved");
+  });
+  server.on("/upload",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    server.send(uploadSucceeded?200:400,"text/plain",uploadMessage);
+  },handleFileUpload);
+  server.onNotFound([](){if(!requireAdmin())return;reject("Not found",404);});
+  server.begin();
+  lastNearEndStartedAt=millis();
+  playWelcomeChime();
+  Serial.println(F("[WEB] Ready at 192.168.4.1; user admin; change default password"));
+}
+void loop() {
+  server.handleClient();
+  handleCoinInput();
+  updateTimerState();
+  displayUnit.update(remainingSeconds);
+  updateBuzzer();
+  updateChimePlayer();
+  yield();
+}
+
+void updateBuzzer() {
+  uint32_t now = millis();
+
+  if (buzzerUntil != 0 && (int32_t)(now - buzzerUntil) >= 0) {
+    setBuzzer(false);
+    buzzerUntil = 0;
+  }
+}
