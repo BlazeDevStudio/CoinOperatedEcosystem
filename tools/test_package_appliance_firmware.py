@@ -328,6 +328,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         command = [
             bwrap,
             "--unshare-all",
+            "--share-net",  # Hosted runner cannot configure loopback; network isolation is not claimed.
             "--unshare-user",
             "--userns-block-fd", str(userns_block_read),
             "--info-fd", str(info_write),
