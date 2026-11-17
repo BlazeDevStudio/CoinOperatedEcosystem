@@ -1,6 +1,7 @@
 # PHX-RELEASE — ImageBuilder wrapper safety and operator handover
 
-**Checkpoint:** 2026-11-15 Asia/Manila. **Status:** DRAFT / CI PENDING / PRODUCTION NO-GO.  
+**Checkpoint:** 2026-11-17 UTC08. **Status:** DRAFT / SOURCE-TEST CI VERIFIED / PRODUCTION NO-GO.
+**Current exact PR head:** `8cca7ff8e35c7b90fb3b88345a8ea65f92bc81b5`.  
 **Repository:** `BlazeDevStudio/CoinOperatedEcosystem`.  
 **Base:** integration candidate PR #26, source HEAD `b382d233ff06c8791b1028bed3c617cc7b670d12`.  
 **Branch:** `phoenix/release-imagebuilder-failclosed-20261115`.
@@ -252,3 +253,44 @@ The first exact-head [GitHub Actions run #43635417891](https://github.com/BlazeD
 - **Registry provenance:** canonical private Drive registry v11 was not retrievable from the available Library search. Historical v4/v7 snapshots and the 2026-10-26 baseline were not substituted; no private identifiers or contents were copied.
 - **Evidence limits:** `sh -n`, synthetic staging, ESP board compilation and GitHub-hosted CI are software evidence only. No real OpenWrt ImageBuilder target binary, protected signature, hardware flash, power-cut test, customer payment or production acceptance is established.
 - **Next:** continue only with a newly reproduced release-owned defect or a specifically assigned #242 cleanup; retain #31 draft/unmerged pending independent QA and MASTER review.
+
+## PHX-RELEASE — 2026-11-17 UTC08: pre-build ImageBuilder symlink admission
+
+**Disposition:** DRAFT / source-test CI verified / PRODUCTION NO-GO. Existing COE draft PR #31 remains open and unmerged; this work does not authorize integration PR #26.
+
+### Defect and correction
+
+The generated ImageBuilder wrapper previously checked stale regular firmware files, but did not reject a pre-existing symlinked target/subtarget output directory or a symlinked firmware-looking candidate before running `make image`. The build could therefore follow the symlink and write outside the intended workspace before the later post-build checks ran.
+
+The wrapper now walks the expected `bin/targets/<target>/<subtarget>` components before the build and rejects any symlinked component. It also rejects pre-existing symlinked `.bin` / `.img.gz` candidates in the target output directory before invoking Make. Existing output and manifest contents are preserved; no cleanup or overwrite is attempted.
+
+### Test-first history
+
+- Test commit [`5b250640`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5b2506406e791bd99371240368c7a56710ff43d0) added pre-build rejection cases for a symlinked firmware candidate and a symlinked target output directory.
+- Exact RED [run #44048108914](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44048108914), validation job 133918750215: **FAILED as expected**. Both new tests failed against the old wrapper; the existing post-build symlink rejection happened too late, and the target-directory symlink was not rejected before Make. ESP32/ESP8266 compile jobs were skipped after validation failure. Case-collision [#44048108945](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44048108945) passed.
+- Assertion-strengthening test commit [`eeebd357`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/eeebd357df6b89b95d7d1eea4f00c3aa4915260d) added external-sentinel checks proving the old Make invocation overwrote the symlink target and created an image through the symlinked output directory.
+- Second exact RED [run #44048348979](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44048348979), validation job 133919557342: **FAILED as expected**. Both regressions failed; the log shows the external image sentinel changed from `KEEP-OPERATOR-IMAGE` to `SYNTHETIC-NOT-FIRMWARE`, and the external output-directory test observed the unintended generated file. Compile jobs were skipped. Case-collision [#44048348915](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44048348915) passed.
+- Source correction [`8cca7ff8`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8cca7ff8e35c7b90fb3b88345a8ea65f92bc81b5) adds the fail-closed pre-build checks.
+
+### Exact-source verification
+
+At source/test head `8cca7ff8e35c7b90fb3b88345a8ea65f92bc81b5`, [run #44048543517](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44048543517) completed **SUCCESS**:
+- Packaging/tool tests: **53/53 PASS**.
+- Shared contracts: **18/18 PASS**.
+- Appliance profiles: **10/10 PASS**.
+- ESP8266 compilation: PASS.
+- ESP32 compilation: PASS.
+
+Case-collision [run #44048543532](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44048543532) completed SUCCESS.
+
+### Ownership, provenance and limits
+
+Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover are in scope. The regression uses synthetic files and a disposable Makefile; it is not a real OpenWrt ImageBuilder build or firmware authenticity check.
+
+Live release references at this checkpoint: MASTER #288 `349c5e24c3083dc78ffe9fe96e495d66285b7f2d`; Experiments #242 `734b89d9e7792247e8376335c3f3685500ab3f89` (base `6d4c9b487af4d768c4d7627654d119417fcc6e00`, while the live development base branch is `2fbd2475e9f54878c316fa7cea2f228386b0e859`); publisher-isolation #291 `2c4edff231d9b2819415086825530d80b8801307`; COE integration #26 `b382d233ff06c8791b1028bed3c617cc7b670d12`; this packager #31 `8cca7ff8e35c7b90fb3b88345a8ea65f92bc81b5`.
+
+PR #291 keeps global workflow permissions read-only and scopes `contents: write` to the gated publisher job; its exact-head Windows run #43744993487 passed handover/build and skipped the publisher. PR #242 still has workflow-level `contents: write`; do not copy it blindly. COE #26's five PR-triggered workflows remain queued with no jobs returned, and MASTER's source/staging parity holds remain in force. No independent PR reviews were present on #31, #242 or #291 at this check.
+
+The canonical private Drive registry v11 was not directly retrievable through the connected Library surface. No historical registry was substituted and no private identifiers or contents were copied.
+
+**No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred.** Production remains NO-GO pending protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, real approved target binaries, 150 physical power cuts and a 30-device/24-hour soak.
