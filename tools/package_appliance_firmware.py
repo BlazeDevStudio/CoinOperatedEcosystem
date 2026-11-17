@@ -629,22 +629,24 @@ cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
 echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
 """
 
-    # Create exclusively: never truncate an operator-owned file or follow a
-    # final-component symlink when the requested output path already exists.
+    # Create exclusively and non-executable. Publish execute permission only
+    # after the complete script has been written and durably flushed through
+    # the same descriptor, so a failed write leaves a fail-closed partial file.
+    if not hasattr(os, "fchmod"):
+        raise OSError("Safe build-script publication requires fchmod support")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     try:
-        script_fd = _open_new_file_without_symlink_parents(script_path, flags, 0o755)
+        script_fd = _open_new_file_without_symlink_parents(script_path, flags, 0o600)
     except FileExistsError:
         raise FileExistsError(
             f"Build script destination already exists; refusing to overwrite: {script_path}"
         ) from None
 
     with os.fdopen(script_fd, "w", encoding="utf-8") as f:
-        if hasattr(os, "fchmod"):
-            os.fchmod(f.fileno(), 0o755)
         f.write(content)
-    if not hasattr(os, "fchmod"):
-        os.chmod(script_path, 0o755)
+        f.flush()
+        os.fsync(f.fileno())
+        os.fchmod(f.fileno(), 0o755)
 
 
 def main():
