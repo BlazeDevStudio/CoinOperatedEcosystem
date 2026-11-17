@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+import run_imagebuilder_sandbox
 
 from package_appliance_firmware import (
     load_profile,
@@ -1145,6 +1148,97 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 )
         finally:
             shutil.rmtree(external_dir, ignore_errors=True)
+
+
+class TestImageBuilderSandboxTimeouts(unittest.TestCase):
+    def test_mapping_helper_uses_a_finite_timeout(self):
+        command = ["newuidmap", "123", "0", "1000", "1"]
+        with mock.patch.object(run_imagebuilder_sandbox.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess(command, 0, "", "")
+            result = run_imagebuilder_sandbox._run_mapping_helper(command)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            run.call_args.kwargs.get("timeout"),
+            run_imagebuilder_sandbox.USERMAP_HELPER_TIMEOUT_SECONDS,
+        )
+
+    def test_mapping_helper_timeout_is_fail_closed(self):
+        command = ["newgidmap", "123", "0", "1000", "1"]
+        with mock.patch.object(
+            run_imagebuilder_sandbox.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(
+                command, run_imagebuilder_sandbox.USERMAP_HELPER_TIMEOUT_SECONDS,
+                output="partial mapping output", stderr="mapping helper stalled"
+            ),
+        ):
+            result = run_imagebuilder_sandbox._run_mapping_helper(command)
+
+        self.assertEqual(result.returncode, 124)
+        self.assertIn("timed out", result.stderr)
+        self.assertIn("mapping helper stalled", result.stderr)
+
+    def test_communicate_timeout_kills_bwrap_and_sandbox_process_groups(self):
+        class TimedOutProcess:
+            pid = 41001
+
+            def __init__(self):
+                self.timeouts = []
+                self.returncode = None
+
+            def communicate(self, timeout=None):
+                self.timeouts.append(timeout)
+                if len(self.timeouts) == 1:
+                    raise subprocess.TimeoutExpired(
+                        ["bwrap"], timeout,
+                        output="partial stdout", stderr="partial stderr"
+                    )
+                self.returncode = -9
+                return "partial stdout", "terminated stderr"
+
+            def poll(self):
+                return self.returncode
+
+            def kill(self):
+                self.returncode = -9
+
+        process = TimedOutProcess()
+        with mock.patch.object(run_imagebuilder_sandbox.os, "killpg") as killpg:
+            (stdout, stderr), timed_out = run_imagebuilder_sandbox._communicate_with_timeout(
+                process, timeout_seconds=1, child_pgid=41002
+            )
+
+        self.assertTrue(timed_out)
+        self.assertIn("partial stdout", stdout)
+        self.assertIn("terminated stderr", stderr)
+        self.assertEqual(process.timeouts, [1, run_imagebuilder_sandbox.PROCESS_TERMINATION_GRACE_SECONDS])
+        self.assertEqual(
+            [(call.args[0], call.args[1]) for call in killpg.call_args_list],
+            [
+                (41001, run_imagebuilder_sandbox.signal.SIGTERM),
+                (41002, run_imagebuilder_sandbox.signal.SIGTERM),
+                (41001, run_imagebuilder_sandbox.signal.SIGKILL),
+                (41002, run_imagebuilder_sandbox.signal.SIGKILL),
+            ],
+        )
+
+    def test_runner_rejects_unbounded_build_timeout(self):
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "run_imagebuilder_sandbox.py",
+                "--cwd", ".",
+                "--builder", "./builder",
+                "--wrapper", "./build.sh",
+                "--timeout-seconds", "0",
+            ],
+        ):
+            result = run_imagebuilder_sandbox.main()
+
+        self.assertEqual(result, 125)
+
 
 if __name__ == "__main__":
     unittest.main()
