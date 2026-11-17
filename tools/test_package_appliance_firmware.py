@@ -55,6 +55,29 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option device 'br-lan.20'", uci)
         self.assertIn("option device 'wan'", uci)
 
+    def test_generate_network_uci_uses_real_newlines_and_tabs(self):
+        profile = load_profile("ew1200g-pro")
+        uci = generate_network_uci(profile)
+
+        self.assertIn(
+            "\n",
+            uci,
+            "Generated UCI must contain real newline characters between sections",
+        )
+        self.assertNotIn(
+            "\\n",
+            uci,
+            "Generated UCI must not contain literal backslash-n sequences",
+        )
+        self.assertNotIn(
+            "\\t",
+            uci,
+            "Generated UCI must not contain literal backslash-t sequences",
+        )
+        self.assertIn("\toption name 'br-lan'", uci)
+        self.assertIn("\nconfig interface 'wan'\n", uci)
+        self.assertGreater(len(uci.splitlines()), 10)
+
     def test_generate_network_uci_rejects_profile_uci_injection(self):
         mutations = [
             (
