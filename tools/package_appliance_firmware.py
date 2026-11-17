@@ -331,8 +331,16 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
         for f in files:
             fp = os.path.join(root, f)
             if not os.path.islink(fp):
-                # Executable for scripts, cgi-bin, sbin, init.d
-                if "/cgi-bin/" in fp or "/init.d/" in fp or "/usr/sbin/" in fp or fp.endswith(".sh"):
+                # Classify executable paths inside the overlay, never by the
+                # operator-selected absolute staging directory.
+                relative_path = os.path.relpath(fp, staging_dir).replace(os.sep, "/")
+                relative_path_with_root = f"/{relative_path}/"
+                if (
+                    "/cgi-bin/" in relative_path_with_root
+                    or "/init.d/" in relative_path_with_root
+                    or "/usr/sbin/" in relative_path_with_root
+                    or relative_path.endswith(".sh")
+                ):
                     os.chmod(fp, 0o755)
                 else:
                     os.chmod(fp, 0o644)
