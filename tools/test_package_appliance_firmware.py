@@ -456,6 +456,65 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(external_image, "rb") as fp:
             self.assertEqual(fp.read(), b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
 
+    def test_generated_wrapper_rejects_preexisting_nested_symlink_before_make(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile,
+            DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_nested_symlink"),
+        )
+        wrapper = os.path.join(self.temp_dir, "nested-symlink-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "nested-symlink-imagebuilder")
+        output_dir = os.path.join(builder, "bin", "targets", "ramips", "mt7621")
+        os.makedirs(output_dir)
+        external_dir = os.path.join(self.temp_dir, "operator-owned-nested-output")
+        os.makedirs(external_dir)
+        sentinel_path = os.path.join(external_dir, "operator-owned.txt")
+        sentinel = "KEEP-OPERATOR-NESTED-OUTPUT"
+        with open(sentinel_path, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        link_path = os.path.join(output_dir, "cache")
+        os.symlink(external_dir, link_path)
+        escaped_image = os.path.join(external_dir, "escaped.img.gz")
+        recipe = (
+            "image:\\n"
+            "\\t@test -d \"$(FILES)\"\\n"
+            "\\t@mkdir -p bin/targets/ramips/mt7621/cache\\n"
+            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/cache/escaped.img.gz\\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = subprocess.run(
+            ["sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn(
+            "RELEASE-BLOCKED: pre-existing symlink entry in ImageBuilder output tree",
+            result.stderr,
+        )
+        self.assertTrue(os.path.islink(link_path))
+        self.assertFalse(
+            os.path.exists(escaped_image),
+            "ImageBuilder must not write through a pre-existing nested output symlink",
+        )
+        with open(sentinel_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+        self.assertFalse(
+            os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256"))
+        )
+
     def test_generated_wrapper_relative_stage_uses_absolute_path(self):
         result, builder, wrapper, stage_absolute = self._run_mock_imagebuilder(
             image_subpath="bin/targets/ramips/mt7621/synthetic.bin"
