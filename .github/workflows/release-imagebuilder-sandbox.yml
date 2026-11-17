@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   # New key prevents stale pre-timeout runs from blocking this bounded-runner revision.
-  group: release-imagebuilder-sandbox-timeouts-${{ github.event.pull_request.number || github.ref }}
+  group: release-imagebuilder-single-id-userns-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,18 +41,22 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install bubblewrap and uidmap
+      - name: Install bubblewrap (no UID/GID mapping helpers)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap uidmap
+          sudo apt-get install -y --no-install-recommends bubblewrap
           bwrap --version
 
-      - name: Verify bubblewrap user-namespace mapping helpers
+      - name: Verify unprivileged single-ID runner identity
         run: |
           command -v bwrap
-          command -v newuidmap
-          command -v newgidmap
           bwrap --version
+          test "$(id -u)" -gt 0
+          test "$(id -g)" -gt 0
+          if grep -Eq 'SUDO_UID|SUDO_GID|newuidmap|newgidmap' tools/run_imagebuilder_sandbox.py; then
+            echo "Release runner must not depend on privileged or subordinate-ID mapping" >&2
+            exit 1
+          fi
 
       - name: Run packaging regressions with mandatory bubblewrap
         env:
