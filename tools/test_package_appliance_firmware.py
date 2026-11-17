@@ -277,6 +277,55 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             msg=f"Generated ImageBuilder wrapper is not valid POSIX shell: {result.stderr}"
         )
 
+    def test_generate_build_script_failed_write_never_publishes_executable_partial_file(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "partial-write-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        script_path = os.path.join(self.temp_dir, "partial-build.sh")
+        original_fdopen = os.fdopen
+
+        class FailingTextWriter:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                self.wrapped.close()
+                return False
+
+            def fileno(self):
+                return self.wrapped.fileno()
+
+            def write(self, value):
+                self.wrapped.write(value[:32])
+                self.wrapped.flush()
+                os.fsync(self.wrapped.fileno())
+                raise OSError("simulated generated-script write failure")
+
+        def fail_only_script_write(file_fd, mode="r", *args, **kwargs):
+            opened = original_fdopen(file_fd, mode, *args, **kwargs)
+            if mode == "w":
+                return FailingTextWriter(opened)
+            return opened
+
+        with mock.patch.object(
+            packager.os, "fdopen", side_effect=fail_only_script_write
+        ):
+            with self.assertRaisesRegex(
+                OSError, "simulated generated-script write failure"
+            ):
+                generate_build_script(manifest, script_path)
+
+        self.assertTrue(os.path.isfile(script_path))
+        self.assertNotEqual(os.path.getsize(script_path), 0)
+        self.assertEqual(
+            os.stat(script_path).st_mode & 0o111,
+            0,
+            "A partial generated script must never be published executable",
+        )
+
     def test_generate_build_script_refuses_existing_file_without_overwriting(self):
         profile = load_profile("gl-mt1300")
         manifest = stage_overlay(
