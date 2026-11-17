@@ -211,7 +211,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
     def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
                                preexisting_image=False, preexisting_manifest=False,
                                manifest_symlink=False, temp_manifest_symlink=False,
-                               image_symlink_subpath=None):
+                               image_symlink_subpath=None,
+                               preexisting_image_symlink=False,
+                               symlinked_output_dir=False):
         """Execute a generated wrapper against a disposable local Makefile."""
         profile = load_profile("gl-mt1300")
         stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
@@ -222,6 +224,21 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         fake_builder = os.path.join(self.temp_dir, "fake-imagebuilder")
         os.makedirs(fake_builder, exist_ok=True)
+        if preexisting_image_symlink:
+            image_dir = os.path.join(fake_builder, "bin", "targets", "ramips", "mt7621")
+            os.makedirs(image_dir, exist_ok=True)
+            external_image = os.path.join(self.temp_dir, "operator-owned-prior-image.img.gz")
+            with open(external_image, "wb") as fp:
+                fp.write(b"KEEP-OPERATOR-IMAGE")
+            os.symlink(external_image, os.path.join(image_dir, "linked.img.gz"))
+        if symlinked_output_dir:
+            image_parent = os.path.join(fake_builder, "bin", "targets", "ramips")
+            os.makedirs(image_parent, exist_ok=True)
+            external_dir = os.path.join(self.temp_dir, "operator-owned-image-output")
+            os.makedirs(external_dir, exist_ok=True)
+            with open(os.path.join(external_dir, "operator-owned.bin"), "wb") as fp:
+                fp.write(b"KEEP-OPERATOR-DIRECTORY")
+            os.symlink(external_dir, os.path.join(image_parent, "mt7621"))
         recipe = 'image:\n\t@test -d "$(FILES)"\n'
         if mkdir_subtarget:
             recipe += '\t@mkdir -p bin/targets/ramips/mt7621\n'
@@ -298,6 +315,42 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.isfile(
             os.path.join(builder, "bin", "targets", "ramips", "mt7621", "old.bin")
         ), "release guard must not delete prior operator data")
+
+    def test_generated_wrapper_denies_preexisting_symlinked_firmware_candidate_before_make(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/linked.img.gz",
+            preexisting_image_symlink=True,
+        )
+        link_path = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "linked.img.gz"
+        )
+        external_image = os.path.join(self.temp_dir, "operator-owned-prior-image.img.gz")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: stale symlinked firmware images", result.stderr)
+        self.assertTrue(os.path.islink(link_path))
+        with open(external_image, "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-OPERATOR-IMAGE")
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+
+    def test_generated_wrapper_denies_symlinked_target_output_directory_before_make(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
+            symlinked_output_dir=True,
+        )
+        link_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621")
+        external_dir = os.path.join(self.temp_dir, "operator-owned-image-output")
+        external_output = os.path.join(external_dir, "synthetic.bin")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: symlinked ImageBuilder output directory", result.stderr)
+        self.assertTrue(os.path.islink(link_path))
+        self.assertFalse(os.path.exists(external_output))
+        with open(os.path.join(external_dir, "operator-owned.bin"), "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-OPERATOR-DIRECTORY")
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
 
     def test_generated_wrapper_denies_previous_manifest_without_clobber(self):
         result, builder, _, _ = self._run_mock_imagebuilder(
