@@ -401,6 +401,17 @@ fi
 BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
 OUT_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256"
 TMP_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.tmp"
+
+# ImageBuilder writes directly below bin/targets. Never let an existing
+# symlinked target path redirect build output outside this workspace.
+IMAGE_PATH="$BUILD_DIR"
+for IMAGE_COMPONENT in bin targets {target_arch.replace("/", " ")}; do
+    IMAGE_PATH="$IMAGE_PATH/$IMAGE_COMPONENT"
+    if [ -L "$IMAGE_PATH" ]; then
+        echo "RELEASE-BLOCKED: symlinked ImageBuilder output directory: $IMAGE_PATH" >&2
+        exit 1
+    fi
+done
 if [ -e "$TMP_MANIFEST" ] || [ -L "$TMP_MANIFEST" ]; then
     echo "RELEASE-BLOCKED: previous temporary release manifest exists: $TMP_MANIFEST; use a clean ImageBuilder workspace" >&2
     exit 1
@@ -410,6 +421,11 @@ if [ -e "$OUT_MANIFEST" ] || [ -L "$OUT_MANIFEST" ]; then
     exit 1
 fi
 if [ -d "$BIN_DIR" ]; then
+    PRIOR_SYMLINK_IMAGE=$(find "$BIN_DIR" -type l \\( -name "*.bin" -o -name "*.img.gz" \\) -print -quit)
+    if [ -n "$PRIOR_SYMLINK_IMAGE" ]; then
+        echo "RELEASE-BLOCKED: stale symlinked firmware images exist: $PRIOR_SYMLINK_IMAGE; use a clean ImageBuilder workspace" >&2
+        exit 1
+    fi
     PRIOR_IMAGE=$(find "$BIN_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -print -quit)
     if [ -n "$PRIOR_IMAGE" ]; then
         echo "RELEASE-BLOCKED: stale firmware images exist: $PRIOR_IMAGE; use a clean ImageBuilder workspace" >&2
