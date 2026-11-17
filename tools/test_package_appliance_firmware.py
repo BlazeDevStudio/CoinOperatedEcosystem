@@ -4,8 +4,8 @@ import json
 import os
 import shlex
 import shutil
-import select
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -266,7 +266,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             self.assertEqual(fp.read(), sentinel)
 
     def _run_generated_wrapper(self, wrapper, cwd, env):
-        """Run the generated wrapper with only its ImageBuilder tree writable in CI."""
+        """Run the generated wrapper inside the release-owned filesystem sandbox in CI."""
         cwd_path = os.path.realpath(os.path.abspath(cwd))
         wrapper_path = os.path.abspath(
             wrapper if os.path.isabs(wrapper) else os.path.join(cwd_path, wrapper)
@@ -289,11 +289,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 check=False,
             )
 
-        bwrap = shutil.which("bwrap")
-        newuidmap = shutil.which("newuidmap")
-        newgidmap = shutil.which("newgidmap")
-        if not bwrap or not newuidmap or not newgidmap:
-            raise RuntimeError("PHX_REQUIRE_BWRAP=1 requires bubblewrap, newuidmap and newgidmap")
+        sudo = shutil.which("sudo")
+        sandbox_runner = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
+        if not sudo or not os.path.isfile(sandbox_runner):
+            raise RuntimeError("PHX_REQUIRE_BWRAP=1 requires sudo and the release sandbox runner")
 
         raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
         if not raw_builder:
@@ -309,134 +308,24 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         except ValueError as exc:
             raise RuntimeError("ImageBuilder workspace is outside the test workspace") from exc
 
-        # Map namespace root (UID/GID 0) to the invoking runner identity via
-        # newuidmap/newgidmap. This preserves host ownership on the one writable
-        # bind mount instead of creating root-owned build outputs.
-        info_read, info_write = os.pipe()
-        userns_block_read, userns_block_write = os.pipe()
-        os.set_inheritable(info_write, True)
-        os.set_inheritable(userns_block_read, True)
-        owner_probe_name = f".phx-bwrap-owner-probe-{os.getpid()}"
-        owner_probe_path = os.path.join(builder_path, owner_probe_name)
-        if os.path.lexists(owner_probe_path):
-            raise RuntimeError("Refusing to overwrite an existing sandbox ownership probe")
-
-        sandbox_script = (
-            'printf "owner-probe\\n" > "$OPENWRT_IMAGEBUILDER_DIR/$PHX_BWRAP_OWNER_PROBE"; '
-            'exec sh "$1"'
-        )
+        # The privileged helper creates a user namespace mapped back to this
+        # runner UID/GID, then makes only the disposable ImageBuilder tree writable.
         command = [
-            bwrap,
-            "--unshare-all",
-            "--share-net",  # Hosted runner cannot configure loopback; network isolation is not claimed.
-            "--unshare-user",
-            "--userns-block-fd", str(userns_block_read),
-            "--info-fd", str(info_write),
-            "--die-with-parent",
-            "--new-session",
-            "--ro-bind", "/", "/",
-            "--dev", "/dev",
-            "--proc", "/proc",
-            "--tmpfs", "/tmp",
-            "--bind", builder_path, builder_path,
-            "--chdir", cwd_path,
-            "--clearenv",
-            "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            "--setenv", "HOME", "/tmp",
-            "--setenv", "TMPDIR", "/tmp",
-            "--setenv", "LC_ALL", "C",
-            "--setenv", "OPENWRT_IMAGEBUILDER_DIR", builder_path,
-            "--setenv", "PHX_BWRAP_OWNER_PROBE", owner_probe_name,
-            "--uid", "0",
-            "--gid", "0",
-            "--",
-            "sh", "-eu", "-c", sandbox_script, "phx-bwrap", wrapper_path,
+            sudo,
+            sys.executable,
+            sandbox_runner,
+            "--cwd", cwd_path,
+            "--builder", builder_path,
+            "--wrapper", wrapper_path,
         ]
-        outer_env = {"PATH": "/usr/bin:/bin", "LANG": "C"}
-        process = subprocess.Popen(
+        return subprocess.run(
             command,
             cwd=cwd_path,
-            env=outer_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C"},
+            capture_output=True,
             text=True,
-            pass_fds=(info_write, userns_block_read),
+            check=False,
         )
-        os.close(info_write)
-        os.close(userns_block_read)
-        try:
-            ready, _, _ = select.select([info_read], [], [], 30)
-            if not ready:
-                process.terminate()
-                stdout, stderr = process.communicate()
-                raise RuntimeError(
-                    "Timed out waiting for bubblewrap user namespace: "
-                    + stderr[-2000:]
-                )
-            info_payload = os.read(info_read, 65536)
-            if not info_payload:
-                stdout, stderr = process.communicate()
-                raise RuntimeError(
-                    "Bubblewrap exited before reporting its user namespace: "
-                    + stderr[-2000:]
-                )
-            namespace_info = json.loads(info_payload.decode("utf-8"))
-            child_pid = str(namespace_info["child-pid"])
-
-            uid_result = subprocess.run(
-                [newuidmap, child_pid, "0", str(os.getuid()), "1"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            gid_result = subprocess.run(
-                [newgidmap, child_pid, "0", str(os.getgid()), "1"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if uid_result.returncode != 0 or gid_result.returncode != 0:
-                process.terminate()
-                stdout, stderr = process.communicate()
-                raise RuntimeError(
-                    "Bubblewrap caller-ID mapping failed: "
-                    f"newuidmap={uid_result.stderr.strip()!r}; "
-                    f"newgidmap={gid_result.stderr.strip()!r}; "
-                    f"sandbox={stderr[-2000:]!r}"
-                )
-
-            os.write(userns_block_write, b"1")
-            os.close(userns_block_write)
-            userns_block_write = None
-            stdout, stderr = process.communicate()
-            result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-
-            if not os.path.isfile(owner_probe_path):
-                return subprocess.CompletedProcess(
-                    command, 125, stdout,
-                    stderr + "\nRELEASE-BLOCKED: sandbox did not create its ownership probe",
-                )
-            probe_stat = os.stat(owner_probe_path, follow_symlinks=False)
-            os.unlink(owner_probe_path)
-            if probe_stat.st_uid != os.getuid() or probe_stat.st_gid != os.getgid():
-                return subprocess.CompletedProcess(
-                    command, 125, stdout,
-                    stderr + (
-                        "\nRELEASE-BLOCKED: sandbox output ownership mismatch; "
-                        f"expected {os.getuid()}:{os.getgid()}, "
-                        f"got {probe_stat.st_uid}:{probe_stat.st_gid}"
-                    ),
-                )
-            return result
-        finally:
-            os.close(info_read)
-            if userns_block_write is not None:
-                os.close(userns_block_write)
-            if process.poll() is None:
-                process.terminate()
-                process.communicate()
-            if os.path.lexists(owner_probe_path):
-                os.unlink(owner_probe_path)
 
     def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
                                preexisting_image=False, preexisting_manifest=False,
