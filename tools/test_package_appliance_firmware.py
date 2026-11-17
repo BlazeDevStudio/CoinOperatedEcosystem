@@ -262,7 +262,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             external_image = os.path.join(external_dir, "hidden.img.gz")
             with open(external_image, "wb") as fp:
                 fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
-            recipe += '\\t@ln -s ' + shlex.quote(external_dir) + ' ' + image_symlink_dir_subpath + '\\n'
+            recipe += '\t@ln -s ' + shlex.quote(external_dir) + ' ' + image_symlink_dir_subpath + '\n'
         with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
 
