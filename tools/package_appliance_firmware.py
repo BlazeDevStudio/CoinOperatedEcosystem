@@ -8,6 +8,7 @@ Generates validated OpenWrt rootfs overlays and ImageBuilder profiles for turnke
 - Generic x86_64 Mini PC
 """
 import argparse
+import errno
 import json
 import os
 import shutil
@@ -306,6 +307,56 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
     }
 
 
+
+def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> int:
+    """Create a new file through a descriptor chain that never follows parent symlinks."""
+    if (
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or os.open not in getattr(os, "supports_dir_fd", set())
+    ):
+        raise OSError(
+            "Safe build-script creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support"
+        )
+
+    absolute_path = os.path.abspath(path)
+    parent_path, filename = os.path.split(absolute_path)
+    if filename in ("", ".", ".."):
+        raise ValueError("Invalid build-script output filename")
+
+    directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        # Walk from the filesystem root one component at a time. O_NOFOLLOW
+        # protects every parent component, not only the final output filename.
+        for component in parent_path.split(os.sep):
+            if not component:
+                continue
+            try:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise ValueError(
+                        f"Build script parent path contains a symlink or non-directory: {parent_path}"
+                    ) from exc
+                raise
+            os.close(directory_fd)
+            directory_fd = next_fd
+
+        return os.open(
+            filename,
+            flags | os.O_NOFOLLOW,
+            mode,
+            dir_fd=directory_fd,
+        )
+    finally:
+        os.close(directory_fd)
+
+
 def generate_build_script(manifest: dict, script_path: str) -> None:
     """Emit an executable shell script to run ImageBuilder and generate SHA-256 release checksums."""
     profile_id = manifest["profile_id"]
@@ -402,7 +453,7 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
     # final-component symlink when the requested output path already exists.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     try:
-        script_fd = os.open(script_path, flags, 0o755)
+        script_fd = _open_new_file_without_symlink_parents(script_path, flags, 0o755)
     except FileExistsError:
         raise FileExistsError(
             f"Build script destination already exists; refusing to overwrite: {script_path}"
