@@ -309,3 +309,42 @@ The canonical private Drive registry v11 was not directly retrievable through th
 - **Cross-repository release audit:** MASTER #288 HEAD 47f2f6e9107f58902396d5731cfcd77b80598eb5 retains release workflow migration as reimplementation-review, not byte-for-byte copy permission. Experiments #242 HEAD 734b89d9e7792247e8376335c3f3685500ab3f89 still has base 6d4c9b487af4d768c4d7627654d119417fcc6e00, differing from the live development branch 2fbd2475e9f54878c316fa7cea2f228386b0e859; MASTER must reconcile before migration. #242 workflow grants contents: write at workflow scope. Publisher-isolation #291 HEAD 2c4edff231d9b2819415086825530d80b8801307 changes workflow-level permission to contents: read and confines contents: write to a separate gated publisher job; exact run #43744993487 had handover/build PASS and publish-release SKIPPED on PR validation. COE #26 remains at b382d233ff06c8791b1028bed3c617cc7b670d12; eight associated PR/push Actions runs remain QUEUED with zero jobs, so integration is not verified. #31 remains OPEN/DRAFT/UNMERGED and stacked on #26. No independent PHX-QA review is present on #31.
 - **Registry provenance:** the accessible Library contains historical registry snapshots v3–v7 dated 2026-10-26/27, not canonical private Drive registry v11. The exact v11 source was not retrievable through the connected file surface; no substitute, private identifiers or contents were copied.
 - **Rollback:** revert only the scoped test/source commits on this existing draft branch if required. Keep PR #31 draft and unmerged pending independent PHX-QA review and PHX-MASTER integration sequencing.
+
+
+## PHX-RELEASE — 2026-11-17 UTC10 pre-build nested output-symlink containment
+
+**Status: source/test head verified by Actions; final documentation-head CI pending after this handover commit; PR remains DRAFT / PRODUCTION NO-GO.**
+
+### Defect and bounded correction
+
+The pre-build ImageBuilder guard rejected symlinks whose names ended in `.bin` or `.img.gz`, and rejected symlinked fixed path components (`bin/targets/<target>/<subtarget>`). It did not reject a pre-existing nested symlink directory with an arbitrary name under the existing target output tree. A Makefile recipe could write through that directory to an external operator-owned location before the post-build symlink scan ran. The later scan failed, but only after the external write had happened.
+
+The wrapper now scans the existing target output directory for **any** symlink before invoking `make image`, failing closed before the builder can follow a nested link. The existing suffix-specific stale-image check and post-build full-tree symlink check remain in place.
+
+### Test-first history and exact RED
+
+- Regression test commit [`2be60d4a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2be60d4ab9e4b96072c047e9b7e0d86f9d352bb4) introduced a synthetic Makefile that attempts to write `cache/escaped.img.gz` through a pre-existing `cache` directory symlink.
+- Fixture correction [`8e62290e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8e62290ee36c22b96d9fb1af248315f30a87996f) corrected the Makefile newline/tab escapes before the meaningful regression run.
+- Assertion-order correction [`0e2bbf90`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0e2bbf9088e279108c660ac73219c9bf2e96bc1d) made the external-write absence assertion execute before checking the diagnostic text.
+- Intermediate run [#44063492968](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44063492968) failed at the diagnostic-message assertion because the old wrapper emitted its post-build symlink error; it is **not** counted as the decisive external-write RED.
+- Decisive test-first RED [#44063605201](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44063605201), validation job `133971478175`: **FAILED as expected**. The new test failed because `escaped.img.gz` existed in the external operator directory (`AssertionError: True is not false`), proving the old wrapper wrote through the nested symlink before post-build detection. The suite ran 55 tests with exactly the new regression failing; other packaging tests passed. Firmware-hardening and shared-contract steps passed; end-to-end profile staging and both board compile jobs were skipped after validation failure. Case-collision [#44063605101](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44063605101) **SUCCESS**.
+
+### Source fix and exact-source verification
+
+- Source correction [`e3e7c14c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e3e7c14c8faefbf70f514ee1920e18c7bd35a707) adds a pre-build `find "$BIN_DIR" -type l -print -quit` guard for every pre-existing symlink entry under the expected target/subtarget output tree. It preserves the prior specific firmware-symlink diagnostic and post-build scan.
+- Exact source/test-head PR run [#44063693594](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44063693594): validation job `133971790029` **SUCCESS** (55/55 packaging tests; 10/10 appliance profiles; firmware-hardening/syntax and shared-contract/router-profile validation steps passed). ESP8266 job `133971892483` **SUCCESS**; ESP32 job `133971892406` **SUCCESS**. Case-collision [#44063693562](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44063693562) **SUCCESS**.
+- These are synthetic host packaging tests, profile validation and firmware compilation only. No real OpenWrt ImageBuilder image, signed artifact, physical hardware or production acceptance is claimed.
+
+### Current ownership, provenance and blockers
+
+- Current COE packager PR #31 source/test HEAD: `e3e7c14c8faefbf70f514ee1920e18c7bd35a707`; base #26 HEAD: `b382d233ff06c8791b1028bed3c617cc7b670d12`. PR remains OPEN / DRAFT / UNMERGED.
+- MASTER PR #288 HEAD: `8bffe20f4a0ff5b722766c42d7dd3f03e97bee78`; its routing manifest classifies the Phoenix release workflow route as **reimplementation-review**, not blind-copy permission.
+- Experiments PR #242 HEAD: `734b89d9e7792247e8376335c3f3685500ab3f89`; base `6d4c9b487af4d768c4d7627654d119417fcc6e00` remains behind the live development branch `2fbd2475e9f54878c316fa7cea2f228386b0e859`. Its workflow still grants workflow-level `contents: write`; MASTER must reconcile the base and permission model before any migration.
+- Experiments PR #291 HEAD: `2c4edff231d9b2819415086825530d80b8801307`; global workflow permission is `contents: read`, while the separate gated `publish-release` job alone receives `contents: write`. Exact Windows run [#43744993487](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487): handover/build **SUCCESS**, publisher **SKIPPED**.
+- COE integration PR #26 remains at `b382d233ff06c8791b1028bed3c617cc7b670d12`. Five workflow runs (`43096752609`, `43096752632`, `43096752800`, `43096752563`, `43096752557`) remain **QUEUED**; each job listing returned zero jobs. This is not integration acceptance.
+- No submitted independent reviews were returned for #31, #242 or #291.
+- Canonical private Drive project registry v11 was not retrievable through the available Library listing/search in this activation. No historical snapshot was substituted and no private identifiers or contents were copied.
+
+Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover changed. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation, shared interface, firmware source, networking, financial source, signer or publisher workflow was changed. Rollback is limited to reverting the scoped test/source commits on this existing draft branch.
+
+**No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred.** Production remains NO-GO pending protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, real approved target binaries, 150 physical power cuts and a 30-device/24-hour soak.
