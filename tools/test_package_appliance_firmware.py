@@ -186,6 +186,43 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
+    def test_stage_overlay_file_modes_are_relative_to_staging_root(self):
+        # The selected staging parent deliberately contains an executable-path
+        # marker. Permission policy must classify paths relative to the overlay,
+        # not by searching the absolute temporary destination.
+        source_rootfs = os.path.join(self.temp_dir, "mode-source")
+        utility_dir = os.path.join(source_rootfs, "usr", "sbin")
+        os.makedirs(utility_dir)
+        utility_source = os.path.join(utility_dir, "diagnostic")
+        with open(utility_source, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\\nexit 0\\n")
+        os.chmod(utility_source, 0o644)
+
+        staging_parent = os.path.join(self.temp_dir, "usr", "sbin")
+        os.makedirs(staging_parent)
+        staging_dest = os.path.join(staging_parent, "staging")
+        stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        network_path = os.path.join(staging_dest, "etc", "config", "network")
+        profile_path = os.path.join(staging_dest, "etc", "blazepwifi", "appliance_profile.json")
+        staged_utility = os.path.join(staging_dest, "usr", "sbin", "diagnostic")
+
+        self.assertEqual(
+            os.stat(network_path).st_mode & 0o777,
+            0o644,
+            "generated UCI config must remain non-executable when the staging root contains /usr/sbin/",
+        )
+        self.assertEqual(
+            os.stat(profile_path).st_mode & 0o777,
+            0o644,
+            "generated profile metadata must remain non-executable when the staging root contains /usr/sbin/",
+        )
+        self.assertEqual(
+            os.stat(staged_utility).st_mode & 0o777,
+            0o755,
+            "actual overlay usr/sbin utilities must remain executable",
+        )
+
     def test_flash_overflow_guard(self):
         staging_dest = os.path.join(self.temp_dir, "staging_overflow")
         p = load_profile("ew1200g-pro")
