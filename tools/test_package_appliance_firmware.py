@@ -511,6 +511,28 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")))
         self.assertFalse(os.path.exists(os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")))
 
+    def test_generated_wrapper_emits_empty_image_guard_as_real_shell_lines(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "guard-lines-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "guard-lines-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            contents = fp.read()
+
+        self.assertIn('EMPTY_IMAGE=$(find "$IMAGE_REL_DIR"', contents)
+        self.assertIn(
+            ' -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then\n',
+            contents,
+            "The generated empty-image guard must be emitted as real shell lines",
+        )
+        self.assertNotIn(
+            r' -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then',
+            contents,
+            "Literal backslash-n text is not a shell command separator",
+        )
+
     def test_generated_wrapper_denies_empty_firmware_payload(self):
         # Empty output is not a usable firmware binary, even with .bin suffix.
         profile = load_profile("gl-mt1300")
