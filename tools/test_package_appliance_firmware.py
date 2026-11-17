@@ -293,7 +293,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             if os.path.lexists(probe_path):
                 raise RuntimeError("Refusing to overwrite the test ownership probe")
             with open(probe_path, "w", encoding="utf-8") as fp:
-                fp.write("test-only probe\\n")
+                fp.write("test-only probe\n")
             test_env = env.copy()
             test_env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
             test_env["PHX_BWRAP_OWNER_PROBE"] = probe_name
@@ -444,9 +444,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.makedirs(builder, exist_ok=True)
         image_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621", "operator.bin")
         recipe = (
-            "image:\\n"
-            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
-            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\\n"
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\n"
         )
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
@@ -457,9 +457,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         args_path = os.path.join(self.temp_dir, "sudo-args.txt")
         with open(sudo_path, "w", encoding="utf-8") as fp:
             fp.write(
-                "#!/bin/sh\\n"
-                "printf '%s\\n' \"$@\" > \"$PHX_TEST_SUDO_ARGS\"\\n"
-                "exit 73\\n"
+                "#!/bin/sh\n"
+                "printf '%s\n' \"$@\" > \"$PHX_TEST_SUDO_ARGS\"\n"
+                "exit 73\n"
             )
         os.chmod(sudo_path, 0o755)
 
@@ -480,7 +480,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(result.returncode, 73, result.stderr)
         with open(args_path, "r", encoding="utf-8") as fp:
-            runner_args = [line.rstrip("\\n") for line in fp]
+            runner_args = [line.rstrip("\n") for line in fp]
         runner_path = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
         self.assertEqual(runner_args[:3], ["--", "python3", runner_path])
         self.assertEqual(runner_args[runner_args.index("--cwd") + 1], self.temp_dir)
