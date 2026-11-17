@@ -170,6 +170,13 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(staging_dest, "usr", "sbin", "blazerentalctl")))
         self.assertTrue(os.path.isfile(os.path.join(staging_dest, "www", "cgi-bin", "blazerental")))
         self.assertTrue(os.path.isdir(os.path.join(staging_dest, "etc", "blazerental")))
+        rental_etc_path = os.path.join(staging_dest, "etc", "blazerental")
+        rental_etc_mode = os.stat(rental_etc_path).st_mode & 0o777
+        self.assertEqual(
+            rental_etc_mode,
+            0o700,
+            "etc/blazerental must retain its private mode after permission normalization",
+        )
 
         ctl_path = os.path.join(staging_dest, "usr", "sbin", "blazerentalctl")
         mode = os.stat(ctl_path).st_mode
