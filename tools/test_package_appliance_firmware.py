@@ -500,15 +500,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
 
         self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertFalse(
+            os.path.exists(escaped_image),
+            "ImageBuilder must not write through a pre-existing nested output symlink",
+        )
         self.assertIn(
             "RELEASE-BLOCKED: pre-existing symlink entry in ImageBuilder output tree",
             result.stderr,
         )
         self.assertTrue(os.path.islink(link_path))
-        self.assertFalse(
-            os.path.exists(escaped_image),
-            "ImageBuilder must not write through a pre-existing nested output symlink",
-        )
         with open(sentinel_path, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
         self.assertFalse(
