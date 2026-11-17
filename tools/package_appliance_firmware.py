@@ -444,11 +444,12 @@ if [ ! -d "$IMAGE_REL_DIR" ]; then
     exit 1
 fi
 
-# Firmware filename candidates must be regular files; find -type f alone
-# silently omits symlinks, leaving unmanifested .bin/.img.gz paths in output.
-SYMLINK_IMAGE=$(find "$IMAGE_REL_DIR" -type l \\( -name "*.bin" -o -name "*.img.gz" \\) -print -quit)
-if [ -n "$SYMLINK_IMAGE" ]; then
-    echo "RELEASE-BLOCKED: symlinked firmware image: $SYMLINK_IMAGE" >&2
+# Reject every symlink in the output tree. find does not descend symlinked
+# directories, so checking only firmware-named links can hide nested images
+# from the checksum manifest while leaving them in the output tree.
+SYMLINK_ENTRY=$(find "$IMAGE_REL_DIR" -type l -print -quit)
+if [ -n "$SYMLINK_ENTRY" ]; then
+    echo "RELEASE-BLOCKED: symlinked entry in firmware output tree: $SYMLINK_ENTRY" >&2
     exit 1
 fi
 

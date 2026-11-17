@@ -427,7 +427,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             builder, "bin", "targets", "ramips", "mt7621", "regular.bin"
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("RELEASE-BLOCKED: symlinked firmware image", result.stderr)
+        self.assertIn("RELEASE-BLOCKED: symlinked entry in firmware output tree", result.stderr)
         self.assertTrue(os.path.isfile(regular_image))
         self.assertTrue(os.path.islink(linked_image))
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
