@@ -212,6 +212,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                                preexisting_image=False, preexisting_manifest=False,
                                manifest_symlink=False, temp_manifest_symlink=False,
                                image_symlink_subpath=None,
+                               image_symlink_dir_subpath=None,
                                preexisting_image_symlink=False,
                                symlinked_output_dir=False):
         """Execute a generated wrapper against a disposable local Makefile."""
@@ -253,6 +254,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
             recipe += '\t@mkdir -p "$(dir ' + image_symlink_subpath + ')"\n'
             recipe += '\t@ln -s ' + shlex.quote(external_image) + ' ' + image_symlink_subpath + '\n'
+        if image_symlink_dir_subpath is not None:
+            # Keep a firmware-looking file outside the target tree behind a
+            # directory symlink that find(1) will not traverse by default.
+            external_dir = os.path.join(self.temp_dir, "external-synthetic-image-directory")
+            os.makedirs(external_dir, exist_ok=True)
+            external_image = os.path.join(external_dir, "hidden.img.gz")
+            with open(external_image, "wb") as fp:
+                fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
+            recipe += '\\t@ln -s ' + shlex.quote(external_dir) + ' ' + image_symlink_dir_subpath + '\\n'
         with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
 
@@ -422,6 +432,28 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.islink(linked_image))
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
         with open(os.path.join(self.temp_dir, "external-synthetic-image.bin"), "rb") as fp:
+            self.assertEqual(fp.read(), b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
+
+    def test_generated_wrapper_denies_symlinked_directory_hiding_firmware_candidates(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/regular.bin",
+            image_symlink_dir_subpath="bin/targets/ramips/mt7621/linked-images",
+        )
+        linked_dir = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "linked-images"
+        )
+        external_image = os.path.join(
+            self.temp_dir, "external-synthetic-image-directory", "hidden.img.gz"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "RELEASE-BLOCKED: symlinked entry in firmware output tree",
+            result.stderr,
+        )
+        self.assertTrue(os.path.islink(linked_dir))
+        self.assertTrue(os.path.isfile(os.path.join(linked_dir, "hidden.img.gz")))
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+        with open(external_image, "rb") as fp:
             self.assertEqual(fp.read(), b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
 
     def test_generated_wrapper_relative_stage_uses_absolute_path(self):
