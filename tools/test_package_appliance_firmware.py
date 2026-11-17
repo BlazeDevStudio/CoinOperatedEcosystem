@@ -396,6 +396,36 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertFalse(os.path.lexists(staging_dest))
 
 
+
+    def test_stage_overlay_does_not_chmod_external_directory_symlink_target(self):
+        # copytree preserves directory symlinks. Permission normalization must
+        # not follow one and mutate an operator-owned directory outside staging.
+        source_rootfs = os.path.join(self.temp_dir, "symlink-source")
+        external_target = os.path.join(self.temp_dir, "operator-owned")
+        os.makedirs(source_rootfs)
+        os.makedirs(external_target)
+        os.chmod(external_target, 0o700)
+        with open(os.path.join(external_target, "operator-data.txt"), "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-DATA")
+
+        source_link = os.path.join(source_rootfs, "external-assets")
+        os.symlink(external_target, source_link)
+        staging_dest = os.path.join(self.temp_dir, "symlink-staging")
+        expected_mode = os.stat(external_target).st_mode & 0o777
+
+        stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        staged_link = os.path.join(staging_dest, "external-assets")
+        self.assertTrue(os.path.islink(staged_link))
+        self.assertEqual(os.readlink(staged_link), external_target)
+        self.assertEqual(
+            os.stat(external_target).st_mode & 0o777,
+            expected_mode,
+            "staging permission normalization must not chmod a directory symlink target",
+        )
+        with open(os.path.join(external_target, "operator-data.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
+
 if __name__ == "__main__":
     unittest.main()
 
