@@ -417,14 +417,40 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
         raise ValueError("Invalid ImageBuilder profile ID")
     if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", target_arch):
         raise ValueError("Invalid ImageBuilder target/subtarget")
-    # The generated operator entrypoint must use this exact release-owned runner.
-    runner_path = os.path.realpath(
+    # Resolve only after preserving the candidate path: realpath() alone erases
+    # whether the repository-owned runner was reached through a symlink.
+    runner_candidate = os.path.abspath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_imagebuilder_sandbox.py")
     )
-    if not os.path.isfile(runner_path) or os.path.islink(runner_path):
-        raise FileNotFoundError(f"Required ImageBuilder sandbox runner is missing: {runner_path}")
-    with open(runner_path, "rb") as runner_file:
-        runner_sha256 = hashlib.sha256(runner_file.read()).hexdigest()
+    if os.path.realpath(runner_candidate) != runner_candidate:
+        raise FileNotFoundError(
+            f"Required ImageBuilder sandbox runner path contains a symlink: {runner_candidate}"
+        )
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise OSError("Safe ImageBuilder runner verification requires O_NOFOLLOW support")
+
+    try:
+        runner_fd = os.open(runner_candidate, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+            raise FileNotFoundError(
+                "Required ImageBuilder sandbox runner is missing, symlinked, or not a regular file: "
+                f"{runner_candidate}"
+            ) from exc
+        raise
+    try:
+        if not stat.S_ISREG(os.fstat(runner_fd).st_mode):
+            raise FileNotFoundError(
+                f"Required ImageBuilder sandbox runner is not a regular file: {runner_candidate}"
+            )
+        with os.fdopen(runner_fd, "rb") as runner_file:
+            runner_fd = -1
+            runner_sha256 = hashlib.sha256(runner_file.read()).hexdigest()
+    finally:
+        if runner_fd >= 0:
+            os.close(runner_fd)
+
+    runner_path = runner_candidate
 
     # This absolute path remains valid after the wrapper changes into ImageBuilder.
     stage_arg = shlex.quote(staging_dir)
@@ -462,8 +488,9 @@ fi
 
 RUNNER_PATH={runner_arg}
 RUNNER_SHA256={runner_sha256}
-if [ ! -f "$RUNNER_PATH" ] || [ -L "$RUNNER_PATH" ]; then
-    echo "RELEASE-BLOCKED: required ImageBuilder sandbox runner is missing or symlinked: $RUNNER_PATH" >&2
+RUNNER_REALPATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_PATH")"
+if [ "$RUNNER_REALPATH" != "$RUNNER_PATH" ] || [ ! -f "$RUNNER_PATH" ] || [ -L "$RUNNER_PATH" ]; then
+    echo "RELEASE-BLOCKED: sandbox runner path contains a symlink or changed target: $RUNNER_PATH" >&2
     exit 1
 fi
 command -v sha256sum >/dev/null 2>&1 || {{
