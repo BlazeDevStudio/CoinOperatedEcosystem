@@ -267,6 +267,7 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
     etc_blaze = _ensure_staging_directory(staging_dir, "etc/blazepwifi")
     _write_staging_file(etc_blaze, "appliance_profile.json", json.dumps(profile, indent=2))
 
+    rental_etc = None
     # Optionally bundle BlazeRental module for unified appliance bundles
     if include_rental:
         if not os.path.isdir(rental_source_dir):
@@ -296,7 +297,6 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
 
         # etc/blazerental
         rental_etc = _ensure_staging_directory(staging_dir, "etc/blazerental")
-        os.chmod(rental_etc, 0o700)
 
     # Calculate overlay size and verify flash constraints
     size_kb = calculate_overlay_size(staging_dir)
@@ -318,7 +318,16 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
             # recurse into them. chmod follows symlinks by default, so skip
             # them to avoid changing permissions outside the staging tree.
             if not os.path.islink(directory_path):
-                os.chmod(directory_path, 0o755)
+                # Keep the optional Rental configuration directory private.
+                # Apply this mode during final normalization so the general
+                # directory mode pass cannot overwrite the intended 0700.
+                directory_mode = (
+                    0o700
+                    if rental_etc is not None
+                    and os.path.abspath(directory_path) == os.path.abspath(rental_etc)
+                    else 0o755
+                )
+                os.chmod(directory_path, directory_mode)
         for f in files:
             fp = os.path.join(root, f)
             if not os.path.islink(fp):
