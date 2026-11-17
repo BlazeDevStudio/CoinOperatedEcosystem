@@ -480,10 +480,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.symlink(external_dir, link_path)
         escaped_image = os.path.join(external_dir, "escaped.img.gz")
         recipe = (
-            "image:\\n"
-            "\\t@test -d \"$(FILES)\"\\n"
-            "\\t@mkdir -p bin/targets/ramips/mt7621/cache\\n"
-            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/cache/escaped.img.gz\\n"
+            "image:\n"
+            "\t@test -d \"$(FILES)\"\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621/cache\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/cache/escaped.img.gz\n"
         )
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
