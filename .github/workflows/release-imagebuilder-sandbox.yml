@@ -58,8 +58,13 @@ jobs:
           uid="$(id -u)"
           gid="$(id -g)"
           sudo bwrap --unshare-all --uid "$uid" --gid "$gid" --die-with-parent --new-session --ro-bind / / --tmpfs /tmp --dir /tmp/phx-workspace --bind "$probe" /tmp/phx-workspace --chdir /tmp/phx-workspace --clearenv --setenv PATH /usr/bin:/bin -- sh -eu -c 'printf "%s:%s\n" "$(id -u)" "$(id -g)" > identity'
-          test "$(cat "$probe/identity")" = "$uid:$gid"
-          test "$(stat -c '%u:%g' "$probe/identity")" = "$uid:$gid"
+          actual="$(cat "$probe/identity")"
+          owner="$(stat -c '%u:%g' "$probe/identity")"
+          printf 'BWRAP_IDENTITY=%s\n' "$actual"
+          printf 'HOST_FILE_OWNER=%s\n' "$owner"
+          printf 'EXPECTED_HOST_OWNER=%s:%s\n' "$uid" "$gid"
+          test "$actual" = "$uid:$gid"
+          test "$owner" = "$uid:$gid"
 
       - name: Run packaging regressions with mandatory bubblewrap
         env:
