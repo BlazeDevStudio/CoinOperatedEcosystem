@@ -537,3 +537,59 @@ The canonical private `BLAZE_PROJECT_REGISTRY_v11_20261027.json` remains unavail
 **Next exact action:** recheck [#44124724541](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724541) and [#44124724509](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724509) until terminal; inspect the runner job logs, then request PHX-QA to independently verify the exact final head. MASTER retains ULA, host-isolation acceptance, integration sequencing and production-gate ownership.
 
 No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. Production remains **NO-GO**.
+
+
+## PHX-RELEASE 2026-11-17 UTC17 — bounded ImageBuilder child/process-group timeouts; hosted-runner UID-map blocker
+
+**Status:** bounded timeout controls and regression tests are committed; shared packaging/profile validation and case-collision pass; the mandatory real-bubblewrap workflow fails before the timeout path because the hosted runner rejects the current UID mapping. No exact-head sandbox PASS; COE #31 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Control-plane and ownership readback
+
+At this activation, PHX-RELEASE re-read live Experiments issue #172, cleanup-first #266, MASTER #288 and coordination/phoenix/OWNERSHIP_ROUTES.json, plus release drafts #242/#291 and COE #26/#31. MASTER #288 was at f8f5169b0f06f52f19f6889fd66ae84bb9461a93; its routes remain DRAFT_REVIEW_ONLY. The PHX-RELEASE route for .github/workflows/blazepwifi-build.yml to .github/workflows/pisowifi-ci.yml is reimplementation-review, not copy authorization.
+
+- Experiments #242 remained at 734b89d9e7792247e8376335c3f3685500ab3f89; its blazepisonet-softtimer-release.yml still has workflow-level contents: write. Its current handover/build evidence is scoped only; signing/publishing are not acceptance.
+- Experiments #291 remained at 2c4edff231d9b2819415086825530d80b8801307; its workflow has global contents: read and isolates contents: write to the gated publish-release job. [#43744993487](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487) passed handover/build; publisher was skipped.
+- COE integration #26 remained at b382d233ff06c8791b1028bed3c617cc7b670d12; its five PR workflows still returned queued/no-job state. #31 remains stacked on #26.
+- No submitted independent reviews were found on #31, #242, #291 or #288.
+- The exact private BLAZE_PROJECT_REGISTRY_v11_20261027.json was not present in the fully paginated accessible Library listing (1,422 entries checked). The older v3-v7 snapshots and the v11 reference in a checkpoint were not substituted for the canonical file; no private contents or identifiers were copied.
+
+### Test-first regression and source changes
+
+All commits are on the existing isolated branch phoenix/release-imagebuilder-failclosed-20261115.
+
+- Test-first timeout API regressions: [dbb9995c](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/dbb9995ca7646e6bffc0e4043e92ff72e89a1a18). Added unit checks for finite UID/GID helper timeout, fail-closed mapping timeout, TERM/KILL delivery to both outer bubblewrap and inner --new-session process groups, and invalid build-timeout rejection.
+- Source correction: [d8206c42](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d8206c423c6c3e05cc920e0edf6024bec2859f4a). newuidmap/newgidmap each receive a 10-second timeout; namespace-info wait remains bounded at 30 seconds; ImageBuilder runtime is bounded by --timeout-seconds (default 3,600; maximum 14,400); timed-out execution sends TERM then KILL to both the outer bwrap process group and the inner child process group, with bounded cleanup waits.
+- Dedicated timeout integration regression and bounded test harness: [2dc2409b](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2dc2409bdc6938c73ba05326555c1daa7ba084e0). The CI harness gives sandbox invocations a 60-second default and a 90-second outer subprocess limit; the new real-bwrap test requests a 1-second build limit and checks that a delayed synthetic Makefile write does not occur after the runner returns.
+- Sandbox workflow queue correction: [72b4692b](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/72b4692bd9b35410628bb213527634c2b34b0298) enables cancellation of superseded runs; [45f793db](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/45f793db86a4e9c4f695a5fdf248c8099f4d96ea) moves this revision to a new concurrency-group key so stale pre-timeout runs do not block the bounded-runner checks.
+- Only release-owned files changed: tools/run_imagebuilder_sandbox.py, tools/test_package_appliance_firmware.py, this handover, and .github/workflows/release-imagebuilder-sandbox.yml. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed.
+
+### Exact-source Actions — current truth
+
+**Test-first HEAD dbb9995c**
+- PR validation [#44135988042](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44135988042) failed in packaging validation as expected because the new tests referenced timeout helpers not yet implemented: 64 tests, 4 errors, 1 skipped; 59 existing tests passed. This is the test-first RED, not a post-fix result.
+- Case-collision [#44135987552](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44135987552) completed SUCCESS.
+- Pre-fix dedicated sandbox runs [#44135987138](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44135987138) and [#44135969825](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44135969825) were later CANCELLED when the old queue was superseded; neither is a pass.
+
+**Source/test HEAD d8206c42**
+- PR shared/hardware [#44136195426](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44136195426): packaging validation and 10/10 appliance profiles PASS; ESP8266 compile/artifact PASS; ESP32 was still in progress at the last observation.
+- Push shared/hardware [#44136183350](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44136183350): validation and ESP8266 PASS; ESP32 was still in progress at the last observation.
+
+**Final pre-handover HEAD 45f793db**
+- PR shared/hardware [#44136889893](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44136889893): firmware hardening/shared validation and appliance packaging/profile validation completed SUCCESS; ESP8266 compile/artifact PASS; ESP32 was still in progress at the last observation.
+- Case-collision [#44136889905](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44136889905): SUCCESS.
+- Mandatory PR sandbox [#44136889859](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44136889859), job 134228748594: FAILURE. The runner reached the new timeout unit tests (all four passed), but real-bwrap integration failed before ImageBuilder execution. The exact error was newuidmap: uid range [0-1) -> [1001-1002) not allowed. Twenty integration assertions then failed because namespace setup never completed; the new 1-second timeout test did not reach its timeout path. This is an environment/UID-map authorization blocker, not evidence that process-group timeout enforcement passed.
+- Mandatory push sandbox [#44136879568](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44136879568): FAILURE at the same UID-map setup gate.
+- The new concurrency key successfully allowed the exact-head PR sandbox workflow to start rather than remain behind the older queued run.
+
+### Exact next owner action / security boundary
+
+PHX-MASTER and PHX-QA must approve the least-privilege user-namespace ownership model before PHX-RELEASE changes privilege handling:
+
+1. Preferred candidate for review: run the sandbox runner as the invoking unprivileged build user so namespace root maps to that same host UID/GID, rather than launching the bwrap parent as root and asking newuidmap to map host UID 1001 into it.
+2. Alternative only if explicitly approved: provision the narrowest ephemeral subordinate UID/GID mapping on the hosted runner and prove the mapping is limited to the build user.
+
+Do not weaken the owner probe, skip the mandatory bubblewrap test, assume /etc/subuid contents, or claim the 1-second integration timeout passed. The current --share-net setting still does not provide network isolation, and the read-only host root remains readable; this is not an untrusted-build confidentiality boundary.
+
+**Next exact action:** obtain PHX-MASTER/PHX-QA decision on the user-namespace mapping model; then reproduce the mapping on the exact hosted-runner image and rerun the mandatory bwrap integration, including the delayed-write timeout test. Until that is green, the runtime boundary is not accepted.
+
+No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. Production remains **NO-GO**.
