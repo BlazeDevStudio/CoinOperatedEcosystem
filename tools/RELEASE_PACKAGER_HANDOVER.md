@@ -684,3 +684,35 @@ The canonical private `BLAZE_PROJECT_REGISTRY_v11_20261027.json` was not found a
 4. COE integration owner must diagnose the five queued #26 workflows and resolve source/target provenance before migration.
 
 Shared CI and board compilation are software evidence only. No approved OpenWrt ImageBuilder target binary, physical flash, power-cut/soak acceptance, protected signer, independent freshness witness, durable financial migration, or customer deployment is established. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+
+## PHX-RELEASE UTC19 — overlay file-mode classification relative to staging root
+
+**Disposition: TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / SOURCE-TEST VALIDATION PASS / ESP8266 PASS / ESP32 IN PROGRESS AT CHECKPOINT / MANDATORY BUBBLEWRAP BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on `phoenix/release-imagebuilder-failclosed-20261115`, based on integration #26 at `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+**Defect:** the staging permission normalizer searched the absolute staged file path for `/cgi-bin/`, `/init.d/`, and `/usr/sbin/`. If an operator chose a staging parent whose own path contained one of those markers, ordinary generated configuration/metadata files were incorrectly chmodded executable. The disposable regression used a staging parent containing `/usr/sbin/`; generated `etc/config/network` became mode 0755 (493) instead of 0644 (420), while an actual overlay `usr/sbin/diagnostic` must remain executable.
+
+**Commits**
+- Test-first regression: [`fa8a347a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/fa8a347a65608926a03bd6ac66a51d9d573cfa51) adds `test_stage_overlay_file_modes_are_relative_to_staging_root`, asserting ordinary config/profile metadata remain 0644 and a real overlay `usr/sbin` utility remains 0755.
+- Source correction: [`15ca3499`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/15ca3499aefd9836acc592256309834d0e0747b1) classifies executable locations from `os.path.relpath(fp, staging_dir)`, preserving existing `cgi-bin`, `init.d`, `usr/sbin`, and `.sh` behavior without letting the operator's absolute staging path influence modes.
+- Only `tools/test_package_appliance_firmware.py` and `tools/package_appliance_firmware.py` changed in the source/test stack. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or shared-interface source was modified.
+
+**Exact-source RED**
+- Push [#44158122050](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158122050), validation job `134304272365`: **FAILED AS EXPECTED**. The packaging suite ran 67 tests with one failure and two intentional skips. The sole failure was the new regression: `AssertionError: 493 != 420` for generated UCI config beneath a staging path containing `/usr/sbin/`. Firmware-hardening and shared-contract validation passed; profile and board jobs were skipped after the test failure.
+- Case-collision [#44158132260](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158132260): **SUCCESS**.
+
+**Source/test-head verification at `15ca3499aefd9836acc592256309834d0e0747b1`**
+- Push shared/hardware [#44158211374](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158211374), validation job `134304585160`: **SUCCESS**. Packaging/tool tests: 67 run, two intentional sandbox-only skips; all non-skipped tests passed. Shared contracts: 18/18 PASS. Appliance profile staging: 10/10 PASS.
+- ESP8266 compile/artifact job `134304669429`: **SUCCESS**.
+- ESP32 job `134304669517`: **IN PROGRESS** when this handover was written; do not credit as passed until terminal.
+- PR shared/hardware [#44158225192](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158225192), validation job `134304636627`: **SUCCESS**; ESP8266 job `134304742300` **SUCCESS**; ESP32 job `134304742277` **IN PROGRESS** at this checkpoint.
+- Case-collision [#44158225228](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158225228): **SUCCESS**.
+
+**Separate mandatory bubblewrap result — not acceptance**
+- Push sandbox [#44158211439](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158211439), job `134304584928`: **FAILED** at host namespace setup, `bwrap: setting up uid map: Permission denied`.
+- PR sandbox [#44158225148](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44158225148), job `134304685630`: **FAILED** with the same UID-map denial. The run reported 54 tests and 20 failures because namespace/ownership-probe setup never succeeded; the symlink-confinement and timeout execution paths were not reached. Do not weaken the approved single-ID model or add sudo/uidmap/subordinate-ID fallback.
+
+**Remaining independent blockers:** canonical private Drive registry v11 remains inaccessible through the exposed Library surface; no older snapshot was substituted. The packager still emits invalid ULA `fd00:db8:blaze::/48`, which requires the MASTER/CORE installation-scoped ULA contract. COE #26 remains unaccepted with eight queued workflow runs (five PR-triggered and three push-triggered; zero completed jobs). The sandbox still needs an authorized disposable no-secret runner with unprivileged user namespaces enabled and independent PHX-QA review. No approved real OpenWrt ImageBuilder image, signer/freshness witness, durable financial migration, physical flash, 150 power cuts, or 30-device/24-hour soak is established. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
