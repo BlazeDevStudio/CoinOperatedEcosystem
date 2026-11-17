@@ -477,3 +477,63 @@ At source-fix HEAD `b14841e75d57144f8c72867ef54fdff796b9483d`:
 **Next exact action:** PHX-RELEASE rechecks terminal status of #44112555269/#44112536876 and #44112759405, then verifies the final PR-head sandbox run including both empty-image denial and positive synthetic wrapper/manifest paths. PHX-QA independently executes those same cases at the corrected exact head. MASTER retains ULA, integration, migration and production-gate ownership.
 
 No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. Production remains NO-GO.
+
+
+## PHX-RELEASE 2026-11-17 UTC16 — generated operator entrypoint write-boundary enforcement
+
+**Status:** operator wrapper now routes through the release-owned ImageBuilder runner by default; exact-head mandatory-runner CI is pending; shared packaging validation passes; PHX-QA/MASTER review pending; COE #31 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Source and test commits
+
+The UTC15 audit at MASTER #288 identified that the CI test harness invoked `run_imagebuilder_sandbox.py`, while the generated operator build script still invoked `make image` directly. This UTC16 change addresses that source-level routing gap without changing the shared networking contract or any other role's implementation.
+
+- Test-first routing regression: [`670efd23`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/670efd234877f0bc7981a6745a6ae6822cfff5b9) adds a disposable Makefile that would create a synthetic image and a fake `sudo` that records the required runner invocation.
+- Fixture correction: [`6bc50873`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6bc5087351fac3467ed15292bf06464bd8c8a75d) fixes the test's Makefile/tab and fake-sudo newline escapes. The first test commit's initial failure was a fixture-authoring error, not valid defect evidence.
+- Packager source correction: [`382bf1b9`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/382bf1b9d2f55a3c7847fcdc314598f238b17145) makes the generated wrapper locate and SHA-256-pin the release-owned runner, reject changed/missing runner or symlinked build/script paths, and invoke `sudo -- python3 run_imagebuilder_sandbox.py` before any ImageBuilder Makefile execution when the runner marker/probe is absent.
+- Runner marker: [`a0cfa46d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a0cfa46d55bd55dd7a7f889329cae704fc394fa8) sets the explicit in-runner marker only after bubblewrap user-namespace setup and the ownership probe.
+- Probe-name validation: [`c0a88bed`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c0a88bed2c9079f69c10621f022d5baf53309748) restricts accepted probe basenames to the runner's PID form or the test-only fixture name, preventing path components from being supplied through the marker.
+
+Current source/test blobs:
+- `tools/package_appliance_firmware.py`: `f819ef1cd5265ff026e8a98ad9541c36ed087617`
+- `tools/test_package_appliance_firmware.py`: `a5310f90d0405afeeedb2a5981700945f4270aad`
+- `tools/run_imagebuilder_sandbox.py`: `ce098e44e847c265604e3dbb5d8df505025dd0ad`
+- `.github/workflows/release-imagebuilder-sandbox.yml`: `151c052f36664c1cb70138e7f135a5570909e09e` (unchanged)
+
+The generated wrapper fails closed if Python 3, sudo, sha256sum, the pinned runner, or the expected build paths are unavailable. The runner is pinned at wrapper-generation time; regenerate the wrapper if the runner source changes. Only the three files above and this release-owned handover are in scope. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation, network interface, ULA contract, financial schema or shared interface was modified.
+
+### Exact-source CI — current truth
+
+**Test-first history**
+- At initial test-only HEAD `670efd234877f0bc7981a6745a6ae6822cfff5b9`, shared validation [#44124301394](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124301394) failed in the new routing test because the fixture contained literal backslash-n text; this is a test-authoring failure, not a valid RED. The dedicated runner run [#44124301544](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124301544) was still IN_PROGRESS at the last check.
+- At corrected test-only HEAD `6bc5087351fac3467ed15292bf06464bd8c8a75d`, shared validation [#44124381732](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124381732) produced the decisive RED: the new test expected fake-sudo exit 73 but got 0 because the old generated wrapper executed the synthetic Makefile directly. Case-collision [#44124381692](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124381692) passed. Dedicated runner run [#44124381729](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124381729) was cancelled before jobs.
+
+**Source/runner correction**
+- Source-head dedicated runner [#44124576753](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124576753) was CANCELLED before jobs; shared validation [#44124576564](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124576564) was CANCELLED; case-collision [#44124576801](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124576801) passed.
+- Runner-marker head dedicated runner [#44124622906](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124622906) was CANCELLED before jobs. Shared validation [#44124622561](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124622561) passed validation but both board compile jobs were cancelled; case-collision [#44124622790](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124622790) passed.
+- Current source/test head `c0a88bed2c9079f69c10621f022d5baf53309748`: dedicated runner run [#44124724541](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724541) is PENDING with no jobs returned. Shared/firmware run [#44124724509](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724509): validation job `134185444908` completed SUCCESS; packaging suite ran 60 tests with 1 skipped (59 passed), appliance profiles 10/10 passed; ESP8266 job `134185549493` completed SUCCESS; ESP32 job `134185549576` was IN_PROGRESS during core installation. Case-collision [#44124724661](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724661) passed.
+
+No exact-head mandatory-runner PASS is claimed. The earlier final-head run [#44113058229](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44113058229) was CANCELLED before jobs; its shared/hardware and case-collision runs were scoped successes only.
+
+### Boundary limitation and remaining blockers
+
+This runner is a **host write-confinement boundary**, not a complete security sandbox:
+- The host root is read-only but still readable inside the namespace; it is not a confidentiality boundary.
+- `--share-net` intentionally keeps the host network; network isolation is not present or claimed.
+- Do not run untrusted third-party Makefiles on a build host containing secrets or sensitive readable files. A dedicated isolated build host / confidentiality boundary still requires PHX-MASTER and PHX-QA approval.
+- Exact-head CI must prove the newuidmap/newgidmap ownership probe succeeds and the generated wrapper's Makefile invocation is actually inside the restricted writable ImageBuilder bind. If it fails, stop and ask MASTER to approve a supported isolated-host alternative rather than weakening the checks.
+
+Separate networking P0 remains: the packager still emits invalid placeholder ULA `fd00:db8:blaze::/48`. Do not invent a fixed replacement. PHX-CORE/COE owner must define installation-scoped durable ULA provisioning; PHX-RELEASE then implements the agreed validation/generation and tests, with independent PHX-QA review.
+
+### Cross-repository provenance and ownership
+
+- MASTER #288 current branch head is `86b91edd2864d796487a9da56a8267ae44ca771c` (newer than the #172 body's 15:45 snapshot `5e11daf8)); all changed paths remain under `coordination/phoenix/`. The control-plane index needs a refresh by MASTER.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; its workflow-level `contents: write` remains a MASTER reconciliation item. Run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed handover/build only.
+- Experiments #291 remains `2c4edff231d9b2819415086825530d80b8801307`; global workflow permission is read-only and write permission is isolated to the gated publisher. Run [#43744993487](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487) passed handover/build; publisher skipped.
+- COE integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero jobs. No combined integration acceptance is established.
+- COE release #31 remains stacked on #26, draft and unmerged. No submitted independent reviews were found on #31, #242, #291 or #288.
+
+The canonical private `BLAZE_PROJECT_REGISTRY_v11_20261027.json` remains unavailable through the connected Library/Drive surface; only v3–v7 snapshots were returned. No older snapshot was substituted and no private contents or identifiers were copied.
+
+**Next exact action:** recheck [#44124724541](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724541) and [#44124724509](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44124724509) until terminal; inspect the runner job logs, then request PHX-QA to independently verify the exact final head. MASTER retains ULA, host-isolation acceptance, integration sequencing and production-gate ownership.
+
+No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. Production remains **NO-GO**.
