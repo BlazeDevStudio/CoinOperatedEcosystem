@@ -426,6 +426,48 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(os.path.join(external_target, "operator-data.txt"), encoding="utf-8") as fp:
             self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
 
+    def test_generated_wrapper_manifest_is_independent_of_build_workspace(self):
+        # The same synthetic image bytes must produce the same checksum
+        # manifest regardless of the absolute workspace path.
+        manifests = []
+        for workspace_name in ("builder-one", "builder-two"):
+            workspace = os.path.join(self.temp_dir, workspace_name)
+            os.makedirs(workspace, exist_ok=True)
+            staging = os.path.join(workspace, "staging")
+            manifest = stage_overlay(load_profile("gl-mt1300"), DEFAULT_ROOTFS, staging)
+            wrapper = os.path.join(workspace, "build.sh")
+            generate_build_script(manifest, wrapper)
+
+            builder = os.path.join(workspace, "imagebuilder")
+            os.makedirs(builder)
+            with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+                fp.write(
+                    "image:\\n\\t@mkdir -p bin/targets/ramips/mt7621\\n"
+                    "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n"
+                )
+
+            env = os.environ.copy()
+            env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+            result = subprocess.run(
+                ["sh", wrapper], cwd=workspace, env=env,
+                capture_output=True, text=True, check=False
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+            manifest_path = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+            with open(manifest_path, "r", encoding="utf-8") as fp:
+                lines = fp.read().splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertIn("bin/targets/ramips/mt7621/synthetic.bin", lines[0])
+            self.assertNotIn(builder, lines[0])
+            manifests.append(lines)
+
+        self.assertEqual(
+            manifests[0],
+            manifests[1],
+            "identical image bytes must produce workspace-independent checksum manifests",
+        )
+
 if __name__ == "__main__":
     unittest.main()
 
