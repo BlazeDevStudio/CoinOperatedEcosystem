@@ -681,6 +681,30 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(external_target, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
 
+
+    def test_stage_overlay_rejects_rental_destination_directory_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-rental-source")
+        usr_dir = os.path.join(source_rootfs, "usr")
+        external_dir = os.path.join(self.temp_dir, "operator-sbin")
+        os.makedirs(usr_dir)
+        os.makedirs(external_dir)
+        external_target = os.path.join(external_dir, "blazerentalctl")
+        sentinel = "KEEP-OPERATOR-RENTAL-EXECUTABLE"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_dir, os.path.join(usr_dir, "sbin"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-rental-staging"),
+                include_rental=True,
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
 if __name__ == "__main__":
     unittest.main()
 
