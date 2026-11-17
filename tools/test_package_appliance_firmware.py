@@ -367,14 +367,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         tools_dir = os.path.join(self.temp_dir, "runner-tools")
         os.makedirs(tools_dir)
-        runner_source = os.path.join(
-            os.path.dirname(run_imagebuilder_sandbox.__file__),
-            "run_imagebuilder_sandbox.py",
-        )
-        shutil.copyfile(
-            runner_source,
-            os.path.join(tools_dir, "run_imagebuilder_sandbox.py"),
-        )
+        marker_path = os.path.join(self.temp_dir, "runner-was-invoked")
+        fake_runner = os.path.join(tools_dir, "run_imagebuilder_sandbox.py")
+        with open(fake_runner, "w", encoding="utf-8") as fp:
+            fp.write(
+                "#!/usr/bin/env python3\\n"
+                "import pathlib, sys\\n"
+                + f"pathlib.Path({marker_path!r}).write_text('invoked')\\n"
+                + "raise SystemExit(73)\\n"
+            )
         module_path = os.path.join(tools_dir, "package_appliance_firmware.py")
         wrapper = os.path.join(self.temp_dir, "runtime-runner-symlink-build.sh")
         with mock.patch.object(packager, "__file__", module_path):
@@ -399,6 +400,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runner path contains a symlink", result.stderr)
+        self.assertFalse(
+            os.path.exists(marker_path),
+            "A runner reached through a symlinked parent must never execute",
+        )
         self.assertFalse(
             os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256"))
         )
