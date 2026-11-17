@@ -747,3 +747,44 @@ COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/
 Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this release-owned handover changed. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, shared contract or destination integration source was modified.
 
 **Remaining blockers:** the hosted Actions runner still needs an authorized disposable no-secret environment with unprivileged user namespaces; do not add sudo, uidmap helpers, broad subordinate-ID grants or an unsandboxed fallback. The invalid `fd00:db8:blaze::/48` remains blocked on the MASTER/CORE durable site-scoped RFC 4193 ULA contract. COE #26 still has five queued workflows and no combined integration acceptance. The canonical private Drive registry v11 remains unavailable through the exposed Library surface; older v3–v7 snapshots were not substituted. No real OpenWrt target image, protected signer/freshness witness, financial migration, physical flash, 150 power cuts, or 30-device/24-hour soak is established. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC21 — fail fast on unsupported bubblewrap hosts
+
+**Disposition: TEST-FIRST RED REPRODUCED / PREFLIGHT UNIT TESTS 7/7 PASS / HOST USER-NAMESPACE PREFLIGHT FAILS CLOSED / SANDBOX ACCEPTANCE NOT ESTABLISHED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on \`phoenix/release-imagebuilder-failclosed-20261115\`, based on integration #26 at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`. Source implementation head before this handover update: \`1701d5ad6887d286b8642b63993cf49d0725fd99\`.
+
+### Why this bounded CI change was selected
+
+The mandatory sandbox workflow previously ran the full bubblewrap integration suite on a hosted runner that cannot create the approved unprivileged user namespace. The runner failed before its ownership probe, and the suite reported many environment-induced failures that obscured the single host prerequisite. This change adds an explicit, bounded preflight so an unsupported host is reported once and the sandbox-dependent regression suite is not launched.
+
+### Test-first regression
+
+- Test-only commit: [\`f3b11dd6\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f3b11dd6c79e40f3eb7ba07d91c3d99ff7088b7e) adds the preflight tests and wires them into the dedicated release workflow.
+- Push shared/hardware run [#44178649070](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178649070), validation job \`134376728628\`: **FAILED AS EXPECTED**. 76 tests ran; the two new assertions failed because the helper and preflight step were not yet implemented; seven helper-dependent tests were skipped. The pre-existing packaging tests passed. Board jobs were skipped after validation failed.
+- PR shared/hardware run [#44178655868](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178655868), validation job \`134376751219\`: **FAILED** on the same test-only head; board jobs skipped.
+- Case-collision [#44178655981](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178655981): **SUCCESS**.
+
+### Source correction
+
+- Implementation commit: [\`1701d5ad\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1701d5ad6887d286b8642b63993cf49d0725fd99).
+- Adds \`tools/check_imagebuilder_sandbox_host.py\`. Its 10-second probe mirrors the approved unprivileged single-ID namespace flags (\`--unshare-all --share-net --unshare-user\)), read-only host-root bind, dev/proc mounts, tmpfs-only write, namespace UID/GID 0, cleared child environment and a bounded scratch-file check. It has no sudo, uidmap-helper, subordinate-ID or unsandboxed fallback.
+- The release workflow runs the synthetic preflight tests, verifies the invoking non-root identity, then executes the real host preflight before the mandatory packaging regression suite. If namespace creation is denied, it exits 125 with a \`RELEASE-BLOCKED\` message and skips the sandbox-dependent suite.
+- Files changed for this task: \`.github/workflows/release-imagebuilder-sandbox.yml\`, \`tools/check_imagebuilder_sandbox_host.py\`, and \`tools/test_imagebuilder_sandbox_host.py\`. This handover is the only documentation change. No packager/runner implementation, CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or shared-interface source was changed.
+
+### Exact-source Actions at \`1701d5ad\`
+
+- Push sandbox [#44178760433](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178760433), job \`134377112586\`: **FAILED CLOSED AT HOST PREFLIGHT**. Synthetic host-preflight tests **7/7 PASS**; unprivileged identity check **PASS**; real preflight returned exit 125 with \`bwrap: setting up uid map: Permission denied\`. The packaging regression step was **SKIPPED** by the preflight guard. This is not sandbox acceptance.
+- PR sandbox [#44178775697](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178775697), job \`134377164228\`: same exact-source result; 7/7 preflight unit tests pass, host preflight fails closed, packaging suite skipped.
+- Push shared/hardware [#44178760777](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178760777): validation job \`134377113924\` **SUCCESS**; ESP8266 job \`134377208168\` **SUCCESS**; ESP32 job \`134377207958\` was **IN PROGRESS** at handover time.
+- PR shared/hardware [#44178775485](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178775485): validation job \`134377164143\` **SUCCESS**; ESP8266 job \`134377265727\` **SUCCESS**; ESP32 job \`134377266259\` was **IN PROGRESS** at handover time.
+- Case-collision [#44178775640](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44178775640): **SUCCESS**.
+
+### Evidence limits and remaining blockers
+
+The new preflight proves only that the host can create the required user namespace, map the invoking identity to namespace root, and write to its isolated tmpfs. It does **not** prove the runner's host-side builder ownership probe, symlink containment, actual ImageBuilder execution, process-group timeout/cleanup, network isolation, or confidentiality. The real sandbox-dependent tests remain unexecuted until the infrastructure owner provides an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces enabled. Do not add sudo, newuidmap/newgidmap, broad subordinate-ID grants or an unsandboxed fallback.
+
+The invalid \`fd00:db8:blaze::/48\` remains a separate MASTER/CORE P0. Master’s UTC19 audit requires an installation/site-scoped RFC 4193 /48 that remains durable across reboot/upgrade/restore and is shared by devices on the same LAN; no prefix is guessed and no profile/interface change is made before the CORE/MASTER contract is approved. Canonical private Drive registry v11 remains inaccessible through the exposed Library surface; no v3–v7 substitute is used. COE #26 remains draft with eight queued workflows and zero completed jobs; MASTER #288 has no current-head workflow runs. No independent PHX-QA review is recorded on #31.
+
+No merge, signing, publication, real OpenWrt firmware admission, hardware flash, payment migration or customer deployment occurred. No physical acceptance is established: 150 power cuts and 30-device/24-hour soak remain NOT TESTED. **PRODUCTION NO-GO.**
