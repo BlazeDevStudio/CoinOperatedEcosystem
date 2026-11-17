@@ -649,3 +649,38 @@ The unprivileged single-ID trial is therefore **not runtime accepted**. Do not r
 **Next exact owner action:** PHX-MASTER / repository owner must provision or authorize a disposable, isolated, no-secret runner whose unprivileged user-namespace policy is explicitly enabled and independently reviewed. PHX-QA must independently review the exact candidate SHA and prove single-ID mapping, host ownership, external-sentinel containment, timeout cleanup and fail-closed behavior there. If no such runner is authorized, keep the sandbox acceptance BLOCKED.
 
 No merge, signing, publication, hardware flashing, payment migration, customer deployment or physical acceptance occurred. **PRODUCTION NO-GO remains mandatory.**
+
+
+## PHX-RELEASE UTC19 — BlazeRental configuration directory permission preservation
+
+**Disposition: SOURCE/TEST COMMITTED / SHARED + BOARD CI PASS / MANDATORY BUBBLEWRAP STILL BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on `phoenix/release-imagebuilder-failclosed-20261115`, based on integration #26 at `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+A test-first regression found that `stage_overlay(include_rental=True)` created `etc/blazerental` and chmodded it to 0700, but the later generic directory normalization loop reset every directory to 0755. The final staged mode was therefore 493 (0755), not 448 (0700). This contradicted the packager's explicit private-directory intent.
+
+**Commits**
+- Test-first assertion: [69239e3d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/69239e3de2393eb5d4a042ef0a85be0e47789652) adds an exact final-mode assertion to `test_stage_overlay_with_rental`.
+- Source correction: [fc7c632d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/fc7c632d7e0330b57d8ff7d1f4ab96c6e78cc042) applies the 0700 mode during the final directory normalization pass, while retaining 0755 for ordinary directories. The early chmod was removed so the intended mode is not overwritten.
+- This task changed only `tools/test_package_appliance_firmware.py` and `tools/package_appliance_firmware.py`; no Rental source or shared interface was changed.
+
+**Exact-source Actions**
+- Test-first RED: [#44155814677](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44155814677), validation job 134296122924 **FAILED AS EXPECTED**. The suite ran 66 tests with one failure and two skips; the failure was exactly `AssertionError: 493 != 448` in `test_stage_overlay_with_rental`. Firmware-hardening and shared-contract validation steps passed; later profile/board jobs were skipped after the validation failure. Case-collision [#44155814809](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44155814809) **SUCCESS**.
+- Source/test HEAD `fc7c632d7e0330b57d8ff7d1f4ab96c6e78cc042`: [shared/hardware run #44156008013](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44156008013) **SUCCESS**. Firmware-hardening, shared contracts, appliance packaging/tool tests, and all 10 profile staging validations passed. ESP32 and ESP8266 compilation plus artifact upload both completed **SUCCESS**. Case-collision [#44156008017](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44156008017) **SUCCESS**.
+- Mandatory bubblewrap [#44156008032](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44156008032) **FAILED at namespace setup**, not at this permission correction: `bwrap: setting up uid map: Permission denied`; runner then reported `sandbox did not create its ownership probe`. 53 sandbox integration assertions ran, 20 failed because the namespace was not created. The symlink/timeout execution paths were not reached. This remains an infrastructure/UID-map blocker and is not counted as sandbox acceptance.
+
+**Current coordination refs**
+- MASTER #288: `598481bfc2eb91efd1f6cb1ced96752de615973c`, draft; ownership routes remain `DRAFT_REVIEW_ONLY`.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, base `6d4c9b487af4d768c4d7627654d119417fcc6e00); workflow-level `contents: write` remains. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) handover/build **SUCCESS**; signing and publication steps **SKIPPED**.
+- Experiments #291: `2c4edff231d9b2819415086825530d80b8801307`, based on #242; global `contents: read`, write permission isolated to gated publisher. Windows run [#43744993487](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487) handover/build and credential-free publisher mock **SUCCESS**; actual `publish-release` job **SKIPPED**.
+- COE integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR-triggered workflows remain QUEUED with no jobs returned. No combined integration acceptance is claimed.
+
+The canonical private `BLAZE_PROJECT_REGISTRY_v11_20261027.json` was not found after a fully paginated metadata-only listing of 1,422 accessible Library entries. No older snapshot was substituted; no private contents or identifiers were copied.
+
+**Next owner actions**
+1. PHX-QA independently review the final 0700 permission assertion and source correction at the exact final PR head.
+2. Infrastructure owner must provision/authorize the disposable no-secret runner with unprivileged user namespaces enabled; PHX-RELEASE must rerun mandatory bubblewrap tests there without sudo, uidmap helpers, broad subordinate-ID grants or an unsandboxed fallback.
+3. PHX-MASTER / PHX-CORE / PHX-RELEASE must define the durable site-scoped RFC 4193 ULA provisioning contract before changing the invalid `fd00:db8:blaze::/48` placeholder. No value is invented here.
+4. COE integration owner must diagnose the five queued #26 workflows and resolve source/target provenance before migration.
+
+Shared CI and board compilation are software evidence only. No approved OpenWrt ImageBuilder target binary, physical flash, power-cut/soak acceptance, protected signer, independent freshness witness, durable financial migration, or customer deployment is established. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
