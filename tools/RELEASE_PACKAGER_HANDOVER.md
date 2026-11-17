@@ -437,3 +437,43 @@ These are hosted synthetic packaging/profile tests and ESP compilation only. No 
 Only tools/package_appliance_firmware.py, tools/test_package_appliance_firmware.py, and this release-owned handover are in scope. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was modified. No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred.
 
 **Next exact action:** obtain PHX-QA and PHX-MASTER review of the serializer correction; separately resolve the canonical ULA contract and the #242/#291 migration ordering before any integration.
+
+
+## PHX-RELEASE 2026-11-17 UTC15 — generated ImageBuilder shell runtime correction
+
+**Status at handover edit:** release source correction committed; exact-source mandatory-bubblewrap CI is still pending/in progress; COE #31 remains OPEN / DRAFT / UNMERGED; PRODUCTION NO-GO.
+
+### Master finding and source-grounded reproduction
+
+PHX-MASTER audit `COE_GENERATED_WRAPPER_LITERAL_ESCAPE_AUDIT_20261117_UTC15.md` at Experiments commit `ff543f7c828ebac76fb7923f4f2bbefd54fd4ad8` identified a generated-shell defect at the prior COE #31 source head `d45b84c67dc587fca6226662cb1d8bc59bdb11ae`, packager blob `fd558928b2869ce1f4b2cb2776b405b4b723b310`, around the empty-image guard. The Python triple-quoted template emitted literal backslash-n text between the `EMPTY_IMAGE` assignment, its `if` guard, and the following checksum command. MASTER's bounded emitted-fragment reproduction reported `sh -n` exit 0 but execution exit 2 with `Syntax error: Bad fd number`. That was a minimal shell reproduction, not a full packager suite or real ImageBuilder run.
+
+### Test-first regression and source correction
+
+- Test-first commit [`293a006d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/293a006d6809493ba164f10d1e2917e8979e1633) adds `test_generated_wrapper_emits_empty_image_guard_as_real_shell_lines`. It asserts the generated wrapper contains actual line breaks rather than literal backslash-n separators. Existing `test_generated_wrapper_denies_empty_firmware_payload` exercises the empty-image runtime denial; existing `test_generated_wrapper_relative_stage_uses_absolute_path` is the positive synthetic wrapper/manifest path.
+- Source fix [`b14841e7`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b14841e75d57144f8c72867ef54fdff796b9483d) replaces only the five literal newline escapes in the generated shell template with actual source line breaks. The empty-image predicate, diagnostic, exit code, checksum command, and manifest admission behavior are otherwise unchanged.
+- Scope is limited to `tools/test_package_appliance_firmware.py` and `tools/package_appliance_firmware.py` for these two commits. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was modified.
+
+### Exact-source Actions observations — do not infer terminal results
+
+At test-only HEAD `293a006d6809493ba164f10d1e2917e8979e1633`:
+- PR sandbox run [`#44112555269`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44112555269) and push sandbox run [`#44112536876`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44112536876) both reached the mandatory-bubblewrap packaging-regression step and were **IN_PROGRESS** at handover edit. No RED/PASS conclusion is claimed yet.
+- Case-collision [`#44112555289`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44112555289) **COMPLETED SUCCESS**.
+- PR shared/hardware run [`#44112555356`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44112555356) and push shared/hardware run [`#44112536917`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44112536917) were **QUEUED/IN_PROGRESS** at handover edit.
+
+At source-fix HEAD `b14841e75d57144f8c72867ef54fdff796b9483d`:
+- Push sandbox run [`#44112759405`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44112759405) was **PENDING** behind the earlier exact-head sandbox invocation at handover edit. Recheck PR/push runs and job conclusions before marking the correction VERIFIED.
+- Prior sandbox run [`#44104956173`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104956173) at the pre-fix `d45b84c` head was **CANCELLED** before the mandatory test step; it is not acceptance evidence.
+
+### Separate remaining P0 boundaries
+
+- `tools/run_imagebuilder_sandbox.py` is currently invoked by the CI test harness only. The generated operator build entrypoint still does not invoke it. Do not claim actual operator builds are sandboxed. The runner uses bubblewrap `--share-net`; network isolation is explicitly **not** claimed.
+- The generated ULA remains invalid: `fd00:db8:blaze::/48`. PHX-MASTER/networking owners must define the canonical site-scoped RFC 4193 ULA contract; this release correction did not change networking.
+- COE #26 remains at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR workflows remain QUEUED with zero jobs. No integration acceptance is established.
+- Experiments #242 remains at `734b89d9e7792247e8376335c3f3685500ab3f89` with base `6d4c9b487af4d768c4d7627654d119417fcc6e00`, while the comparison-only live development branch is `2fbd2475e9f54878c316fa7cea2f228386b0e859`; workflow-level `contents: write` remains a MASTER reconciliation item. #242 run [`#40882814472`](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed handover/build only.
+- Experiments #291 remains at `2c4edff231d9b2819415086825530d80b8801307`; its global workflow permission is read-only and write permission is isolated to the gated publisher. Run [`#43744993487`](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/43744993487) passed handover/build; publisher was SKIPPED.
+- No submitted reviews were returned for #31, #242, #291 or MASTER #288.
+- Canonical private Drive project registry v11 was not found in the accessible Library search; only older snapshots and a checkpoint reference were visible. No older snapshot was substituted and no private identifiers/contents were copied.
+
+**Next exact action:** PHX-RELEASE rechecks terminal status of #44112555269/#44112536876 and #44112759405, then verifies the final PR-head sandbox run including both empty-image denial and positive synthetic wrapper/manifest paths. PHX-QA independently executes those same cases at the corrected exact head. MASTER retains ULA, integration, migration and production-gate ownership.
+
+No merge, signing, publication, hardware flashing, payment migration or customer deployment occurred. Production remains NO-GO.
