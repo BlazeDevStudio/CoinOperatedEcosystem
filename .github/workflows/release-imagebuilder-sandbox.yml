@@ -52,10 +52,12 @@ jobs:
       - name: Verify privileged bubblewrap preserves caller file ownership
         shell: bash
         run: |
-          probe="$(mktemp -d "$RUNNER_TEMP/phx-bwrap-uid-probe.XXXXXX")"
+          probe="$(mktemp -d /var/tmp/phx-bwrap-uid-probe.XXXXXX)"
+          chmod 755 "$probe"
+          trap 'rm -rf "$probe"' EXIT
           uid="$(id -u)"
           gid="$(id -g)"
-          sudo bwrap --unshare-all --uid "$uid" --gid "$gid" --die-with-parent --new-session --ro-bind / / --tmpfs /tmp --dir /tmp/phx-workspace --bind "$probe" /tmp/phx-workspace --chdir /tmp/phx-workspace -- sh -eu -c 'printf "%s:%s\\n" "$(id -u)" "$(id -g)" > identity'
+          sudo bwrap --unshare-all --uid "$uid" --gid "$gid" --die-with-parent --new-session --ro-bind / / --tmpfs /tmp --dir /tmp/phx-workspace --bind "$probe" /tmp/phx-workspace --chdir /tmp/phx-workspace --clearenv --setenv PATH /usr/bin:/bin -- sh -eu -c 'printf "%s:%s\n" "$(id -u)" "$(id -g)" > identity'
           test "$(cat "$probe/identity")" = "$uid:$gid"
           test "$(stat -c '%u:%g' "$probe/identity")" = "$uid:$gid"
 
@@ -63,4 +65,5 @@ jobs:
         env:
           PHX_REQUIRE_BWRAP: "1"
           PYTHONDONTWRITEBYTECODE: "1"
+          TMPDIR: /var/tmp
         run: python3 tools/test_package_appliance_firmware.py -v
