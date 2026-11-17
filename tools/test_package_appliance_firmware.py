@@ -705,6 +705,26 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(external_target, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), sentinel)
 
+
+    def test_generate_build_script_refuses_symlinked_parent_directory_without_external_write(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_symlinked_script_parent")
+        )
+        external_dir = os.path.join(self.temp_dir, "operator-owned-output")
+        os.makedirs(external_dir)
+        parent_link = os.path.join(self.temp_dir, "build-output-link")
+        os.symlink(external_dir, parent_link)
+        script_path = os.path.join(parent_link, "generated-build.sh")
+
+        with self.assertRaisesRegex(ValueError, "symlink or non-directory in build-script parent path"):
+            generate_build_script(manifest, script_path)
+
+        self.assertTrue(os.path.islink(parent_link))
+        self.assertFalse(os.path.lexists(os.path.join(external_dir, "generated-build.sh")))
+
+
 if __name__ == "__main__":
     unittest.main()
 
