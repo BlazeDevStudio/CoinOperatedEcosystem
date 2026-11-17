@@ -269,6 +269,9 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
 # Auto-generated nonproduction ImageBuilder wrapper for {profile_id} ({target_arch})
 # A checksum is not hardware or financial release acceptance.
 set -eu
+# Refuse shell redirections to paths created after the preflight checks.
+# This protects both checksum-manifest paths from symlink substitution by the builder.
+set -C
 
 BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
 # Normalize relative workspace overrides before deriving paths or changing directories.
