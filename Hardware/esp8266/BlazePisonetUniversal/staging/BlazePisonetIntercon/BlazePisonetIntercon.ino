@@ -727,18 +727,7 @@ InterconJournalFS masterJournalFiles("/bicj-master",false);
 InterconJournalFS slaveJournalFiles("/bicj-slave",false);
 blaze_journal::Journal masterJournal(masterJournalFiles.port(),blaze_journal::Kind::Master);
 blaze_journal::Journal slaveJournal(slaveJournalFiles.port(),blaze_journal::Kind::Slave);
-const char* journalStatusName(blaze_journal::Status status){
-  switch(status){
-    case blaze_journal::Status::Empty:return "NOT_INITIALIZED";
-    case blaze_journal::Status::Ready:return "READY";
-    case blaze_journal::Status::Degraded:return "DEGRADED_LOCKED";
-    case blaze_journal::Status::Corrupt:return "CORRUPT_LOCKED";
-    case blaze_journal::Status::IoError:return "IO_ERROR_LOCKED";
-    case blaze_journal::Status::WrongKind:return "WRONG_ROLE_LOCKED";
-    case blaze_journal::Status::Uncertain:return "UNCERTAIN_LOCKED";
-  }
-  return "UNKNOWN_LOCKED";
-}
+
 
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
@@ -1859,8 +1848,8 @@ void sendStatus() {
   s += F(",\"peerIp\":");s+=peerPairReady?jsonQuote(String(peerPair.peerIp)):jsonQuote(String(""));
   s += F(",\"localChip\":");s+=jsonQuote(String(ESP.getChipId(),HEX));
   s += F(",\"peerAuthErrors\":");s+=peerFailedAuth;
-  s += F(",\"masterJournalHealth\":");s+=jsonQuote(journalStatusName(masterJournal.status()));
-  s += F(",\"slaveJournalHealth\":");s+=jsonQuote(journalStatusName(slaveJournal.status()));
+  s += F(",\"masterJournalHealth\":");s+=jsonQuote(blaze_journal::statusName(masterJournal.status()));
+  s += F(",\"slaveJournalHealth\":");s+=jsonQuote(blaze_journal::statusName(slaveJournal.status()));
   s += F(",\"masterJournalGeneration\":");s+=masterJournal.hasRecord()?String((uint32_t)masterJournal.record().generation):"0";
   s += F(",\"slaveJournalGeneration\":");s+=slaveJournal.hasRecord()?String((uint32_t)slaveJournal.record().generation):"0";
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
