@@ -11,6 +11,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 
 
 USERNS_INFO_TIMEOUT_SECONDS = 30
@@ -44,6 +45,39 @@ def _invoking_unprivileged_identity() -> tuple[int, int]:
     return uid, gid
 
 
+def _wait_for_process_groups_exit(groups: list[int], timeout_seconds: float) -> list[str]:
+    """Wait until every sandbox process group is gone, or fail closed."""
+    pending = set(groups)
+    if not pending:
+        return []
+
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while pending:
+        for pgid in tuple(pending):
+            try:
+                os.killpg(pgid, 0)
+            except ProcessLookupError:
+                pending.discard(pgid)
+            except OSError as exc:
+                return [
+                    f"RELEASE-BLOCKED: could not confirm sandbox process group {pgid} exit: {exc}"
+                ]
+
+        if not pending:
+            break
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            survivors = ", ".join(str(pgid) for pgid in sorted(pending))
+            return [
+                "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL: "
+                + survivors
+            ]
+        time.sleep(min(0.05, remaining))
+
+    return []
+
+
 def _terminate_process_groups(
     process: subprocess.Popen,
     child_pgid: int | None = None,
@@ -70,7 +104,10 @@ def _terminate_process_groups(
             except ProcessLookupError:
                 pass
             except OSError as exc:
-                errors.append(f"could not signal process group {pgid}: {exc}")
+                if signum == signal.SIGKILL:
+                    errors.append(
+                        f"RELEASE-BLOCKED: could not signal sandbox process group {pgid} with SIGKILL: {exc}"
+                    )
 
     signal_groups(signal.SIGTERM)
     try:
@@ -103,6 +140,8 @@ def _terminate_process_groups(
         # the sandbox session. The process group belongs only to this runner.
         signal_groups(signal.SIGKILL)
 
+    errors.extend(_wait_for_process_groups_exit(groups, grace_seconds))
+
     if errors:
         stderr = "\n".join(part for part in (_as_text(stderr), *errors) if part)
     return _as_text(stdout), _as_text(stderr)
@@ -114,12 +153,21 @@ def _communicate_with_timeout(
     child_pgid: int | None = None,
 ) -> tuple[tuple[str, str], bool]:
     try:
-        return process.communicate(timeout=timeout_seconds), False
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         stdout, stderr = _terminate_process_groups(process, child_pgid)
         stdout = stdout or _as_text(exc.output or exc.stdout)
-        stderr = stderr or _as_text(exc.stderr)
+        stderr = "\n".join(part for part in (_as_text(stderr), _as_text(exc.stderr)) if part)
         return (stdout, stderr), True
+
+    # A successful shell leader can still leave detached descendants behind.
+    # Reap the entire per-invocation sandbox session before accepting success.
+    cleanup_stdout, cleanup_stderr = _terminate_process_groups(process, child_pgid)
+    stdout = stdout or cleanup_stdout
+    if cleanup_stderr:
+        stderr = "\n".join(part for part in (_as_text(stderr), _as_text(cleanup_stderr)) if part)
+    cleanup_failed = "RELEASE-BLOCKED:" in cleanup_stderr
+    return (stdout, stderr), cleanup_failed
 
 
 def main() -> int:
@@ -239,6 +287,11 @@ def main() -> int:
             process, args.timeout_seconds, sandbox_child_pgid
         )
         if timed_out:
+            if "sandbox process group" in stderr.lower():
+                return blocked(
+                    "sandbox descendant process group did not terminate cleanly",
+                    f"stdout:\n{stdout}\nstderr:\n{stderr}",
+                )
             return blocked(
                 f"ImageBuilder build exceeded its {args.timeout_seconds}s timeout",
                 f"stdout:\n{stdout}\nstderr:\n{stderr}",
