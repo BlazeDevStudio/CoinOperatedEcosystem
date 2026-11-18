@@ -17,6 +17,7 @@ import shlex
 import stat
 import sys
 import re
+import secrets
 
 from run_imagebuilder_sandbox import DEFAULT_BUILD_TIMEOUT_SECONDS
 
@@ -198,11 +199,8 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             raise ValueError(
                 f"Refusing symlink or non-directory in staged configuration path: {current}"
             )
-    return current
-
-
-def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
-    """Write a staged file without following symlinked parent or final components."""
+    redef _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+    """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
         existing_mode = os.lstat(path).st_mode
@@ -213,43 +211,90 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
             f"Refusing symlink or non-regular staged file destination: {path}"
         )
 
-    # O_NOFOLLOW on the final component is not enough: a parent directory can
-    # be replaced after lstat and redirect this write outside the staging tree.
-    # Open every component through directory descriptors, then validate the
-    # opened object before truncating it. O_NONBLOCK prevents a swapped FIFO
-    # from hanging the packager while its type is checked.
-    flags = os.O_WRONLY | os.O_CREAT
-    flags |= getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+    if (
+        os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+        or os.rename not in getattr(os, "supports_dir_fd", set())
+        or os.unlink not in getattr(os, "supports_dir_fd", set())
+    ):
+        raise OSError(
+            "Safe staged file replacement requires dir_fd stat, rename and unlink support"
+        )
+
+    directory_fd = -1
+    temporary_name = None
     file_fd = -1
     try:
-        try:
-            file_fd = _open_file_without_symlink_parents(
-                path,
-                flags,
-                0o644,
-                "Staged file destination",
-                "Safe staged file writes require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
-                "Invalid staged file destination filename",
-            )
-        except OSError as exc:
-            if exc.errno == errno.ELOOP:
-                raise ValueError(
-                    f"Refusing symlink staged file destination: {path}"
-                ) from exc
-            raise
+        directory_fd, destination_name = _open_parent_directory_without_symlink_parents(
+            path,
+            "Staged file destination",
+            "Safe staged file writes require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staged file destination filename",
+        )
 
-        opened_stat = os.fstat(file_fd)
-        if not stat.S_ISREG(opened_stat.st_mode):
-            raise ValueError(
-                f"Refusing non-regular staged file destination after open: {path}"
+        try:
+            current_stat = os.stat(
+                destination_name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
             )
-        os.ftruncate(file_fd, 0)
-        with os.fdopen(file_fd, "wb") as staged_file:
-            file_fd = -1
-            staged_file.write(content)
+        except FileNotFoundError:
+            current_stat = None
+        if current_stat is not None and not stat.S_ISREG(current_stat.st_mode):
+            raise ValueError(
+                f"Refusing symlink or non-regular staged file destination: {path}"
+            )
+
+        # Never truncate the destination inode: it may be a hardlink to an
+        # operator-owned file. Write a fresh inode in the same directory and
+        # atomically replace the directory entry only after the full write.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        for _ in range(16):
+            temporary_name = f".phx-staging-{os.getpid()}-{secrets.token_hex(8)}"
+            try:
+                file_fd = os.open(
+                    temporary_name,
+                    flags,
+                    0o644,
+                    dir_fd=directory_fd,
+                )
+                break
+            except FileExistsError:
+                temporary_name = None
+        else:
+            raise FileExistsError(
+                "Unable to allocate a unique staged-file temporary name"
+            )
+
+        try:
+            with os.fdopen(file_fd, "wb") as staged_file:
+                file_fd = -1
+                staged_file.write(content)
+                staged_file.flush()
+                os.fsync(staged_file.fileno())
+
+            os.rename(
+                temporary_name,
+                destination_name,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+            )
+            temporary_name = None
+            os.fsync(directory_fd)
+        finally:
+            if file_fd >= 0:
+                os.close(file_fd)
     finally:
-        if file_fd >= 0:
-            os.close(file_fd)
+        if temporary_name is not None and directory_fd >= 0:
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        if directory_fd >= 0:
+            os.close(directory_fd)
+
+
+ose(file_fd)
 
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
@@ -435,15 +480,13 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
 
 
 
-def _open_file_without_symlink_parents(
+def _open_parent_directory_without_symlink_parents(
     path: str,
-    flags: int,
-    mode: int,
     purpose: str,
     unsupported_message: str,
     invalid_filename_message: str,
-) -> int:
-    """Open a file through directory descriptors without following any symlink component."""
+) -> tuple[int, str]:
+    """Open a file's parent directory through a no-symlink descriptor walk."""
     if (
         os.name != "posix"
         or not hasattr(os, "O_DIRECTORY")
@@ -478,7 +521,28 @@ def _open_file_without_symlink_parents(
                 raise
             os.close(directory_fd)
             directory_fd = next_fd
+        return directory_fd, filename
+    except Exception:
+        os.close(directory_fd)
+        raise
 
+
+def _open_file_without_symlink_parents(
+    path: str,
+    flags: int,
+    mode: int,
+    purpose: str,
+    unsupported_message: str,
+    invalid_filename_message: str,
+) -> int:
+    """Open a file through directory descriptors without following any symlink component."""
+    directory_fd, filename = _open_parent_directory_without_symlink_parents(
+        path,
+        purpose,
+        unsupported_message,
+        invalid_filename_message,
+    )
+    try:
         return os.open(
             filename,
             flags | os.O_NOFOLLOW,
