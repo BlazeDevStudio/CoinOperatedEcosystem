@@ -281,7 +281,7 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             os.close(root_parent_fd)
 
 
-def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+def _write_staging_bytes(directory: str, filename: str, content: bytes, mode: int = 0o644) -> None:
     """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
@@ -337,7 +337,7 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
                 file_fd = os.open(
                     temporary_name,
                     flags,
-                    0o644,
+                    0o600,
                     dir_fd=directory_fd,
                 )
                 break
@@ -353,6 +353,9 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
                 file_fd = -1
                 staged_file.write(content)
                 staged_file.flush()
+                # Set the final mode on the private temporary inode before
+                # publishing it; never chmod a destination that may be a hardlink.
+                os.fchmod(staged_file.fileno(), mode)
                 os.fsync(staged_file.fileno())
 
             os.rename(
@@ -375,6 +378,141 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
         if directory_fd >= 0:
             os.close(directory_fd)
 
+
+
+def _normalize_staging_directory_mode(path: str, mode: int) -> bool:
+    """Set a staged directory mode through a pinned no-follow descriptor."""
+    if (
+        os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+        or not hasattr(os, "fchmod")
+    ):
+        raise OSError(
+            "Safe staged directory permissions require dir_fd stat and fchmod support"
+        )
+
+    parent_fd = -1
+    directory_fd = -1
+    try:
+        parent_fd, name = _open_parent_directory_without_symlink_parents(
+            path,
+            "Staged directory permission target",
+            "Safe staged directory permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staged directory permission target",
+        )
+        try:
+            entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError(f"Staged directory disappeared before permission normalization: {path}") from exc
+
+        if stat.S_ISLNK(entry_stat.st_mode):
+            return False
+        if not stat.S_ISDIR(entry_stat.st_mode):
+            raise ValueError(f"Refusing non-directory staged permission target: {path}")
+
+        try:
+            directory_fd = os.open(
+                name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staged directory changed to a symlink or non-directory: {path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(directory_fd)
+        if not stat.S_ISDIR(opened_stat.st_mode) or (
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+        ) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise ValueError(f"Staged directory changed while opening: {path}")
+
+        if stat.S_IMODE(opened_stat.st_mode) != mode:
+            os.fchmod(directory_fd, mode)
+        return True
+    finally:
+        if directory_fd >= 0:
+            os.close(directory_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+
+
+def _normalize_staging_file_mode(path: str, mode: int) -> bool:
+    """Normalize one regular staged file without chmodding a symlink or hardlink target."""
+    if (
+        os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+    ):
+        raise OSError(
+            "Safe staged file permissions require dir_fd stat and no-follow support"
+        )
+
+    parent_fd = -1
+    file_fd = -1
+    content = None
+    absolute_path = os.path.abspath(path)
+    try:
+        parent_fd, name = _open_parent_directory_without_symlink_parents(
+            absolute_path,
+            "Staged file permission target",
+            "Safe staged file permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staged file permission target",
+        )
+        try:
+            entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError(f"Staged file disappeared before permission normalization: {path}") from exc
+
+        if stat.S_ISLNK(entry_stat.st_mode):
+            return False
+        if not stat.S_ISREG(entry_stat.st_mode):
+            raise ValueError(f"Refusing non-regular staged permission target: {path}")
+
+        try:
+            file_fd = os.open(
+                name,
+                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0),
+                dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staged file changed to a symlink or non-regular entry: {path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(file_fd)
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+        ) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise ValueError(f"Staged file changed while opening: {path}")
+
+        if stat.S_IMODE(opened_stat.st_mode) == mode:
+            return True
+
+        # A hardlink can expose the same inode outside staging. Read the
+        # pinned source, then atomically replace the staging entry with a new
+        # private inode whose final mode is set before publication.
+        with os.fdopen(file_fd, "rb") as staged_file:
+            file_fd = -1
+            content = staged_file.read()
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+
+    _write_staging_bytes(
+        os.path.dirname(absolute_path),
+        os.path.basename(absolute_path),
+        content,
+        mode=mode,
+    )
+    return True
 
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
@@ -512,40 +650,37 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
             f"for profile '{profile['profile_id']}'"
         )
 
-    # Set strict filesystem permissions
+    # Normalize through pinned descriptors. A path-based islink()+chmod()
+    # sequence can follow a symlink inserted between the check and chmod.
     for root, dirs, files in os.walk(staging_dir):
         for d in dirs:
             directory_path = os.path.join(root, d)
-            # os.walk lists directory symlinks in dirs even when it will not
-            # recurse into them. chmod follows symlinks by default, so skip
-            # them to avoid changing permissions outside the staging tree.
-            if not os.path.islink(directory_path):
-                # Keep the optional Rental configuration directory private.
-                # Apply this mode during final normalization so the general
-                # directory mode pass cannot overwrite the intended 0700.
-                directory_mode = (
-                    0o700
-                    if rental_etc is not None
-                    and os.path.abspath(directory_path) == os.path.abspath(rental_etc)
-                    else 0o755
-                )
-                os.chmod(directory_path, directory_mode)
+            # Keep the optional Rental configuration directory private.
+            # Apply this mode during final normalization so the general
+            # directory mode pass cannot overwrite the intended 0700.
+            directory_mode = (
+                0o700
+                if rental_etc is not None
+                and os.path.abspath(directory_path) == os.path.abspath(rental_etc)
+                else 0o755
+            )
+            _normalize_staging_directory_mode(directory_path, directory_mode)
         for f in files:
             fp = os.path.join(root, f)
-            if not os.path.islink(fp):
-                # Classify executable paths inside the overlay, never by the
-                # operator-selected absolute staging directory.
-                relative_path = os.path.relpath(fp, staging_dir).replace(os.sep, "/")
-                relative_path_with_root = f"/{relative_path}/"
-                if (
-                    "/cgi-bin/" in relative_path_with_root
-                    or "/init.d/" in relative_path_with_root
-                    or "/usr/sbin/" in relative_path_with_root
-                    or relative_path.endswith(".sh")
-                ):
-                    os.chmod(fp, 0o755)
-                else:
-                    os.chmod(fp, 0o644)
+            # Classify executable paths inside the overlay, never by the
+            # operator-selected absolute staging directory.
+            relative_path = os.path.relpath(fp, staging_dir).replace(os.sep, "/")
+            relative_path_with_root = f"/{relative_path}/"
+            if (
+                "/cgi-bin/" in relative_path_with_root
+                or "/init.d/" in relative_path_with_root
+                or "/usr/sbin/" in relative_path_with_root
+                or relative_path.endswith(".sh")
+            ):
+                file_mode = 0o755
+            else:
+                file_mode = 0o644
+            _normalize_staging_file_mode(fp, file_mode)
 
     return {
         "profile_id": profile["profile_id"],
