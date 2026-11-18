@@ -458,7 +458,7 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
         raise ValueError(
             "Staging destination must be separate from and outside the source rootfs"
         )
-    shutil.copytree(source_rootfs, staging_dir, symlinks=True)
+    _copy_rootfs_to_new_staging_directory(source_rootfs, staging_dir)
 
     # Inject generated configuration only through real directories and regular files.
     # copytree preserves symlinks; following one here could overwrite data outside staging.
@@ -605,6 +605,184 @@ def _open_parent_directory_without_symlink_parents(
     except Exception:
         os.close(directory_fd)
         raise
+
+
+def _open_or_create_directory_without_symlink_parents(
+    path: str,
+    purpose: str,
+    unsupported_message: str,
+) -> int:
+    """Open or create a directory path one no-follow component at a time."""
+    if (
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or os.open not in getattr(os, "supports_dir_fd", set())
+        or os.mkdir not in getattr(os, "supports_dir_fd", set())
+    ):
+        raise OSError(unsupported_message)
+
+    absolute_path = os.path.abspath(path)
+    directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in absolute_path.split(os.sep):
+            if not component:
+                continue
+            try:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, 0o755, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+                try:
+                    next_fd = os.open(
+                        component,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=directory_fd,
+                    )
+                except OSError as exc:
+                    if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                        raise ValueError(
+                            f"{purpose} path contains a symlink or non-directory: {absolute_path}"
+                        ) from exc
+                    raise
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise ValueError(
+                        f"{purpose} path contains a symlink or non-directory: {absolute_path}"
+                    ) from exc
+                raise
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return directory_fd
+    except Exception:
+        os.close(directory_fd)
+        raise
+
+
+def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) -> None:
+    """Copy the rootfs into a pinned new staging directory, never a replaced parent path."""
+    absolute_staging = os.path.abspath(staging_dir)
+    parent_path, staging_name = os.path.split(absolute_staging)
+    if staging_name in ("", ".", ".."):
+        raise ValueError(f"Invalid staging destination filename: {absolute_staging}")
+
+    unsupported = (
+        "Safe rootfs staging requires POSIX dir_fd, O_DIRECTORY, O_NOFOLLOW "
+        "and /proc/self/fd support"
+    )
+    parent_fd = _open_or_create_directory_without_symlink_parents(
+        parent_path,
+        "Staging destination parent",
+        unsupported,
+    )
+    staging_fd = -1
+    staging_created = False
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        try:
+            os.mkdir(staging_name, 0o755, dir_fd=parent_fd)
+        except FileExistsError:
+            raise FileExistsError(
+                f"Staging destination already exists; refusing to overwrite or delete: {absolute_staging}"
+            ) from None
+        staging_created = True
+
+        try:
+            staging_fd = os.open(staging_name, directory_flags, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staging destination changed while opening: {absolute_staging}"
+                ) from exc
+            raise
+
+        entry_stat = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+        opened_stat = os.fstat(staging_fd)
+        if not stat.S_ISDIR(entry_stat.st_mode) or (
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+        ) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise ValueError(
+                f"Staging destination changed while opening: {absolute_staging}"
+            )
+
+        pinned_staging_path = f"/proc/self/fd/{staging_fd}"
+        if not os.path.isdir(pinned_staging_path):
+            raise OSError(unsupported)
+
+        # copytree follows only the pinned descriptor path. Replacing the
+        # operator-visible parent with a symlink cannot redirect these writes.
+        shutil.copytree(
+            source_rootfs,
+            pinned_staging_path,
+            symlinks=True,
+            dirs_exist_ok=True,
+        )
+
+        try:
+            current_parent_fd, current_name = _open_parent_directory_without_symlink_parents(
+                absolute_staging,
+                "Staging destination",
+                unsupported,
+                "Invalid staging destination filename",
+            )
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"Staging destination parent path changed during rootfs copy: {parent_path}"
+            ) from exc
+        try:
+            original_parent_stat = os.fstat(parent_fd)
+            current_parent_stat = os.fstat(current_parent_fd)
+            if current_name != staging_name or (
+                original_parent_stat.st_dev,
+                original_parent_stat.st_ino,
+            ) != (current_parent_stat.st_dev, current_parent_stat.st_ino):
+                raise ValueError(
+                    f"Staging destination parent path changed during rootfs copy: {parent_path}"
+                )
+        finally:
+            os.close(current_parent_fd)
+
+        final_entry = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+        final_opened = os.fstat(staging_fd)
+        if not stat.S_ISDIR(final_entry.st_mode) or (
+            final_entry.st_dev,
+            final_entry.st_ino,
+        ) != (final_opened.st_dev, final_opened.st_ino):
+            raise ValueError(
+                f"Staging destination changed during rootfs copy: {absolute_staging}"
+            )
+    except Exception:
+        # Remove only the directory still pinned by our descriptor. Never
+        # follow or delete a replacement symlink or another directory entry.
+        if staging_created and staging_fd >= 0:
+            try:
+                current_entry = os.stat(
+                    staging_name,
+                    dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+                opened_entry = os.fstat(staging_fd)
+                if stat.S_ISDIR(current_entry.st_mode) and (
+                    current_entry.st_dev,
+                    current_entry.st_ino,
+                ) == (opened_entry.st_dev, opened_entry.st_ino):
+                    shutil.rmtree(
+                        os.path.join(f"/proc/self/fd/{parent_fd}", staging_name)
+                    )
+            except OSError:
+                pass
+        raise
+    finally:
+        if staging_fd >= 0:
+            os.close(staging_fd)
+        os.close(parent_fd)
 
 
 def _open_file_without_symlink_parents(
