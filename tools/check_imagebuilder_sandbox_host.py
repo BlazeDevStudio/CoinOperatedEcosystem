@@ -21,17 +21,12 @@ def _find_trusted_bwrap() -> str | None:
     candidate = shutil.which("bwrap", path=TRUSTED_BWRAP_PATH)
     if not candidate:
         return None
-    resolved = os.path.realpath(candidate)
+    resolved = os.path.abspath(candidate)
+    if os.path.dirname(resolved) not in ("/usr/bin", "/bin"):
+        return None
     if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
         return None
-    for directory in ("/usr/bin", "/bin"):
-        trusted = os.path.realpath(directory)
-        try:
-            if os.path.commonpath((resolved, trusted)) == trusted:
-                return resolved
-        except ValueError:
-            continue
-    return None
+    return resolved
 
 
 def build_probe_command(bwrap_path: str) -> list[str]:
