@@ -224,12 +224,46 @@ def _write_staging_file(directory: str, filename: str, content: str) -> None:
 
 
 def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
-    """Copy a regular source file into a verified staging directory safely."""
-    source_mode = os.lstat(source_path).st_mode
-    if not stat.S_ISREG(source_mode):
+    """Copy one unchanged regular rental source file without following a final symlink."""
+    source_stat = os.lstat(source_path)
+    if not stat.S_ISREG(source_stat.st_mode):
         raise ValueError(f"Refusing symlink or non-regular rental source file: {source_path}")
-    with open(source_path, "rb") as source_file:
-        _write_staging_bytes(directory, filename, source_file.read())
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise OSError("Safe rental source copying requires O_NOFOLLOW support")
+
+    source_fd = -1
+    try:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        try:
+            source_fd = os.open(source_path, flags)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                raise ValueError(
+                    f"Refusing symlinked or unavailable rental source file: {source_path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(source_fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise ValueError(
+                f"Refusing non-regular rental source file after open: {source_path}"
+            )
+        if (opened_stat.st_dev, opened_stat.st_ino) != (
+            source_stat.st_dev,
+            source_stat.st_ino,
+        ):
+            raise ValueError(
+                f"Rental source file changed while opening: {source_path}"
+            )
+
+        with os.fdopen(source_fd, "rb") as source_file:
+            source_fd = -1
+            content = source_file.read()
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+
+    _write_staging_bytes(directory, filename, content)
 
 
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
