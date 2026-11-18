@@ -872,7 +872,6 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         staging_dir = os.path.join(self.temp_dir, "operator staging")
         manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging_dir)
         wrapper = os.path.join(self.temp_dir, "operator-build.sh")
-        generate_build_script(manifest, wrapper)
 
         builder = os.path.join(self.temp_dir, "operator-imagebuilder")
         os.makedirs(builder, exist_ok=True)
@@ -909,6 +908,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.chmod(python3_path, 0o755)
         os.chmod(sudo_path, 0o755)
 
+        # The generated wrapper must pin this explicit interpreter path rather
+        # than trusting whichever python3 happens to lead the caller's PATH.
+        with mock.patch.object(packager.sys, "executable", python3_path):
+            generate_build_script(manifest, wrapper)
+
         env = os.environ.copy()
         env["PATH"] = fake_bin + os.pathsep + env.get("PATH", "")
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
@@ -918,7 +922,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
         env.pop("PHX_BWRAP_OWNER_PROBE", None)
         result = subprocess.run(
-            ["sh", wrapper],
+            ["/bin/sh", wrapper],
             cwd=self.temp_dir,
             env=env,
             capture_output=True,
@@ -937,6 +941,96 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertFalse(os.path.exists(sudo_called_path), "operator entrypoint must never invoke sudo")
         self.assertFalse(os.path.exists(image_path), "operator Makefile must not run outside the sandbox")
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_ignores_path_shadowed_bootstrap_tools(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging_path_shadow")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "path-shadow-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "path-shadow-imagebuilder")
+        os.makedirs(builder)
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\n\t@exit 42\n")
+
+        fake_bin = os.path.join(self.temp_dir, "path-shadow-bin")
+        os.makedirs(fake_bin)
+        python_marker = os.path.join(self.temp_dir, "shadowed-python-called")
+        sha_marker = os.path.join(self.temp_dir, "shadowed-sha256sum-called")
+        bwrap_marker = os.path.join(self.temp_dir, "shadowed-bwrap-called")
+        real_python = os.path.realpath(sys.executable)
+        real_sha256sum = shutil.which("sha256sum", path="/usr/bin:/bin")
+        self.assertIsNotNone(real_sha256sum, "system sha256sum is required by the release wrapper")
+
+        fake_tools = {
+            "python3": (
+                f"#!/bin/sh\nprintf called > {shlex.quote(python_marker)}\n"
+                f"exec {shlex.quote(real_python)} \"$@\"\n"
+            ),
+            "sha256sum": (
+                f"#!/bin/sh\nprintf called > {shlex.quote(sha_marker)}\n"
+                f"exec {shlex.quote(real_sha256sum)} \"$@\"\n"
+            ),
+            "bwrap": (
+                f"#!/bin/sh\nprintf called > {shlex.quote(bwrap_marker)}\n"
+                "exit 125\n"
+            ),
+        }
+        for name, script in fake_tools.items():
+            path = os.path.join(fake_bin, name)
+            with open(path, "w", encoding="utf-8") as fp:
+                fp.write(script)
+            os.chmod(path, 0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = fake_bin + os.pathsep + "/usr/bin:/bin"
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
+        env.pop("PHX_BWRAP_OWNER_PROBE", None)
+        result = subprocess.run(
+            ["/bin/sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+
+        self.assertIn("RELEASE-BOUNDARY", result.stderr)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(os.path.exists(python_marker), "caller PATH must not choose the Python interpreter")
+        self.assertFalse(os.path.exists(sha_marker), "caller PATH must not choose the runner hash utility")
+        self.assertFalse(os.path.exists(bwrap_marker), "caller PATH must not choose the sandbox executable")
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_runner_resolves_bubblewrap_from_trusted_system_path_only(self):
+        cwd = os.path.join(self.temp_dir, "runner-path-cwd")
+        builder = os.path.join(cwd, "builder")
+        wrapper = os.path.join(cwd, "build.sh")
+        os.makedirs(builder)
+        with open(wrapper, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\nexit 0\n")
+
+        argv = [
+            "run_imagebuilder_sandbox.py",
+            "--cwd", cwd,
+            "--builder", builder,
+            "--wrapper", wrapper,
+        ]
+        with mock.patch.object(
+            run_imagebuilder_sandbox, "_invoking_unprivileged_identity",
+            return_value=(1000, 1000),
+        ):
+            with mock.patch.object(
+                run_imagebuilder_sandbox.shutil, "which", return_value=None
+            ) as which:
+                with mock.patch.object(sys, "argv", argv):
+                    result = run_imagebuilder_sandbox.main()
+
+        self.assertEqual(result, 125)
+        which.assert_called_once_with("bwrap", path="/usr/bin:/bin")
 
     def test_generated_wrapper_mock_execution_enforces_timeout_and_kills_child_group(self):
         marker_path = os.path.join(self.temp_dir, "late-make-completion")
