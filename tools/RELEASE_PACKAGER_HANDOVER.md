@@ -1472,3 +1472,74 @@ Rollback is a normal revert of source commit `462d02fb` and its regression commi
 PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA must independently review the exact source/test head and regression. PHX-MASTER must confirm ownership/interface routing; the COE integration owner must resolve the five queued #26 workflows; the registry custodian must restore authorized v11 provenance access; repository administration must independently verify protected release admission.
 
 No PR merge, real signing, tag, release publication, hardware flash, payment migration or customer deployment occurred. Independent protected signer/freshness witness, durable financial accounting and migration, independent QA/MASTER approval, approved target binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE 2026-11-18 UTC18 — descriptor-safe staging permission normalization
+
+**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / EXACT SOURCE + BOTH BOARD CI PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP HOST-BLOCKED / OPEN DRAFT / PRODUCTION NO-GO.
+
+### Control plane, ownership and current exact refs
+
+Live #172 and cleanup-first #266 were re-read before source changes. The sole PHX-RELEASE UTC18 role-lock/checkpoint is [#172 comment 6987447368](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/172#issuecomment-6987447368); it was claimed before the regression commit. MASTER PR #288 was re-read at 1cc0d1ac45a9696349d369abff878022cad315e2; OWNERSHIP_ROUTES.json remains blob e4db324315a1b3543fec17a148fbf960170fcb29, DRAFT_REVIEW_ONLY. PHX-RELEASE's Experiments workflow route is reimplementation-review only. No shared interface, hardware networking, source migration or ownership route was changed.
+
+- Experiments #242: head 734b89d9e7792247e8376335c3f3685500ab3f89; exact Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) SUCCESS. Signing steps and GitHub Release publication were SKIPPED.
+- Experiments #291: head 691ed55dbe39a79a88eac45f6eebff81cee5e628; exact Windows run [#44353380470](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44353380470) SUCCESS; publish-release SKIPPED.
+- COE integration #26: head b382d233ff06c8791b1028bed3c617cc7b670d12; eight exact-head workflows (five PR events, three push events) remain QUEUED with zero completed jobs. No integration acceptance exists.
+- COE parent packager #31: head/base 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- COE child #35: branch phoenix/release-build-script-publication-safety-20261117; source/test head b8aa8dc7fec4e12694acf1314555e88c8b0e6cbf; base remains #31 head above. PR remains OPEN / DRAFT / UNMERGED.
+- The canonical private Drive project registry v11 was not available in the current Library search. No older registry was substituted and no private registry contents were copied into GitHub.
+
+### Defect reproduced
+
+stage_overlay() normalized staging permissions with a path-based os.path.islink() check followed by path-based os.chmod(). A staged file or directory could be replaced with a symlink between those operations, causing chmod to change an external operator-owned target. A hardlink inserted before normalization could also expose an external inode to a mode change.
+
+### Test-first progression and source correction
+
+- Regression commit [b9ab8dc](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b9ab8dc442adb75ad8954420b3d3941221db6381) added file- and directory-symlink race tests.
+- Expected RED: push [#44368864845](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44368864845), job 135029882697, and PR [#44368879189](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44368879189), job 135029936557, failed in the packaging suite. The exact two new tests failed because the injected replacement reached the old path-based chmod window. Push log: 104 tests, 2 failures, 2 intentional sandbox-only skips. This was the expected RED, not a test-fixture failure.
+- Source correction [fd9e77c](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/fd9e77c4ebf1987de1839b225c587ee3f9beab6b).
+- Hardlink regression [b8aa8dc](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b8aa8dc7fec4e12694acf1314555e88c8b0e6cbf) verifies that a staged executable hardlinked to an external file is atomically replaced before its mode changes; the external inode remains 0644 and both resulting inodes have link count 1.
+
+The final implementation:
+- Opens parent components without following symlinks and pins the final directory/file with O_NOFOLLOW.
+- Compares the no-follow directory entry's device/inode with fstat() of the opened descriptor.
+- Uses fchmod() on the pinned directory descriptor, not a path-based chmod.
+- For files whose mode differs, reads the pinned regular file and atomically replaces the staging entry with a fresh private temporary inode. The temporary starts at 0600; the requested final mode is applied with fchmod() before rename/publication. This avoids changing an external hardlink's inode mode.
+- Skips symlink entries and fails closed for unexpected non-regular entries or changed paths.
+
+No firmware profile, VLAN/network contract, financial ledger, hardware source, shared API, signer, release tag or publisher was changed.
+
+### Exact source/test-head CI
+
+Final source/test HEAD: b8aa8dc7fec4e12694acf1314555e88c8b0e6cbf.
+
+PR-triggered exact-head runs:
+- Shared/firmware [#44369463493](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44369463493), validation job 135032153329: SUCCESS. Packaging/tool suite 105 tests, 2 intentional sandbox-only skips; firmware hardening/shared contracts 18 checks PASS; appliance profiles 10/10 PASS.
+- ESP32 build job 135032299536: SUCCESS; compile and artifact upload PASS.
+- ESP8266 build job 135032299570: SUCCESS; compile and artifact upload PASS.
+- Case-collision [#44369463171](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44369463171): SUCCESS.
+
+Push-triggered exact-head runs:
+- Shared/firmware [#44369446947](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44369446947), validation job 135032092056: SUCCESS with the same 105 tests / 2 intentional skips, 18 checks, and 10/10 profiles.
+- ESP8266 job 135032217320: SUCCESS; compile and artifact upload PASS.
+- ESP32 job 135032217335: SUCCESS; compile and artifact upload PASS.
+
+Mandatory sandbox remains blocked, not passed:
+- PR [#44369463028](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44369463028), job 135031984069: host-preflight unit tests PASS; Bubblewrap availability failed because bwrap is not installed; unprivileged identity, namespace probe and mandatory Bubblewrap packaging regressions SKIPPED.
+- Push [#44369446996](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44369446996), job 135031924134: same fail-closed result.
+- The separate host preflight suite passed 13/13. No actual Bubblewrap sandbox acceptance is claimed.
+
+These are hosted synthetic CI and source-level results. ESP board compile artifacts are not approved production target binaries and do not constitute physical hardware acceptance.
+
+### Rollback, review and next owner actions
+
+Rollback is a normal revert, without force-push, in reverse order: hardlink regression b8aa8dc, source correction fd9e77c, and symlink regressions b9ab8dc. Keep PR #35 OPEN / DRAFT / UNMERGED.
+
+- PHX-QA: independently review exact source/test HEAD b8aa8dc7fec4e12694acf1314555e88c8b0e6cbf, especially no-follow descriptor checks and atomic mode replacement.
+- PHX-INFRA: provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces; rerun mandatory sandbox validation at the exact candidate.
+- PHX-MASTER: confirm release ownership and coordinate the integration blockers; no shared interface changed in this task.
+- COE integration owner: unblock the eight queued #26 exact-head workflows and establish per-file provenance.
+- Registry custodian: restore authorized read-only access to canonical private registry v11.
+- Repository administrator: independently verify branch protection and required release checks.
+
+No PR merge, production signing, tag, release publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. PRODUCTION NO-GO.
