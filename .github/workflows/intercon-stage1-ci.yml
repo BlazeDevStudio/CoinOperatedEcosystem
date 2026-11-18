@@ -1,0 +1,43 @@
+name: INTERCON Stage 1 ESP8266 compile (draft / NO-GO)
+
+on:
+  push:
+    paths:
+      - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
+      - "Hardware/tests/test_intercon_stage1_contract.py"
+      - ".github/workflows/intercon-stage1-ci.yml"
+  pull_request:
+    paths:
+      - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
+      - "Hardware/tests/test_intercon_stage1_contract.py"
+      - ".github/workflows/intercon-stage1-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify non-production role, network, coin-gate invariants
+        run: python3 Hardware/tests/test_intercon_stage1_contract.py
+
+  compile-esp8266:
+    runs-on: ubuntu-latest
+    needs: static-contract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install pinned ESP8266 Arduino core and TM1637Display library
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266@3.1.2
+          arduino-cli lib install "TM1637Display"
+      - name: Compile INTERCON stage 1 sketch (source-only, no flashing)
+        run: |
+          arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --warnings all \
+            Hardware/esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon
