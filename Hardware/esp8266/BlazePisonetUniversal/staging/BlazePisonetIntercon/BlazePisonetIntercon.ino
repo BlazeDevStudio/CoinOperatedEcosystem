@@ -2062,6 +2062,7 @@ void setup() {
     }
     addrText.toCharArray(candidate.peerIp,sizeof(candidate.peerIp));
     if(!peerSaveConfig(candidate)){reject("Pairing store failed; no pairing activated",503);return;}
+    interconJournalRecover(interconFileSystemReady); // allow lab init after pairing
     server.sendHeader("Cache-Control","no-store");
     server.send(200,"text/plain","Peer credentials saved. Signed PING/PONG will start when STA connects. Remote credit stays locked.");
   });
@@ -2144,6 +2145,10 @@ void setup() {
     if(nextRole!=interconPref.role &&
        (remainingSeconds>0 || pcShutdownPending || powerPulseActive)) {
       reject("End or reconcile saved paid time and PC power before switching roles",409);return;
+    }
+    if(nextRole!=interconPref.role && interconJournalFsReady &&
+       (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1))) {
+      reject("Role changes locked while a paid-event journal exists; reconcile first",409);return;
     }
     const bool nextStaEnabled=server.hasArg("staEnabled");
     String nextStaSsid=server.arg("staSsid");
