@@ -1284,3 +1284,44 @@ Source/test HEAD: `2975ae9af418a5d831615323cde02e81e2b8f593`.
 - Rollback is limited to reverting the source correction and its regression/harness commits together. No profile, generated firmware, external file, release tag, signer, payment or customer state was changed.
 
 No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. CI board outputs remain synthetic compile artifacts, not approved target binaries or physical acceptance. **PRODUCTION NO-GO.**
+
+
+## UTC14 — pin generated wrapper bootstrap executables and verify sandbox context — 2026-11-18
+
+**Disposition:** TEST-FIRST RED REPRODUCED / WRAPPER INTERPRETER AND HASH TOOL PINNED / SANDBOX CONTEXT VERIFIED BY SOURCE TESTS / TRUSTED BWRAP SEARCH ENFORCED / EXACT SOURCE-HEAD SHARED CI PASS / HOSTED BWRAP ABSENT / DRAFT / PRODUCTION NO-GO.
+
+### Defect and scope
+
+The generated ImageBuilder wrapper resolved `python3` and `sha256sum` through the caller's inherited `PATH`; the sandbox runner and host preflight also resolved `bwrap` without restricting lookup to trusted system directories. A caller could shadow bootstrap tools. Separately, environment markers plus a writable probe file were accepted as evidence of an active sandbox without validating namespace maps or mount boundaries.
+
+This work is limited to release-owned packaging/bootstrap, sandbox runner/preflight, CI and tests. No shared interface, appliance profile, firmware source, networking contract or financial logic was changed.
+
+### Test-first evidence
+
+- Initial PATH-shadow/forged-context/namespace-map tests were added at [`3eadebe5`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3eadebe5bcd16987f142056bed068b8eda38408b). Expected RED: [run #44325545434](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44325545434), 95 tests, 3 failures, 1 error, 2 intentional sandbox-only skips. The failures exposed PATH-selected Python, forged sandbox markers, untrusted Bubblewrap lookup and the missing context verifier.
+- Host-preflight trusted-path regression: [`4e6f5ed6`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4e6f5ed6c5c10912ccecb851e808d47f44553fe3); workflow reordered to run pure host tests before the real-host gate at [`4cc3a395`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4cc3a395901f7e7ba632916f453fb1715544e818). Expected RED: [run #44328117809](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44328117809), 97 tests, 4 failures, 1 error, 2 intentional skips; the new host-helper assertion failed because its lookup still used inherited PATH.
+
+### Source corrections
+
+- [`9cf5500b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9cf5500bb94ba68bc3cf54ded5e81f9ca16de5bd): add `--verify-context`, single-ID UID/GID map checks, read-only root and required mount checks; constrain runner Bubblewrap lookup.
+- [`292fbbce`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/292fbbce718b28df66ee6cb71b0c991383d3c3b9): constrain host preflight Bubblewrap lookup.
+- [`00988235`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0098823595c58130bfb0dd7fb6ada98791eedc2e): pin generated wrapper Python interpreter and SHA-256 utility; replace PATH-resolved bootstrap calls.
+- Intermediate validation [run #44329073590](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44329073590) exposed an over-strict realpath check for the system `sha256sum` entry. Corrected by [`4968b753`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4968b75355bc84fc7c2cf3c9413870983fae602f), preserving trusted-directory lookup while accepting the system-managed path entry.
+- [`6b855313`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6b855313e52da45222b7e96c10aad1b22116c8fb): correct literal probe-name matching.
+- [`52489ff1`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/52489ff1059a6043a5291058d4903060ee69f6de), [`d6fd5c7e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d6fd5c7e22dd4c34e9501c3a1538c9780dba3851), [`39bb8afd`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/39bb8afd674e33f2c2648fc0e53220ab5ccd252b): restrict workflow/runner/preflight bootstrap resolution to `/usr/bin:/bin`; the wrapper resets subsequent utility PATH to trusted system directories.
+
+### Exact source/test-head CI
+
+Source/test HEAD: `39bb8afd674e33f2c2648fc0e53220ab5ccd252b`.
+
+- Shared/firmware [run #44329453252](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44329453252): **SUCCESS**. Packaging suite **97 tests, 2 intentional sandbox-only skips**; firmware/shared-contract tests **18 PASS**; all **10/10** appliance profiles validated; ESP32 and ESP8266 compile and artifact-upload jobs **SUCCESS**.
+- Case-collision [run #44329453498](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44329453498): **SUCCESS**.
+- Mandatory sandbox [run #44329453108](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44329453108): host-preflight unit tests **12 PASS**, then **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Namespace and mandatory real-bubblewrap packaging tests were skipped, not passed.
+
+### Limits, rollback and next owner action
+
+The synthetic tests prove that PATH-shadowed bootstrap tools are not selected, forged markers do not bypass sandbox verification, and the runner rejects an untrusted namespace/mount layout. They do **not** establish real Bubblewrap execution on the hosted runner, network isolation, host confidentiality, physical hardware acceptance or production release readiness.
+
+PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA and PHX-MASTER independent review remains required. Rollback is limited to reverting this release-owned source/test/workflow change set together; no external state, generated firmware, release tag, signer, payment or customer device was changed.
+
+No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. CI board outputs are synthetic compile artifacts, not approved production binaries. **PRODUCTION NO-GO.**
