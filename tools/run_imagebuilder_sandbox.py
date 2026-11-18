@@ -216,7 +216,7 @@ def verify_sandbox_context(
         return False
     if os.environ.get("PHX_BWRAP_OWNER_PROBE") != probe_name:
         return False
-    if not re.fullmatch(r"\\.phx-bwrap-owner-probe-[0-9]+|\\.phx-test-owner-probe", probe_name or ""):
+    if not re.fullmatch(r"\.phx-bwrap-owner-probe-[0-9]+|\.phx-test-owner-probe", probe_name or ""):
         return False
     if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (0, 0, 0, 0):
         return False
