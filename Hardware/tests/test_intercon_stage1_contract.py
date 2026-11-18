@@ -16,6 +16,10 @@ JOURNAL=SKETCH.parent/"InterconFlashJournal.h"
 CODEC=SKETCH.parent/"InterconJournalCodec.h"
 journal=JOURNAL.read_text(encoding="utf-8")
 codec=CODEC.read_text(encoding="utf-8")
+RUNTIME=SKETCH.parent/"InterconPaidRuntime.h"
+PEER_AUTH=SKETCH.parent/"InterconPeerAuth.h"
+runtime=RUNTIME.read_text(encoding="utf-8")
+peer_auth=PEER_AUTH.read_text(encoding="utf-8")
 
 def check(condition: bool, message: str) -> None:
     if not condition:
@@ -31,10 +35,14 @@ check('loadInterconConfig(fsReady);' in source and 'saveInterconConfig()' in sou
       "role/STA settings saved outside legacy EEPROM")
 check('INTERCON_STANDARD=0' in peer and 'INTERCON_MASTER=1' in peer and 'INTERCON_SLAVE=2' in peer,
       "Standard is default with explicit Master and Slave roles")
-check('return interconConfigHealthy && csEnabled && interconPref.role==INTERCON_STANDARD;' in peer,
-      "physical coin route fails closed for Master/Slave stage 1")
-check('if (!interconLocalCoinsAllowed()) return;' in source,
-      "coin pulse processing rejects non-Standard physical input")
+check('if(interconPref.role==INTERCON_STANDARD)return true;' in peer and
+      'if(interconPref.role==INTERCON_MASTER)return interconMasterReady();' in peer and
+      'return false;' in peer,
+      "Standard local coins, Master journal/paired coin gate, Slave closed")
+check('if(interconPref.role==INTERCON_MASTER)' in source and
+      'interconMasterReceiveCoin(count);' in source and
+      'if (!interconLocalCoinsAllowed()) return;' in source,
+      "Master pulses journaled, Slave cannot credit local coin pulses")
 check('coinInputAllowed = interconLocalCoinsAllowed();' in source,
       "boot and manual CS gate respect current role")
 check('digitalWrite(CS_ENABLE_PIN, (interconLocalCoinsAllowed() == csActiveHigh)' in source,
@@ -78,8 +86,43 @@ check('IMAGE_BYTES=92' in codec and 'keyTag[16]' in codec and
 check('interconJournalWriteFailed=true' in journal and
       'interconRecovered.status!=blaze_journal::Status::Healthy' in journal,
       "failed or degraded journal prevents further automatic commits")
-check('interconJournalCommit(' not in source,
-      "NO live remote coin or timer code invokes the journal commit function")
-check('if (!interconLocalCoinsAllowed()) return;' in source,
-      "Stage 3 still fails closed on Master/Slave physical coin acceptance")
-print("PASS: Stage 3 static contract checks complete (NOT a paid-coin acceptance test)")
+check('interconSlaveRestoreFromJournal();' in source and
+      'interconRecovered.snapshot.slave.remainingUnits' in runtime and
+      'remainingMs100=interconJournalHealthy()?' in runtime,
+      "Slave restores exclusively from receipt+balance journal, not stale EEPROM")
+check('target.slave.remainingUnits=units;' in runtime and
+      'return interconJournalCommit(target);' in runtime and
+      'interconJournalSetBalance(targetUnits)' in source and
+      'interconJournalSetBalance(0)' in source,
+      "Slave manual time, reset and expiry atomically update journal")
+check('interconSlaveCheckpoint();' in source and
+      'INTERCON_TIMER_CHECKPOINT_MS=60000UL' in runtime,
+      "Slave countdown checkpoints through same durable journal")
+check('blaze_credit::apply(updated,credit,interconSlaveCommit,nullptr)' in runtime and
+      'target.slave=state;' in runtime and
+      'interconSlaveSendAck(sequence);' in runtime and
+      'onPaidTimeGranted();' in runtime,
+      "Slave commits credit plus sequence before ACK and PC power request")
+check('blaze_credit::stage(current,(uint16_t)seconds,' in runtime and
+      'interconMasterCommit,nullptr' in runtime and
+      'interconMasterSendPending();' in runtime,
+      "Master persists accepted coin event before wireless send")
+check('blaze_credit::settle(pending,sequence,' in runtime and
+      'interconRefreshCoinGate();' in runtime and
+      'interconMasterReady()' in runtime,
+      "Master reopens coin slot only after durable authenticated ACK")
+check('interconHandleCredit(input);' in peer_auth and
+      'interconHandleAck(input);' in peer_auth and
+      'blaze_peer::decode' in peer_auth and
+      'if(!interconSlaveReady() || !peerOnline()' in runtime,
+      "remote commands require signed peer and journal readiness")
+check('interconMasterFlowHalted=true;' in runtime and
+      'interconUnresolvedPulseCount' in runtime,
+      "multiple uncommitted physical pulses trigger visible fail-stop alarm")
+check('interconPref.role==INTERCON_SLAVE &&' in source and
+      'interconSlaveRestoreFromJournal' in source,
+      "Standards and Masters do not inherit Slave paid balances")
+check('INTERCON_STANDARD' in peer and 'INTERCON_MASTER' in peer and
+      'INTERCON_SLAVE' in peer,
+      "all three operator modes remain independently available")
+print("PASS: Stage 4 source integration safety checks (hardware validation still required)")
