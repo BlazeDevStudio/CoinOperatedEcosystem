@@ -188,6 +188,14 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("od -An -N5", firstboot)
         self.assertIn("uci commit network", firstboot)
         self.assertNotIn("fd00:db8:blaze", firstboot)
+        syntax = subprocess.run(
+            ["sh", "-n", firstboot_path], capture_output=True, text=True
+        )
+        self.assertEqual(
+            syntax.returncode,
+            0,
+            msg=f"Generated ULA first-boot script is not valid POSIX shell: {syntax.stderr}",
+        )
 
     def test_stage_overlay_with_rental(self):
         staging_dest = os.path.join(self.temp_dir, "staging_rental")
