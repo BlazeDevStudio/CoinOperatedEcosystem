@@ -1609,3 +1609,32 @@ OpenWrt target execution order, UCI/netifd behavior, persistence across upgrade/
 6. Registry custodian: restore authorized read-only access to canonical private registry v11.
 
 No merge, signing, tag, release publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved target binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC20 — validate UCI network.globals section type before ULA reuse
+
+**DRAFT / exact source-test CI PASS / mandatory Bubblewrap BLOCKED / PRODUCTION NO-GO.**
+
+### Defect and test-first evidence
+
+The first-boot ULA provisioner previously checked `network.globals.ula_prefix` before checking the named `network.globals` section type. A malformed UCI configuration could place a syntactically valid-looking `ula_prefix` option on a different section type (for example, `interface`); the script would accept that value and exit successfully without verifying that the owning section was actually `globals`.
+
+- Test-first regression commit [`f77b17aa`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f77b17aad2d010855f55c3ee483ee20c34488323) exercises both a wrong-type section containing a valid-looking prefix and the valid `globals` idempotent case.
+- Expected RED: [PR run #44389165261](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389165261), validation job 135101770846, failed only at the new wrong-section regression. The suite ran 109 tests, one failure, two intentional sandbox-only skips. Case-collision [#44389165504](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389165504) passed.
+- Source correction [`81cb1747`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/81cb1747342b0335d586184c5ba58cb138d6201a) checks the named section type before reading or accepting its option, rejects a non-`globals` section before any UCI set/commit, and reuses the validated type when deciding whether to create the section.
+- The test also preserves idempotency for an existing correctly typed `globals` section with a valid persisted prefix.
+
+### Exact source/test-head verification — `81cb1747342b0335d586184c5ba58cb138d6201a`
+
+- Shared/firmware PR [#44389405432](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389405432): **SUCCESS**. Packaging/tool suite 109 tests, two intentional sandbox-only skips; firmware hardening/shared contracts 18 checks; appliance profiles 10/10; ESP32 and ESP8266 compile plus artifact-upload jobs all passed.
+- Shared/firmware push [#44389387827](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389387827): **SUCCESS**, including validation and both board compile/artifact-upload jobs.
+- Case-collision [#44389405069](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389405069): **SUCCESS**.
+- Mandatory sandbox PR [#44389406256](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389406256) and push [#44389387907](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389387907): **FAIL CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Host preflight 14/14 passed; unprivileged identity, namespace probe and mandatory Bubblewrap packaging regressions were skipped, not passed. No unsandboxed fallback.
+
+### Scope and limits
+
+Only `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py` changed for this source/test task; this handover section records the evidence. The UCI behavior test uses a synthetic command stub. It is not target OpenWrt UCI/netifd or boot-order acceptance.
+
+MASTER §6.9's site-level ULA authority/distribution requirement remains unresolved: this change validates the local UCI section type only and does not establish same-site multi-appliance prefix sharing. Bubblewrap infrastructure, independent PHX-QA review, MASTER architecture approval, target validation and all production gates remain open.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed. No merge, signing, tag, publication, flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
