@@ -1027,6 +1027,49 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             os.path.join(builder, "RELEASE_MANIFEST.sha256")
         ))
 
+    def test_generated_wrapper_rejects_output_ancestor_symlink_created_by_make(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging_make_output_symlink")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "make-output-symlink-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "make-output-symlink-imagebuilder")
+        redirected_output = os.path.join(builder, "redirected-output")
+        os.makedirs(builder)
+        recipe = (
+            "image:\\n"
+            "\\t@mkdir -p redirected-output\\n"
+            "\\t@ln -s redirected-output bin\\n"
+            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
+            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/redirected.bin\\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(os.path.islink(os.path.join(builder, "bin")))
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    redirected_output, "targets", "ramips", "mt7621", "redirected.bin"
+                )
+            ),
+            "The synthetic Makefile must reproduce output redirected through a new ancestor symlink",
+        )
+        self.assertIn(
+            "RELEASE-BLOCKED: symlinked ImageBuilder output directory",
+            result.stderr,
+        )
+        self.assertFalse(
+            os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")),
+            "A manifest must not admit images reached through a Makefile-created ancestor symlink",
+        )
+
     def test_generated_wrapper_denies_previous_manifest_without_clobber(self):
         result, builder, _, _ = self._run_mock_imagebuilder(
             image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
