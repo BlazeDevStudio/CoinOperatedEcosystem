@@ -47,17 +47,26 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install bubblewrap (no UID/GID mapping helpers)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap
-          bwrap --version
-
       - name: Run sandbox host preflight unit tests
-        run: python3 tools/test_imagebuilder_sandbox_host.py -v
+        run: |
+          PATH="/usr/bin:/bin"
+          export PATH
+          python3 tools/test_imagebuilder_sandbox_host.py -v
+
+      - name: Verify bubblewrap availability (no privileged install)
+        run: |
+          PATH="/usr/bin:/bin"
+          export PATH
+          if ! command -v bwrap >/dev/null 2>&1; then
+            echo 'RELEASE-BLOCKED: bubblewrap is not installed on this runner' >&2
+            exit 125
+          fi
+          bwrap --version
 
       - name: Verify unprivileged single-ID runner identity
         run: |
+          PATH="/usr/bin:/bin"
+          export PATH
           command -v bwrap
           bwrap --version
           test "$(id -u)" -gt 0
@@ -68,11 +77,15 @@ jobs:
           fi
 
       - name: Preflight unprivileged bubblewrap namespace (fail fast; no fallback)
-        run: python3 tools/check_imagebuilder_sandbox_host.py
+        run: |
+          PATH="/usr/bin:/bin"
+          export PATH
+          python3 tools/check_imagebuilder_sandbox_host.py
 
       - name: Run packaging regressions with mandatory bubblewrap
         env:
           PHX_REQUIRE_BWRAP: "1"
           PYTHONDONTWRITEBYTECODE: "1"
           TMPDIR: /var/tmp
+          PATH: /usr/bin:/bin
         run: python3 tools/test_package_appliance_firmware.py -v

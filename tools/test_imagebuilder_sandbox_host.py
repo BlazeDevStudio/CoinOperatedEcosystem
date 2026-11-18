@@ -91,6 +91,19 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertNotIn("newuidmap", lowered)
         self.assertNotIn("newgidmap", lowered)
 
+    def test_probe_command_hides_host_credential_and_external_mount_paths(self):
+        helper = self.helper_or_skip()
+        command = helper.build_probe_command("/usr/bin/bwrap")
+        tmpfs_paths = {
+            command[index + 1]
+            for index, token in enumerate(command[:-1])
+            if token == "--tmpfs"
+        }
+        self.assertEqual(
+            tmpfs_paths,
+            {"/tmp", "/home", "/root", "/run", "/mnt", "/media", "/srv"},
+        )
+
     def test_probe_accepts_a_supported_fake_host(self):
         helper = self.helper_or_skip()
         with tempfile.TemporaryDirectory() as directory:
@@ -119,12 +132,35 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertFalse(ready)
         self.assertIn("timed out", detail.lower())
 
+    def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
+        helper = self.helper_or_skip()
+        with mock.patch.object(helper.shutil, "which", return_value=None) as which:
+            ready, detail = helper.check_host(timeout_seconds=1)
+        self.assertFalse(ready)
+        self.assertIn("not found", detail.lower())
+        which.assert_called_once_with("bwrap", path="/usr/bin:/bin")
+
+
     def test_probe_blocks_when_bubblewrap_is_missing(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None):
             ready, detail = helper.check_host(timeout_seconds=1)
         self.assertFalse(ready)
         self.assertIn("not found", detail.lower())
+
+
+    def test_workflow_runs_host_unit_tests_before_bwrap_availability_gate(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        tests_position = workflow.find("Run sandbox host preflight unit tests")
+        availability_position = workflow.find("Verify bubblewrap availability (no privileged install)")
+        self.assertGreater(tests_position, -1)
+        self.assertGreater(availability_position, -1)
+        self.assertLess(
+            tests_position,
+            availability_position,
+            "pure host-preflight unit tests must run before the real-host Bubblewrap availability gate",
+        )
 
 
     def test_workflow_triggers_for_release_child_branch(self):
@@ -141,6 +177,40 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             "      - phoenix/release-build-script-publication-safety-20261117",
             push_section,
             "the mandatory sandbox must run on the release child branch after reconciliation",
+        )
+
+
+    def test_workflow_requires_existing_bubblewrap_without_privileged_install(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        bootstrap_section = workflow.split(
+            "      - name: Verify bubblewrap availability (no privileged install)", 1
+        )[1].split("      - name: Verify unprivileged single-ID runner identity", 1)[0]
+        self.assertIn(
+            "command -v bwrap",
+            bootstrap_section,
+            "sandbox workflow must fail closed when bubblewrap is unavailable",
+        )
+        self.assertIn("bwrap --version", bootstrap_section)
+        self.assertIn(
+            "RELEASE-BLOCKED: bubblewrap is not installed on this runner",
+            bootstrap_section,
+            "missing Bubblewrap must report the boundary block explicitly",
+        )
+        self.assertIn(
+            "exit 125",
+            bootstrap_section,
+            "missing Bubblewrap must use the standard release-blocked exit code",
+        )
+        self.assertNotRegex(
+            bootstrap_section,
+            r"\\bsudo\\s+apt-get\\b",
+            "sandbox workflow must not install runtime dependencies with sudo",
+        )
+        self.assertNotIn(
+            "apt-get install",
+            bootstrap_section,
+            "sandbox workflow must not mutate the hosted runner before the NO-GO preflight",
         )
 
 
