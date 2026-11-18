@@ -467,7 +467,10 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Paired peer authentication</strong><span id="peerProof">Not paired</span></div>
  <div class="row"><strong>Credit journal (read-only)</strong><span id="journalState">Not initialized</span></div>
  <p class="help">Journal health does not enable remote coin transfer. Payments remain locked pending hardware and countdown recovery tests.</p>
- <p class="help">Discovery is public status only; a signed PING/PONG challenge proves paired link credentials. Coin forwarding remains locked.</p></div></div>
+ <div class="row"><strong>Paid credit path</strong><span id="creditPath">Off</span></div>
+ <div class="row"><strong>Master awaiting ACK</strong><span id="masterPending">No</span></div>
+ <div class="row"><strong>Unresolved physical pulses</strong><span id="orphanPulses">0</span></div>
+ <p class="help">LAB BUILD: Master accepts at most one outstanding journaled event, and Slave commits paid time with its receipt BEFORE ACK. Any overflow, corrupt journal or uncertainty locks the coin acceptor. Real-hardware power-cut and coinslot validation are still required.</p></div></div>
 </section>
 <section id="hardware" class="panel">
  <div class="notice">A blank TM1637 display is not automatically a firmware failure. Confirm CLK, DIO, VCC, GND and the actual module type. Never apply 5 V to ESP8266 GPIO inputs.</div>
@@ -509,11 +512,11 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <label><input name="buzzerActiveLow" type="checkbox">Buzzer active-low</label></div>
  <p class="help">D7/GPIO13 is reserved for CS ENABLE. GPIO6–11 are reserved for flash. GPIO0/2/15 have boot restrictions. GPIO14 is reserved for the buzzer. Changing pins on a live station can interrupt equipment; only save when idle.</p></div>
  <div class="card"><h2>INTERCON · wireless stations</h2>
- <div class="fields"><label>Operating role<select name="interconRole"><option value="0">Standard · local coin timer</option><option value="1">Master · coin routing (LOCKED)</option><option value="2">Slave · remote credits (LOCKED)</option></select></label>
+ <div class="fields"><label>Operating role<select name="interconRole"><option value="0">Standard · local coin timer</option><option value="1">Master · authenticated coin forwarding (LAB)</option><option value="2">Slave · journal-backed remote credits (LAB)</option></select></label>
  <label>STA Wi-Fi SSID<input name="staSsid" maxlength="32" placeholder="Shop router SSID"></label>
  <label>STA password (blank = unchanged)<input name="staPassword" type="password" maxlength="63" placeholder="Router password"></label></div>
  <div class="checks"><label><input name="staEnabled" type="checkbox">Enable STA while retaining local AP</label></div>
- <p class="help">Each controller keeps its own WPA2 access point and can join the same Wi-Fi router as a station. Its dashboard is accessible at the AP address or the router-assigned STA/LAN IP, not publicly exposed WAN. Nearby ESP8266s are shown as discovery-only peers; no remote money/coin commands are enabled until authenticated, journaled credit handling passes physical tests.</p></div>
+ <p class="help">Both AP and router STA remain accessible on the local Wi-Fi. Standard remains independent. In Master mode D7 can power the external coin-slot ENABLE circuit only when the paired Slave is authenticated, the flash journal is healthy and no credit awaits ACK. Slave accepts authenticated CRED only and restores its paid balance from the same durable journal used for deduplication. This is still a laboratory-only paid-payment feature until electrical/power-cut tests pass.</p></div>
  <div class="card"><h2>Wi-Fi and administrator</h2><div class="fields"><label>Wi-Fi AP name<input name="apName" maxlength="32" required></label>
  <label>New AP password (blank = unchanged)<input name="apPassword" type="password" maxlength="63" placeholder="At least 8 characters"></label>
  <label>New admin password (blank = unchanged)<input name="adminPassword" type="password" minlength="10" maxlength="32" placeholder="10–32 characters"></label></div>
@@ -537,7 +540,7 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Journal condition</strong><span id="journalSettings">Checking…</span></div>
  <div class="buttons"><button type="button" onclick="initializePeerJournal()">Initialize empty journal (lab only)</button></div>
  </div></section>
-<section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
+<section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow" id="salesHeading">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
  <div class="card"><div class="eyebrow">Legacy monthly bucket</div><div class="metric" id="saleMonth">0</div></div></div>
  <div class="notice">This offline ESP8266 does not have a reliable calendar clock. Daily/monthly bucket labels are legacy counters, NOT verified calendar-day/month sales. Values are pulses, not pesos.</div>
@@ -559,8 +562,10 @@ function put(k,v){let e=$(k);if(e)e.textContent=v}
 function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole','staSsid','apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness','idleTriggerSeconds','shutdownGraceSeconds','pwrPulseMilliseconds'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
  for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k]}
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
- put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');
+ put('roleLabel',['STANDARD','MASTER · LAB','SLAVE · LAB'][o.interconRole]||'UNKNOWN');
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
+ put('creditPath',o.creditPath||'Unavailable');put('masterPending',o.masterPending?'Pending · retrying':'No');
+ put('orphanPulses',o.unresolvedPulses||0);
  put('journalState',o.journalState+(o.journalGeneration?' · gen '+o.journalGeneration:''));
  put('journalSettings',o.journalState+(o.journalGeneration?' · generation '+o.journalGeneration:''));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
@@ -572,7 +577,9 @@ function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?
  put('csState',o.csEnabled?'ENABLED':'DISABLED');$('csState').className='state '+(o.csEnabled?'on':'off');
  put('pcState',o.pcExpectedOn?'EXPECTED ON':'EXPECTED OFF');put('pcGrace',o.shutdownPending?o.shutdownSecondsLeft+'s until pulse':'Not pending');
  put('clk','GPIO'+o.displayClk);put('dio','GPIO'+o.displayDio);put('bright',o.brightness);put('displaymode',o.displayMode);
- put('saleAll',o.salesOverall);put('saleDay',o.salesToday);put('saleMonth',o.salesMonth)}
+ put('saleAll',o.interconRole===1?o.masterDurableEvents:o.interconRole===2?o.journalCreditedEvents:o.salesOverall);
+ put('salesHeading',o.interconRole===1?'Durable Master events':o.interconRole===2?'Durable Slave credit receipts':'All accepted pulses');
+ put('saleDay',o.salesToday);put('saleMonth',o.salesMonth)}
 async function poll(){try{let o=await request('/api/status');render(o);if(!window.formLoaded){populateForm(o);window.formLoaded=true}}catch(e){put('running','Disconnected: '+e.message)}}
 // Changes the real ESP8266 timer; these are not browser-only calculations.
 function validDuration(h,m,s){
@@ -1862,7 +1869,7 @@ void sendStatus() {
     s += F("}");
   }
   s += ']';
-  s += F(",\"interconMode\":\"DISCOVERY-ONLY: remote credits locked\"");
+  s += F(",\"interconMode\":\"STAGE4-LAB: signed paid credit, physical validation pending\"");
   s += F(",\"peerPaired\":");s+=(peerPairReady?"true":"false");
   s += F(",\"peerAuthenticated\":");s+=(peerOnline()?"true":"false");
   s += F(",\"peerChip\":");s+=peerPairReady?jsonQuote(String(peerPair.peerChip,HEX)):jsonQuote(String(""));
@@ -1879,6 +1886,20 @@ void sendStatus() {
   s += F(",\"journalCreditedEvents\":");
   s += interconRecovered.status==blaze_journal::Status::Healthy?
        String(interconRecovered.snapshot.slave.paidEventCount):String("0");
+  s += F(",\"masterPending\":");
+  s += interconJournalHealthy() && interconRecovered.snapshot.master.pendingSequence?"true":"false";
+  s += F(",\"unresolvedPulses\":");s+=interconUnresolvedPulseCount;
+  s += F(",\"creditPath\":");
+  if(interconPref.role==INTERCON_STANDARD)s+=jsonQuote("Local Standard");
+  else if(interconPref.role==INTERCON_MASTER)
+    s+=jsonQuote(interconMasterReady()?"Master READY":"Master WAITING / LOCKED");
+  else s+=jsonQuote(interconSlaveReady()?"Slave JOURNAL READY":"Slave WAITING / LOCKED");
+  s += F(",\"masterDurableEvents\":");
+  s+=interconJournalHealthy()?
+      String((unsigned long)interconRecovered.snapshot.master.lastIssued):String("0");
+  s += F(",\"slaveDurableBalance\":");
+  s+=interconJournalHealthy()?
+      String((unsigned long)(interconRecovered.snapshot.slave.remainingUnits/100000ULL)):String("0");
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
   JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);JNUM("idleTriggerSeconds",idleTriggerSeconds);
