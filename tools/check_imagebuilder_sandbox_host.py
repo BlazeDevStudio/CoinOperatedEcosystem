@@ -15,6 +15,12 @@ PROBE_SCRIPT = (
 )
 TRUSTED_BWRAP_PATH = "/usr/bin:/bin"
 SANDBOX_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+
+
+def _private_host_mount_args() -> list[str]:
+    """Mirror the runner's masked host-data mount list."""
+    return [argument for path in PRIVATE_HOST_PATHS for argument in ("--tmpfs", path)]
 
 
 def _find_trusted_bwrap() -> str | None:
@@ -39,6 +45,7 @@ def build_probe_command(bwrap_path: str) -> list[str]:
         "--die-with-parent",
         "--new-session",
         "--ro-bind", "/", "/",
+        *_private_host_mount_args(),
         "--dev", "/dev",
         "--proc", "/proc",
         "--tmpfs", "/tmp",
@@ -91,7 +98,7 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
         message = f"bubblewrap namespace probe exited with status {result.returncode}"
         return False, f"{message}: {detail}" if detail else message
 
-    return True, "unprivileged user namespace and isolated tmpfs write probe passed"
+    return True, "unprivileged user namespace, masked host-data paths and tmpfs write probe passed"
 
 
 def main() -> int:
