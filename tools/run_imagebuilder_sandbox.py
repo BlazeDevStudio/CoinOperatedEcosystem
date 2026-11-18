@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one generated ImageBuilder wrapper with a read-only host root and one writable build tree."""
+"""Run ImageBuilder with masked host-data paths and one writable build tree."""
 from __future__ import annotations
 
 import argparse
@@ -21,6 +21,12 @@ DEFAULT_BUILD_TIMEOUT_SECONDS = 3600
 MAX_BUILD_TIMEOUT_SECONDS = 14400
 TRUSTED_BWRAP_PATH = "/usr/bin:/bin"
 SANDBOX_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+
+
+def _private_host_mount_args() -> list[str]:
+    """Hide common user, runtime-secret and external-mount paths from Makefile code."""
+    return [argument for path in PRIVATE_HOST_PATHS for argument in ("--tmpfs", path)]
 
 
 def blocked(message: str, detail: str = "") -> int:
@@ -267,6 +273,10 @@ def verify_sandbox_context(
         return False
     if not builder_mount or "rw" not in builder_mount[1]:
         return False
+    for private_path in PRIVATE_HOST_PATHS:
+        private_mount = mounts.get(private_path)
+        if not private_mount or private_mount[0] != "tmpfs" or "rw" not in private_mount[1]:
+            return False
     return True
 
 
@@ -342,6 +352,7 @@ def main() -> int:
         "--die-with-parent",
         "--new-session",
         "--ro-bind", "/", "/",
+        *_private_host_mount_args(),
         "--dev", "/dev",
         "--proc", "/proc",
         "--tmpfs", "/tmp",
