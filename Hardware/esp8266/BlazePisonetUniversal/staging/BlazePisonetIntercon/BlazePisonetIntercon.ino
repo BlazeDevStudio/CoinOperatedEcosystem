@@ -519,7 +519,7 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <button type="submit" class="primary wide">Save settings</button></form>
  <form id="peerPairForm" autocomplete="off"><div class="card">
  <h2>INTERCON · authenticated peer</h2>
- <p class="note">Pair through this ESP8266's own WPA2 AP at 192.168.4.1. Create the same random 32-byte secret on the two chosen boards. Each board needs the other board's 8-hex-digit chip ID and router-assigned STA IP address. No payment commands are enabled in this build.</p>
+ <p class="note">Pair through this ESP8266's own WPA2 AP at 192.168.4.1. Use the same independently generated 32-byte secret on the two chosen boards. Change default AP and admin passwords first. Each board needs the other board's 8-hex-digit chip ID and router-assigned STA IP address. No payment commands are enabled in this build.</p>
  <div class="fields">
  <label>My chip ID (read-only)<input id="localChip" readonly value="Loading…"></label>
  <label>Peer chip ID (8 HEX digits)<input name="peerChip" maxlength="8" pattern="[0-9A-Fa-f]{8}" required placeholder="00A1B2C3"></label>
@@ -1960,7 +1960,8 @@ void setup() {
   server.on("/api/intercon/new-key",HTTP_POST,[](){
     if(!requireAdmin())return;
     if(server.client().localIP()!=WiFi.softAPIP() ||
-       strcmp(adminPassword,"blaze-admin")==0){
+       strcmp(adminPassword,"blaze-admin")==0 ||
+       strcmp(AP_PASSWORD,"12345678")==0){
       reject("Generate secrets only through the local AP with a changed admin password",403);return;
     }
     // ESP.random() uses the ESP8266 HW RNG when radio entropy is available.
@@ -1983,8 +1984,8 @@ void setup() {
     if(timerRunning||remainingSeconds>0||pcShutdownPending||powerPulseActive){
       reject("Finish and reconcile paid time before pairing",409);return;
     }
-    if(strcmp(adminPassword,"blaze-admin")==0){
-      reject("Change the default administrator password before storing a peer secret",409);return;
+    if(strcmp(adminPassword,"blaze-admin")==0 || strcmp(AP_PASSWORD,"12345678")==0){
+      reject("Change both default AP and administrator passwords before storing a peer secret",409);return;
     }
     String chip=server.arg("peerChip"),addrText=server.arg("peerIp"),secret=server.arg("pairKey");
     InterconPairConfig candidate={};
