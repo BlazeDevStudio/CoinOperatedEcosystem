@@ -1417,3 +1417,58 @@ The shared/firmware result is synthetic CI and source-level validation only. The
 The new regression and source fix are source-level packaging hardening only. They do not prove a real Bubblewrap mount namespace, network isolation, complete host confidentiality, ImageBuilder binary reproducibility, physical hardware acceptance or production release readiness.
 
 PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA and PHX-MASTER must independently review the exact source/test head. Keep PR #35 OPEN / DRAFT / UNMERGED. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment. **PRODUCTION NO-GO.**
+
+## PHX-RELEASE 2026-11-18 UTC17 — pin initial rootfs copy to staging directory descriptor
+
+**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / SOURCE-TEST SHARED CI PASS / BOARD BUILDS PARTLY PENDING / MANDATORY BUBBLEWRAP HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Control plane, ownership and selected defect
+
+Live #172, cleanup-first #266, MASTER #288 ownership routes, Experiments release PRs #242/#291, COE integration #26, parent packager #31 and child #35 were re-read before source changes. #35 remains the existing release-owned child branch stacked on #31; no new branch was created. The exact child base is #31 head `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+
+`stage_overlay()` previously checked that the requested output parent was not a symlink, then called path-based `shutil.copytree(source_rootfs, staging_dir, symlinks=True)`. Replacing the parent with a symlink after the check but before copytree redirected the initial rootfs copy into an external operator-owned directory. A later no-follow helper rejected the path, but only after the external directory had already been created and populated.
+
+### Test-first progression
+
+- Initial regression commit: [a54f7a14](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a54f7a14e2e4556e8759977276126a32417094af). Its first run [#44357255948](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44357255948) exposed an over-specific assertion-message mismatch: the existing later helper raised a different `ValueError` after the redirected copy. This was a test-authoring failure, not a passing regression.
+- Test assertion correction: [947864db](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/947864dbc258a6bcef14768a12f1664d1f08c0b6).
+- Expected RED at exact test head: shared validation [#44357449644](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44357449644) and duplicate PR validation [#44357429634](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44357429634) both failed at the new assertion that the external staging directory must not exist. The runner confirmed it **did** exist after the parent swap. The suite ran **101 tests**, one expected failure and two intentional sandbox-only skips. Case-collision [#44357449403](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44357449403) passed.
+- The two RED-head mandatory sandbox runs [#44357449505](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44357449505) and [#44357429641](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44357429641) failed closed because Bubblewrap was not installed; host preflight passed **13/13**, while namespace and real sandbox tests were skipped.
+
+### Source correction and compatibility coverage
+
+- Source fix: [462d02fb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/462d02fb01e689556efcf5bf1019af951807b130).
+- Compatibility regression: [91691a37](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/91691a377af5fa4251c0f4695dbf4c4484305f83) verifies that missing output-parent directories are still created safely.
+
+The packager now opens or creates parent components one at a time with directory descriptors and `O_NOFOLLOW`, creates the new staging root relative to the pinned parent descriptor, and copies the rootfs through `/proc/self/fd/<staging-fd>` rather than the operator-visible path. It reopens the visible parent after the copy and compares device/inode identity, then verifies the staging entry still matches the pinned directory. On failure it removes only the staging directory whose entry still matches the descriptor it created; it does not follow or delete a replacement symlink.
+
+The helper preserves the prior behavior of creating missing parent directories. It requires POSIX `dir_fd`/directory no-follow support and an accessible Linux `/proc/self/fd`; it fails closed if those primitives are unavailable. No firmware profile, networking/VLAN contract, shared API, financial ledger, source ownership route or other subsystem was changed.
+
+### Exact source/test-head CI
+
+Final source/test HEAD: `91691a377af5fa4251c0f4695dbf4c4484305f83`.
+
+- Push shared/firmware [#44358097407](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44358097407), validation job `134991644751`: **SUCCESS**. Firmware/shared-contract checks **18 PASS**; packaging/tool suite **102 tests, 2 intentional sandbox-only skips**; appliance profiles **10/10 PASS**.
+- PR shared/firmware [#44358115225](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44358115225), validation job `134991695337`: validation **SUCCESS** with the same source/test suite.
+- Case-collision [#44358114424](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44358114424): **SUCCESS**.
+- At handover authoring, both exact-head ESP8266 compile/artifact jobs had **SUCCESS**; the exact-head ESP32 core installation was still **IN_PROGRESS**, and ESP32 compile/upload were **PENDING**. Do not infer a final board result from the shared validation job.
+- Mandatory sandbox push [#44358097367](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44358097367) and PR [#44358114284](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44358114284): **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Host preflight **13/13 PASS**; unprivileged identity, namespace probe and real-bubblewrap packaging regressions were **SKIPPED**, not passed.
+
+These are hosted synthetic CI and source-level results only. ESP compile artifacts are not approved production binaries or physical hardware acceptance. No real ImageBuilder sandbox acceptance, network isolation, firmware flashing, signing or release publication is claimed.
+
+### Cross-repository provenance and limits
+
+- MASTER #288 current head at audit: `dacde8ba60bd47e4d549d4000a1e37b5409e4a9f`; ownership routes remain `DRAFT_REVIEW_ONLY`, and the PHX-RELEASE Experiments workflow route is reimplementation-review only. No workflow or source migration was performed.
+- Experiments #242 head `734b89d9e7792247e8376335c3f3685500ab3f89`; exact Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) **SUCCESS**.
+- Experiments #291 head `691ed55dbe39a79a88eac45f6eebff81cee5e628`; exact Windows run [#44353380470](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44353380470) **SUCCESS**; `publish-release` **SKIPPED**. No signer or publisher executed.
+- COE integration #26 head `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero jobs and no combined integration acceptance.
+- COE parent #31 head/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 is still OPEN / DRAFT / UNMERGED.
+- The canonical private Drive registry v11 was not available through the current Library/connector search. Only a prior metadata pointer was visible; no older registry snapshot was substituted and no private contents were copied to GitHub.
+
+### Rollback and next owner actions
+
+Rollback is a normal revert of source commit `462d02fb` and its regression commits `91691a37`, `947864db`, and `a54f7a14` in reverse order; no force-push is required. Keep PR #35 draft and unmerged.
+
+PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA must independently review the exact source/test head and regression. PHX-MASTER must confirm ownership/interface routing; the COE integration owner must resolve the five queued #26 workflows; the registry custodian must restore authorized v11 provenance access; repository administration must independently verify protected release admission.
+
+No PR merge, real signing, tag, release publication, hardware flash, payment migration or customer deployment occurred. Independent protected signer/freshness witness, durable financial accounting and migration, independent QA/MASTER approval, approved target binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
