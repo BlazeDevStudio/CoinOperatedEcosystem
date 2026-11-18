@@ -788,3 +788,43 @@ The new preflight proves only that the host can create the required user namespa
 The invalid \`fd00:db8:blaze::/48\` remains a separate MASTER/CORE P0. Master’s UTC19 audit requires an installation/site-scoped RFC 4193 /48 that remains durable across reboot/upgrade/restore and is shared by devices on the same LAN; no prefix is guessed and no profile/interface change is made before the CORE/MASTER contract is approved. Canonical private Drive registry v11 remains inaccessible through the exposed Library surface; no v3–v7 substitute is used. COE #26 remains draft with eight queued workflows and zero completed jobs; MASTER #288 has no current-head workflow runs. No independent PHX-QA review is recorded on #31.
 
 No merge, signing, publication, real OpenWrt firmware admission, hardware flash, payment migration or customer deployment occurred. No physical acceptance is established: 150 power cuts and 30-device/24-hour soak remain NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE 2026-11-18 UTC00 — bound synthetic ImageBuilder wrapper invocations
+
+**Disposition: TEST-FIRST RED REPRODUCED / MOCK EXECUTION PROCESS-GROUP TIMEOUT FIXED / SOURCE-HEAD SHARED CI + BOTH BOARD COMPILES PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP HOST PREFLIGHT STILL BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on \`phoenix/release-imagebuilder-failclosed-20261115\`, based on integration #26 at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`.
+
+### Defect and scope
+
+The test helper \`TestPackageApplianceFirmware._run_generated_wrapper()\` accepted \`timeout_seconds\`, but the non-\`PHX_REQUIRE_BWRAP\` mock-execution branch called \`subprocess.run()\` without applying that timeout. A stalled synthetic Makefile could therefore hold the shared CI test process until the outer workflow timeout. The real sandbox branch already passed its timeout to \`run_imagebuilder_sandbox.py\`; this change aligns the non-sandbox mock branch with the same bounded execution contract.
+
+Only \`tools/test_package_appliance_firmware.py\` changed. No production packager, sandbox runner, firmware, profile, shared contract, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source changed.
+
+### Test-first progression
+
+- Initial test commit [\`a2d7ab8f\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a2d7ab8f33b5320ecdf0e01b5f96ee5c026b2a1b) had a fixture-ordering mistake: the sleep recipe was appended after the Makefile had been written. Shared run [#44206073239](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206073239) failed at the target-directory assertion, so this run is **test-authoring failure, not product evidence**. The separate sandbox run [#44206073161](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206073161) failed at the existing hosted UID-map preflight; case-collision [#44206073160](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206073160) passed.
+- Fixture correction [\`8d4ed816\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8d4ed81611896f239ad12374cc9b875c66c1f301) moved the bounded sleep/late-marker recipe before the Makefile write.
+- Corrected test-first RED: shared run [#44206156044](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206156044) failed at the new assertion because the mock helper waited for the 3-second Makefile recipe and returned the later missing-image error instead of timeout status 124. The suite ran 77 tests with one expected new failure and two intentional sandbox-only skips. Sandbox [#44206156052](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206156052) remained blocked at host UID-map setup; case-collision [#44206156078](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206156078) passed.
+- Source correction [\`46e0d55e\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/46e0d55e1ccf9aa4646295f7201c50284c7c4518) starts the mock wrapper in its own session and uses the existing release runner's process-group timeout/termination helper. A timeout returns synthetic status 124 with a \`RELEASE-BLOCKED\` message; the test asserts the late marker is not written and the ownership probe is removed. The real bubblewrap runner path is unchanged.
+
+### Exact source/test-head Actions at \`46e0d55e\`
+
+- Shared/hardware [#44206299623](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206299623): **COMPLETED SUCCESS**. Firmware-hardening/shared validation passed; Python suite **77 tests, 2 intentional sandbox-only skips**; all 10 appliance profiles passed; ESP8266 compile/artifact upload passed; ESP32 compile/artifact upload passed. The new timeout regression passed.
+- Case-collision [#44206299677](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206299677): **COMPLETED SUCCESS**.
+- Mandatory sandbox [#44206299772](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206299772): **FAILED CLOSED AT HOST PREFLIGHT** with \`bwrap: setting up uid map: Permission denied\`, exit 125. The sandbox-dependent packaging regression suite was **SKIPPED**. This is a hosted-runner capability blocker, not a source-test failure or sandbox acceptance.
+
+The ESP32/ESP8266 compile outputs are synthetic CI artifacts for the existing Hardware workflow; they are not release-approved target images, physical hardware evidence, or production packages. No ImageBuilder firmware image was built or admitted by this task.
+
+### Current coordination / remaining gates
+
+- MASTER #288: \`phoenix/master-coordination@f657a177e17b61e54dc507984c551cfc65a9f10a\`, OPEN/DRAFT; 64 changed paths remain under \`coordination/phoenix/\`. \`OWNERSHIP_ROUTES.json\` remains \`DRAFT_REVIEW_ONLY\`; the PHX-RELEASE workflow route is reimplementation-review, not a copy/move authorization.
+- Experiments #242: \`734b89d9e7792247e8376335c3f3685500ab3f89\`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) handover/build SUCCESS.
+- Experiments #291: \`a74b8b940fba3aa8651f1a9ee8bbf23cf112726e\`; Windows run [#44199987756](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44199987756) handover/build SUCCESS; write-privileged publisher SKIPPED. No independent submitted reviews were returned for #291.
+- COE integration #26 remains OPEN/DRAFT at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`; five PR-triggered workflows are QUEUED with zero jobs returned. No combined integration acceptance.
+- No independent PHX-QA review was returned for COE #31.
+- The invalid \`fd00:db8:blaze::/48\` remains blocked on the MASTER/CORE installation-scoped RFC 4193 ULA contract; PHX-RELEASE did not invent a replacement.
+- The canonical private Drive registry v11 remains unavailable through the exposed Library/connector surface; no older snapshot was substituted and no private identifiers or contents were published.
+
+**Next:** PHX-QA independently reviews the timeout test at \`46e0d55e\`; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for the mandatory sandbox suite; MASTER/CORE resolve durable site-scoped ULA provisioning. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
