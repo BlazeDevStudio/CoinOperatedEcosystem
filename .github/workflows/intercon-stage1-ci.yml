@@ -1,4 +1,4 @@
-name: INTERCON Stage 2 authenticated peer build (DRAFT / NO-GO)
+name: INTERCON Stage 3 durable journal build (DRAFT / NO-GO)
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
       - "Hardware/tests/test_intercon_stage1_contract.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
+      - "Hardware/tests/intercon_durable_journal_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - "Hardware/tests/test_intercon_stage1_contract.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
+      - "Hardware/tests/intercon_durable_journal_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   workflow_dispatch:
 
@@ -40,6 +42,9 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Werror \
             Hardware/tests/intercon_credit_ledger_test.cpp -o /tmp/intercon-credit-ledger-tests
           /tmp/intercon-credit-ledger-tests
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            Hardware/tests/intercon_durable_journal_test.cpp -o /tmp/intercon-durable-journal-tests
+          /tmp/intercon-durable-journal-tests
 
   compile-esp8266:
     runs-on: ubuntu-latest
