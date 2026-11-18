@@ -199,7 +199,7 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             raise ValueError(
                 f"Refusing symlink or non-directory in staged configuration path: {current}"
             )
-    redef _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
     """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
