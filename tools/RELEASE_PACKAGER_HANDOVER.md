@@ -902,3 +902,28 @@ Board compile jobs are firmware source compilation only, not approved OpenWrt Im
 - Mandatory sandbox PR [#44222569622](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222569622) and push [#44222561961](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222561961): host preflight unit tests **8/8 PASS**, unprivileged identity check **PASS**, real namespace probe **FAILED CLOSED** with `bwrap: setting up uid map: Permission denied`; mandatory packaging regressions were **SKIPPED**. This is not sandbox acceptance.
 
 **Disposition:** source/test CI and board compilation are verified on this exact child SHA; mandatory sandbox execution remains infrastructure-blocked. PR #35 remains OPEN / DRAFT / UNMERGED. PHX-QA and PHX-MASTER independent review is still required. No signing, release publication, hardware flashing, payment migration or customer deployment occurred.
+
+
+## 2026-11-18 UTC03 — generated wrapper rejects a replaced staging-root symlink
+
+**Owner / scope:** PHX-RELEASE only; existing COE child draft PR #35, stacked on current parent PR #31. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source changed.
+
+**Defect:** The generated ImageBuilder wrapper validated that STAGING_DIR was a directory, but did not verify that the path still resolved to the same real directory captured in the staging manifest. Replacing the staged rootfs path with a symlink after staging/wrapper generation therefore passed the directory check and allowed the wrapper to proceed toward Make using an operator-selected external directory.
+
+**Test-first regression and correction**
+- Test-first commit [4b4fa9ae](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4b4fa9ae6149d7afa2441bd37f4fcec34eea83de) renames the staged tree, replaces its original path with a symlink to an external operator-owned directory, and requires the generated wrapper to fail before Make. The fixture preserves an external sentinel and a Make invocation marker.
+- Exact RED: [PR validation #44228438689](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44228438689) ran 81 packaging/tool tests with two intentional sandbox-only skips and failed only at the new symlink regression. The wrapper did not emit the required staged-root symlink denial and reached the post-build missing-image diagnostic instead. This is the expected source-defect reproduction, not a sandbox result.
+- Source fix [e5fb3be1](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e5fb3be13c8ae0d82e943d6d71095c9a1db8223d) compares the staged path with Python realpath and rejects a symlinked path component before Make. The check is in the generated wrapper, so it is repeated when the wrapper is re-entered inside the release sandbox. No profile, network contract, ImageBuilder package list or shared subsystem was changed.
+
+**Exact source/test HEAD:** e5fb3be13c8ae0d82e943d6d71095c9a1db8223d.
+- [Shared / firmware / packaging validation #44228528489](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44228528489): **COMPLETED SUCCESS**. 81 packaging/tool tests passed with two intentional sandbox-only skips; firmware-hardening and shared-contract checks passed; all 10/10 appliance profile staging checks passed; ESP8266 and ESP32 compile plus artifact-upload jobs both passed.
+- [Case-collision guard #44228528520](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44228528520): **SUCCESS**.
+- [Mandatory sandbox #44228528514](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44228528514): **FAILED CLOSED AT HOST PREFLIGHT**. Host-preflight unit tests 8/8 passed and unprivileged identity checks passed; the real bubblewrap namespace probe failed with "bwrap: setting up uid map: Permission denied", exit 125. Mandatory sandbox packaging regressions were **SKIPPED**. This is not sandbox acceptance.
+
+**Current branch relationship:** Parent #31 head/base 59ed44d0b911e176f1a95b9cf5585ef811ffd31b; child #35 head e5fb3be13c8ae0d82e943d6d71095c9a1db8223d. Exact compare: child **6 commits ahead / 0 behind**. The child base SHA equals the current parent head; this supersedes the older UTC01 audit's stale divergent #35 relationship. Both PRs remain OPEN / DRAFT / UNMERGED.
+
+**Cross-role gates:** MASTER #288 remains OPEN/DRAFT at 650c6e5991ed8ba30d82dd98216316b3ae3a3780; OWNERSHIP_ROUTES remains DRAFT_REVIEW_ONLY. The PHX-RELEASE workflow route is reimplementation-review only. Architecture Contracts §6.9 still blocks the invalid global fd00:db8:blaze::/48: CORE/COE must define installation/first-boot ULA provisioning and durable persistence before RELEASE implements it. No shared profile or network source was changed. COE #26 remains at b382d233ff06c8791b1028bed3c617cc7b670d12 with five workflows queued and no integration acceptance.
+
+**Provenance:** Canonical private Drive BLAZE_PROJECT_REGISTRY_v11_20261027.json was not available through the exposed Library surface. No older registry snapshot was substituted and no private contents were copied into GitHub.
+
+**Next:** PHX-QA independently reviews the new wrapper guard and exact source/test head; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for the mandatory sandbox suite; PHX-MASTER/CORE/COE resolve §6.9 provisioning ownership. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
