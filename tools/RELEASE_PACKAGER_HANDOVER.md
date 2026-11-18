@@ -1250,3 +1250,37 @@ Source/test HEAD: `5d79637c66b6cf9093d5191c1f002e057a09f50b`.
 
 CI board outputs are synthetic build artifacts, not approved OpenWrt images, production binaries, or physical acceptance. No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
 
+
+## UTC13 — reject Makefile-created ImageBuilder output-ancestor symlinks — 2026-11-18
+
+**Disposition:** TEST-FIRST RED REPRODUCED / POST-BUILD OUTPUT-PATH GUARD COMMITTED / EXACT SOURCE-HEAD SHARED CI PASS / 10-OF-10 PROFILES PASS / ESP32 + ESP8266 COMPILE AND ARTIFACT UPLOAD PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Defect
+
+The generated wrapper rejected symlinked `bin/targets/<target>/<subtarget>` components before Makefile execution. However, if a Makefile created a previously absent ancestor (for example, `bin`) as a symlink during the build, the later `find "$IMAGE_REL_DIR"` followed that ancestor. The wrapper could then generate a release checksum manifest from files reached through the redirected path.
+
+The regression uses a disposable ImageBuilder directory and a synthetic Makefile that creates `bin -> redirected-output`, writes a synthetic image below the redirected target path, and requires the wrapper to reject the result before writing `RELEASE_MANIFEST.sha256`. No real firmware is involved.
+
+### Test-first history and correction
+
+- Initial regression commit [30381f11](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/30381f11625660d5a04ac106dd518a18901ff9c5) contained a malformed synthetic Makefile recipe with literal escaped separators. Its first run [#44311869104](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44311869104) failed at the test-harness assertion because the symlink was not created. This was a test-authoring error, not counted as the defect RED.
+- Test-harness correction [23837553](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/23837553f3d077206f4e5d0fb714d9f5b6bfaa76) changed the recipe to emit real newline/tab separators.
+- Proper expected RED on corrected test head [#44312104147](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44312104147): **91 tests, one failure, two intentional sandbox-only skips**. The new regression failed because the wrapper returned exit 0 and admitted the redirected output. The other packaging tests passed. Case-collision [#44312104137](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44312104137) passed.
+- Source correction [2975ae9a](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2975ae9af418a5d831615323cde02e81e2b8f593) rechecks each `bin/targets/<target>/<subtarget>` ancestor for a symlink **after** Makefile execution and before target-directory traversal or manifest generation. It changes only the release-owned packager; the sandbox runner, workflow, profiles, network schema and other subsystem sources are unchanged.
+
+### Exact source/test-head CI
+
+Source/test HEAD: `2975ae9af418a5d831615323cde02e81e2b8f593`.
+
+- PR shared/firmware [#44312279130](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44312279130): **SUCCESS**. Packaging/tool suite **91 tests, two intentional sandbox-only skips**; firmware hardening and shared contracts **PASS**; all **10/10** appliance profile/staging checks **PASS**; ESP8266 compile and artifact upload **SUCCESS**; ESP32 compile and artifact upload **SUCCESS**.
+- PR case-collision [#44312279137](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44312279137): **SUCCESS**.
+- PR mandatory sandbox [#44312279208](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44312279208): **FAILED CLOSED** at the explicit pre-provisioned Bubblewrap availability check because this hosted runner has no `bwrap`; it emitted `RELEASE-BLOCKED` and exit 125. Host-preflight, namespace and mandatory bubblewrap packaging regressions were **SKIPPED**, not passed. No actual bubblewrap sandbox acceptance is claimed.
+
+### Limits, rollback and next owner action
+
+- The new output-ancestor regression is a synthetic/mock wrapper test in the shared CI suite. It proves the post-build path-admission guard rejects a Makefile-created symlink before manifest creation; it does **not** prove the real bubblewrap boundary, network isolation, host confidentiality or physical hardware acceptance.
+- The mandatory sandbox remains blocked until PHX-INFRA supplies an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. Do not add sudo, uidmap helpers, broad subordinate-ID mappings or an unsandboxed fallback.
+- PHX-QA and PHX-MASTER independent review remains required. The current child PR #35 is still OPEN / DRAFT / UNMERGED, based exactly on parent #31 head `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Rollback is limited to reverting the source correction and its regression/harness commits together. No profile, generated firmware, external file, release tag, signer, payment or customer state was changed.
+
+No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. CI board outputs remain synthetic compile artifacts, not approved target binaries or physical acceptance. **PRODUCTION NO-GO.**
