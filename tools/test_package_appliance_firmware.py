@@ -1879,6 +1879,49 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "a staged-directory symlink race must not change an external directory's mode",
         )
 
+    def test_stage_overlay_permission_normalization_replaces_external_hardlink_before_mode_change(self):
+        source_rootfs = os.path.join(self.temp_dir, "chmod-hardlink-source")
+        utility_dir = os.path.join(source_rootfs, "usr", "sbin")
+        os.makedirs(utility_dir)
+        source_file = os.path.join(utility_dir, "diagnostic")
+        with open(source_file, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\nexit 0\n")
+        os.chmod(source_file, 0o644)
+
+        staging_dest = os.path.join(self.temp_dir, "chmod-hardlink-staging")
+        staged_file = os.path.join(staging_dest, "usr", "sbin", "diagnostic")
+        external_target = os.path.join(self.temp_dir, "operator-owned-hardlink")
+        original_calculate = packager.calculate_overlay_size
+        linked = {"value": False}
+
+        def calculate_then_link_staged_file(path):
+            result = original_calculate(path)
+            os.link(staged_file, external_target)
+            linked["value"] = True
+            return result
+
+        with mock.patch.object(
+            packager, "calculate_overlay_size",
+            side_effect=calculate_then_link_staged_file,
+        ):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        self.assertTrue(linked["value"])
+        self.assertEqual(
+            os.stat(external_target).st_mode & 0o777,
+            0o644,
+            "normalizing a staged hardlink must not change the operator-owned inode mode",
+        )
+        self.assertEqual(os.stat(staged_file).st_mode & 0o777, 0o755)
+        external_stat = os.stat(external_target)
+        staged_stat = os.stat(staged_file)
+        self.assertNotEqual(
+            (external_stat.st_dev, external_stat.st_ino),
+            (staged_stat.st_dev, staged_stat.st_ino),
+        )
+        self.assertEqual(external_stat.st_nlink, 1)
+        self.assertEqual(staged_stat.st_nlink, 1)
+
     def test_generated_wrapper_manifest_is_independent_of_build_workspace(self):
         # The same synthetic image bytes must produce the same checksum
         # manifest regardless of the absolute workspace path.
