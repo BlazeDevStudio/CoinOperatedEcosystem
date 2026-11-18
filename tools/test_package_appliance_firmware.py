@@ -1096,7 +1096,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(os.path.join(proc_self, "gid_map"), "w", encoding="ascii") as fp:
             fp.write("0 1000 1\n")
 
-        def write_mountinfo(root_mode):
+        private_paths = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+
+        def write_mountinfo(root_mode, hidden_paths=private_paths):
             rows = [
                 f"1 0 8:1 / / {root_mode},relatime - ext4 /dev/root {root_mode},relatime",
                 "2 1 0:2 / /tmp rw,nosuid,nodev - tmpfs tmpfs rw",
@@ -1104,6 +1106,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 "4 1 0:4 / /dev rw,nosuid,strictatime - tmpfs tmpfs rw",
                 f"5 1 0:5 / {builder} rw,relatime - ext4 /dev/root rw,relatime",
             ]
+            for mount_id, path in enumerate(hidden_paths, start=6):
+                rows.append(
+                    f"{mount_id} 1 0:{mount_id} / {path} rw,nosuid,nodev - tmpfs tmpfs rw,nosuid,nodev"
+                )
             with open(os.path.join(proc_self, "mountinfo"), "w", encoding="ascii") as fp:
                 fp.write("\n".join(rows) + "\n")
 
@@ -1122,6 +1128,13 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                                     builder, probe_name, proc_root=proc_root
                                 )
                             )
+                            write_mountinfo("ro", hidden_paths=private_paths[1:])
+                            self.assertFalse(
+                                run_imagebuilder_sandbox.verify_sandbox_context(
+                                    builder, probe_name, proc_root=proc_root
+                                ),
+                                "host credential and external-mount paths must be hidden by tmpfs",
+                            )
                             write_mountinfo("rw")
                             self.assertFalse(
                                 run_imagebuilder_sandbox.verify_sandbox_context(
@@ -1129,6 +1142,14 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                                 ),
                                 "a forged marker in a read-write host root must not be trusted",
                             )
+
+    def test_runner_private_host_mount_arguments_hide_credential_paths(self):
+        expected = [
+            argument
+            for path in ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+            for argument in ("--tmpfs", path)
+        ]
+        self.assertEqual(run_imagebuilder_sandbox._private_host_mount_args(), expected)
 
     def test_runner_resolves_bubblewrap_from_trusted_system_path_only(self):
         cwd = os.path.join(self.temp_dir, "runner-path-cwd")
