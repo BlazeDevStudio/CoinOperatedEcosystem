@@ -31,6 +31,7 @@ struct InterconPeer {
 InterconPreferences interconPref;
 InterconPeer interconPeers[INTERCON_MAX_PEERS]={};
 WiFiUDP interconUdp;
+void interconSecureReceived(const char* data,int len,IPAddress remoteIp);
 bool interconFileSystemReady=false;
 bool interconConfigHealthy=true;
 uint32_t interconLastAdvertised=0, interconLastReconnect=0;
@@ -116,8 +117,14 @@ void interconReceiveDiscovery() {
   const int size=interconUdp.parsePacket();
   if(!size)return;
   if(size>32) {
-    while(interconUdp.available())interconUdp.read();
-    return;
+    if(size>=(int)blaze_peer::MAX_WIRE) {
+      while(interconUdp.available())interconUdp.read();
+      return;
+    }
+    char frame[blaze_peer::MAX_WIRE]={};
+    const int got=interconUdp.read(frame,size);
+    if(got==size)interconSecureReceived(frame,got,interconUdp.remoteIP());
+    return; // Financial, power and CS messages are NEVER accepted here.
   }
   char msg[33]={};
   const int len=interconUdp.read(msg,sizeof(msg)-1);
