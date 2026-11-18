@@ -15,14 +15,14 @@
 #include "InterconCreditLedger.h"
 
 namespace blaze_journal {
-static const size_t IMAGE_BYTES=80;
+static const size_t IMAGE_BYTES=92;
 static const uint32_t MAGIC=0x4A5A4C42UL; // "BLZJ" little endian
 static const uint16_t VERSION=1;
 static const uint32_t ROLE_MASTER=1, ROLE_SLAVE=2;
 struct Binding {
   uint32_t owner;
   uint32_t peer;
-  uint32_t keyTag; // HMAC-derived 32-bit fingerprint, not secret material
+  uint8_t keyTag[16]; // HMAC-derived 128-bit fingerprint, not the secret
   uint32_t role;   // Master or Slave, never Standard
 };
 struct Record {
@@ -66,8 +66,10 @@ inline uint32_t crc32(const uint8_t* bytes,size_t n){
   return ~c;
 }
 inline bool valid(const Record& s){
+  uint8_t tagBits=0;
+  for(uint8_t i=0;i<16;i++)tagBits|=s.bind.keyTag[i];
   if(!s.generation || !s.bind.owner || !s.bind.peer ||
-     s.bind.owner==s.bind.peer || !s.bind.keyTag ||
+     s.bind.owner==s.bind.peer || !tagBits ||
      (s.bind.role!=ROLE_MASTER && s.bind.role!=ROLE_SLAVE))return false;
   if(s.master.pendingSequence>s.master.lastIssued)return false;
   if(s.master.pendingSequence &&
@@ -91,44 +93,44 @@ inline bool encode(const Record& s,uint8_t out[IMAGE_BYTES]){
   w64(out+8,s.generation);
   w32(out+16,s.bind.owner);
   w32(out+20,s.bind.peer);
-  w32(out+24,s.bind.keyTag);
-  w32(out+28,s.bind.role);
-  w64(out+32,s.master.lastIssued);
-  w64(out+40,s.master.pendingSequence);
-  w32(out+48,s.master.pendingSeconds);
-  w64(out+52,s.slave.lastSequence);
-  w64(out+60,s.slave.remainingUnits);
-  w32(out+68,s.slave.paidEventCount);
-  w32(out+72,s.slave.lastSeconds);
-  w32(out+76,crc32(out,76));
+  memcpy(out+24,s.bind.keyTag,16);
+  w32(out+40,s.bind.role);
+  w64(out+44,s.master.lastIssued);
+  w64(out+52,s.master.pendingSequence);
+  w32(out+60,s.master.pendingSeconds);
+  w64(out+64,s.slave.lastSequence);
+  w64(out+72,s.slave.remainingUnits);
+  w32(out+80,s.slave.paidEventCount);
+  w32(out+84,s.slave.lastSeconds);
+  w32(out+88,crc32(out,88));
   return true;
 }
 inline bool decode(const uint8_t* in,size_t len,Record& out){
   if(!in||len!=IMAGE_BYTES ||
      r32(in+0)!=MAGIC || r16(in+4)!=VERSION || r16(in+6)!=0 ||
-     r32(in+76)!=crc32(in,76) ||
-     r32(in+48)>UINT16_MAX || r32(in+72)>UINT16_MAX)return false;
+     r32(in+88)!=crc32(in,88) ||
+     r32(in+60)>UINT16_MAX || r32(in+84)>UINT16_MAX)return false;
   Record result={};
   result.generation=r64(in+8);
   result.bind.owner=r32(in+16);
   result.bind.peer=r32(in+20);
-  result.bind.keyTag=r32(in+24);
-  result.bind.role=r32(in+28);
-  result.master.lastIssued=r64(in+32);
-  result.master.pendingSequence=r64(in+40);
-  result.master.pendingSeconds=(uint16_t)r32(in+48);
+  memcpy(result.bind.keyTag,in+24,16);
+  result.bind.role=r32(in+40);
+  result.master.lastIssued=r64(in+44);
+  result.master.pendingSequence=r64(in+52);
+  result.master.pendingSeconds=(uint16_t)r32(in+60);
   result.slave.authorizedIssuer=result.bind.peer;
-  result.slave.lastSequence=r64(in+52);
-  result.slave.remainingUnits=r64(in+60);
-  result.slave.paidEventCount=r32(in+68);
-  result.slave.lastSeconds=(uint16_t)r32(in+72);
+  result.slave.lastSequence=r64(in+64);
+  result.slave.remainingUnits=r64(in+72);
+  result.slave.paidEventCount=r32(in+80);
+  result.slave.lastSeconds=(uint16_t)r32(in+84);
   if(!valid(result))return false;
   out=result;
   return true;
 }
 inline bool bindingMatches(const Binding& a,const Binding& b){
   return a.owner==b.owner&&a.peer==b.peer&&
-         a.keyTag==b.keyTag&&a.role==b.role;
+         memcmp(a.keyTag,b.keyTag,16)==0&&a.role==b.role;
 }
 inline Recovered inspect(bool haveA,const uint8_t* a,
                          bool haveB,const uint8_t* b,
