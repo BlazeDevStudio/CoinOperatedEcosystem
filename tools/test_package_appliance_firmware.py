@@ -204,6 +204,68 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
+    def test_ensure_staging_directory_rejects_parent_swapped_to_symlink_during_walk(self):
+        staging_root = os.path.join(self.temp_dir, "ensure-staging-root")
+        etc_path = os.path.join(staging_root, "etc")
+        external_dir = os.path.join(self.temp_dir, "operator-owned-directory")
+        os.makedirs(staging_root)
+        os.makedirs(external_dir)
+
+        sentinel_path = os.path.join(external_dir, "operator-owned.txt")
+        with open(sentinel_path, "wb") as fp:
+            fp.write(b"KEEP-OPERATOR-DIRECTORY")
+
+        root_stat = os.stat(staging_root)
+        swapped = {"value": False}
+        original_lstat = os.lstat
+        original_open = os.open
+        original_fstat = os.fstat
+
+        def swap_directory_entry():
+            if swapped["value"]:
+                return
+            os.rmdir(etc_path)
+            os.symlink(external_dir, etc_path, target_is_directory=True)
+            swapped["value"] = True
+
+        def lstat_then_swap(path, *args, **kwargs):
+            result = original_lstat(path, *args, **kwargs)
+            if os.fspath(path) == etc_path:
+                # Reproduce the old mkdir/lstat gap: the returned stat still
+                # describes a directory after its pathname has been replaced.
+                swap_directory_entry()
+            return result
+
+        def open_then_swap(path, flags, mode=0o777, *, dir_fd=None):
+            fd = original_open(path, flags, mode, dir_fd=dir_fd)
+            if os.fspath(path) == "etc" and dir_fd is not None:
+                parent_stat = original_fstat(dir_fd)
+                if (parent_stat.st_dev, parent_stat.st_ino) == (
+                    root_stat.st_dev,
+                    root_stat.st_ino,
+                ):
+                    # The descriptor pins the opened directory while its
+                    # pathname is replaced. A safe walker must detect that
+                    # the directory entry no longer names the opened inode.
+                    swap_directory_entry()
+            return fd
+
+        with mock.patch.object(
+            packager.os, "lstat", side_effect=lstat_then_swap
+        ), mock.patch.object(
+            packager.os, "open", side_effect=open_then_swap
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "Staging directory path changed while opening"
+            ):
+                packager._ensure_staging_directory(staging_root, "etc/config")
+
+        self.assertTrue(swapped["value"])
+        self.assertTrue(os.path.islink(etc_path))
+        self.assertFalse(os.path.lexists(os.path.join(external_dir, "config")))
+        with open(sentinel_path, "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-OPERATOR-DIRECTORY")
+
     def test_write_staging_bytes_rejects_parent_replaced_with_symlink_after_lstat(self):
         staging_root = os.path.join(self.temp_dir, "write-race-staging")
         destination_dir = os.path.join(staging_root, "etc", "config")
