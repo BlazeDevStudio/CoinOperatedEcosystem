@@ -32,6 +32,7 @@ InterconPreferences interconPref;
 InterconPeer interconPeers[INTERCON_MAX_PEERS]={};
 WiFiUDP interconUdp;
 void interconSecureReceived(const char* data,int len,IPAddress remoteIp);
+bool interconMasterReady();
 bool interconFileSystemReady=false;
 bool interconConfigHealthy=true;
 uint32_t interconLastAdvertised=0, interconLastReconnect=0;
@@ -101,9 +102,13 @@ bool saveInterconConfig() {
   return true;
 }
 bool interconLocalCoinsAllowed() {
-  // Master/Slave hardware coin routing is intentionally locked while the
-  // signed credit protocol is unfinished. Standard remains fully standalone.
-  return interconConfigHealthy && csEnabled && interconPref.role==INTERCON_STANDARD;
+  // Standard remains standalone. Slave never accepts local coin pulses.
+  // A Master opens its coin-slot enable ONLY while a signed, bound, paired,
+  // paid-event journal is healthy and there is no unacknowledged event.
+  if(!interconConfigHealthy || !csEnabled)return false;
+  if(interconPref.role==INTERCON_STANDARD)return true;
+  if(interconPref.role==INTERCON_MASTER)return interconMasterReady();
+  return false;
 }
 uint8_t interconPeerCount() {
   const uint32_t now=millis();
