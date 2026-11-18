@@ -1692,6 +1692,93 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
             ],
         )
 
+    def test_communicate_normal_exit_reaps_detached_sandbox_process_group(self):
+        class CompletedProcess:
+            pid = 41011
+
+            def __init__(self):
+                self.communicate_calls = []
+
+            def communicate(self, timeout=None):
+                self.communicate_calls.append(timeout)
+                return "build completed", ""
+
+            def kill(self):
+                raise AssertionError("completed process must not need direct kill")
+
+        process = CompletedProcess()
+        probes = {41011: 0, 41012: 0}
+
+        def fake_killpg(pgid, signum):
+            if signum == 0:
+                probes[pgid] += 1
+                if probes[pgid] >= 2:
+                    raise ProcessLookupError()
+            return None
+
+        with mock.patch.object(
+            run_imagebuilder_sandbox.os, "killpg", side_effect=fake_killpg
+        ) as killpg:
+            with mock.patch("time.sleep") as sleep:
+                (stdout, stderr), blocked = run_imagebuilder_sandbox._communicate_with_timeout(
+                    process, timeout_seconds=10, child_pgid=41012
+                )
+
+        self.assertFalse(blocked, stderr)
+        self.assertEqual(stdout, "build completed")
+        calls = [(call.args[0], call.args[1]) for call in killpg.call_args_list]
+        self.assertIn(
+            (41012, run_imagebuilder_sandbox.signal.SIGTERM),
+            calls,
+            "normal wrapper exit must terminate a detached sandbox child",
+        )
+        self.assertIn(
+            (41012, run_imagebuilder_sandbox.signal.SIGKILL),
+            calls,
+            "detached sandbox child must be killed after the grace period",
+        )
+        self.assertIn(
+            (41012, 0),
+            calls,
+            "runner must confirm the child process group no longer exists",
+        )
+        self.assertTrue(sleep.called, "runner must wait between process-group existence probes")
+
+    def test_communicate_fails_closed_when_detached_group_survives_kill(self):
+        class CompletedProcess:
+            pid = 41021
+
+            def communicate(self, timeout=None):
+                return "build completed", ""
+
+            def kill(self):
+                raise AssertionError("completed process must not need direct kill")
+
+        process = CompletedProcess()
+
+        def persistent_group(pgid, signum):
+            if signum == 0:
+                return None
+            return None
+
+        with mock.patch.object(
+            run_imagebuilder_sandbox.os, "killpg", side_effect=persistent_group
+        ):
+            with mock.patch.object(
+                run_imagebuilder_sandbox, "PROCESS_TERMINATION_GRACE_SECONDS", 0.01
+            ):
+                with mock.patch("time.monotonic", side_effect=[0.0, 1.0]):
+                    with mock.patch("time.sleep"):
+                        (stdout, stderr), blocked = run_imagebuilder_sandbox._communicate_with_timeout(
+                            process, timeout_seconds=10, child_pgid=41022
+                        )
+
+        self.assertTrue(
+            blocked,
+            "a command leader exiting must not hide a surviving sandbox process group",
+        )
+        self.assertIn("sandbox process group", stderr.lower())
+
     def test_runner_rejects_unbounded_build_timeout(self):
         with mock.patch.object(
             sys,
