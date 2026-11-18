@@ -1369,3 +1369,44 @@ These tests establish the requested command arguments and the source-level mount
 Rollback is limited to reverting the two source corrections and their two regression commits together. No profile, firmware, shared API, hardware, financial state, release tag, signer, external operator file or customer device was changed.
 
 PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA and PHX-MASTER independent review remains required. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+## UTC16 — close staging-directory symlink race — 2026-11-18
+
+**Disposition at handover edit:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / EXACT-SOURCE CI PENDING / MANDATORY BUBBLEWRAP HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Finding
+
+`_ensure_staging_directory()` used path-based `mkdir()` followed by `lstat()`. A directory entry could be replaced with a symlink after the stat result but before the next child `mkdir()`. The next path-based operation could then create a configuration directory through the external symlink target. This was inconsistent with the release packager's existing `dir_fd` / `O_NOFOLLOW` file-write and source-copy helpers.
+
+### Test-first evidence
+
+- Regression commit: [`f03fd99a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f03fd99a0ca857fc06f7a1aed9baaa3a4f868941).
+- Exact expected RED: [PR shared run #44344908980](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44344908980), validation job `134944563025`. The new `test_ensure_staging_directory_rejects_parent_swapped_to_symlink_during_walk` failed exactly with `AssertionError: ValueError not raised`. Packaging suite: **100 tests**, two intentional sandbox-only skips, one expected failure. The test creates an operator-owned sentinel and proves the old path-based directory walk does not reject the raced symlink.
+- Case-collision [#44344909114](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44344909114): **SUCCESS**.
+- Mandatory sandbox [#44344908972](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44344908972): **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Host-preflight unit tests **13 PASS**; namespace and mandatory real-bubblewrap packaging tests **SKIPPED**, not passed.
+
+### Source correction
+
+- Source commit: [`2a9d2e98`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2a9d2e98f7d1fd9955ece4a237eb78b0addd9476).
+- `_ensure_staging_directory()` now opens the staging root through the existing no-symlink parent-descriptor walker, creates/opens each child relative to the pinned parent descriptor, and compares the no-follow directory entry's device/inode with `fstat()` on the opened descriptor before continuing. It fails closed on symlink/non-directory entries, path replacement, or unavailable POSIX descriptor primitives.
+- The generated path is still returned for existing callers; subsequent file writes continue to use the separate no-follow descriptor helper. No router profile, network contract, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was changed.
+
+### Exact-source validation pending
+
+Source/test HEAD at this handover edit: `2a9d2e98f7d1fd9955ece4a237eb78b0addd9476`. The source-fix commit had been created, but exact-source Actions had not yet been returned at the time of this handover edit. Do not infer a pass from the expected RED or prior HEAD's green CI. Update this section only after reading the exact commit's run and job results.
+
+### Cross-repository and provenance check
+
+- MASTER #288 exact PR head: `18cd5064f0b0682bb50b8c53b145cb0fd356ea0d`; role assignment keeps PHX-RELEASE on Phoenix-specific build/signing workflows, packaging and manifests. `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; the Experiments workflow route is reimplementation-review, not a copy/move instruction.
+- Experiments #242 head `734b89d9e7792247e8376335c3f3685500ab3f89`; exact current-head Windows run #40882814472 is reported SUCCESS.
+- Experiments #291 head `ed3565395bd70c4de696e49a84f0bb454efebc8b`; exact current-head Windows run #44328674893 is reported SUCCESS; publisher remains SKIPPED. The historical `CHANGE_LEDGER.md` provenance hold remains for MASTER/QA reconciliation.
+- COE integration #26 head `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain QUEUED with no combined integration acceptance.
+- COE parent #31 head/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; prior shared/firmware #44222517238 and case-collision #44222517258 passed; mandatory sandbox #44222517263 failed closed at hosted UID-map permission denial.
+- The exact private Drive registry v11 was not surfaced by the available Library/connector search. Older v6/v7 snapshots were visible but were not substituted. No private Drive identifiers or contents were copied to GitHub.
+
+### Limits and next actions
+
+The new regression and source fix are source-level packaging hardening only. They do not prove a real Bubblewrap mount namespace, network isolation, complete host confidentiality, ImageBuilder binary reproducibility, physical hardware acceptance or production release readiness.
+
+PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA and PHX-MASTER must independently review the exact source/test head. Keep PR #35 OPEN / DRAFT / UNMERGED. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment. **PRODUCTION NO-GO.**
