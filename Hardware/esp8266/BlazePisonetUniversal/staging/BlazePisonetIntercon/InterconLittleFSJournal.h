@@ -15,6 +15,7 @@ class InterconLittleFSJournal : public blaze_durable::Storage {
   }
 public:
   explicit InterconLittleFSJournal(bool mounted):mounted_(mounted){}
+  void setMounted(bool ready) {mounted_=ready;}
   blaze_durable::Read readSlot(uint8_t slot,uint8_t* bytes,size_t max,
                               size_t& count) override {
     count=0;
