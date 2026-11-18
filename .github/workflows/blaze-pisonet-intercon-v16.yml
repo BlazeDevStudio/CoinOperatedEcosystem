@@ -65,7 +65,7 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp8266:esp8266@3.1.2
           arduino-cli lib update-index
-          arduino-cli lib install "TM1637Display"
+          arduino-cli lib install "TM1637"
       - name: Compile V1.6 for NodeMCU v2
         run: |
           arduino-cli compile --warnings all --fqbn esp8266:esp8266:nodemcuv2 \
