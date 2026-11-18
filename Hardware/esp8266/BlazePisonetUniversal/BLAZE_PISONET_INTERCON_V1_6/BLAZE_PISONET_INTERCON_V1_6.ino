@@ -788,6 +788,9 @@ bool saveInterconConfig(const InterconConfig &newConfig){
   interconConfigHealthy=true;
   return true;
 }
+extern bool csEnabled; // Defined in the preserved V1.5 runtime below.
+extern char AP_NAME[33];
+extern char AP_PASSWORD[65];
 inline bool localCoinsAllowed(){return interconConfigHealthy && interconConfig.role==INTERCON_STANDARD && csEnabled;}
 
 IPAddress interconBroadcastIP(){
@@ -931,6 +934,8 @@ String uploadMessage = "No upload received";
 
 // Non-blocking chime scheduler
 enum class ChimeKind : uint8_t { None, Welcome, Coin, NearEnd, Timeout, Manual };
+// Explicit prototype required by Arduino sketch auto-prototype generation.
+void queuePattern(const std::vector<int>& freqs, const std::vector<int>& durs, ChimeKind kind);
 enum class ChimeSource : uint8_t { None, Ram, Progmem };
 
 std::vector<int> chimeFreqs;
