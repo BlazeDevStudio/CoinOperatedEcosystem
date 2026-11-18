@@ -174,17 +174,10 @@ def _communicate_with_timeout(
 
 
 def _is_within_trusted_system_directories(path: str) -> bool:
-    resolved = os.path.realpath(path)
-    if not os.path.isabs(resolved) or not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+    candidate = os.path.abspath(path)
+    if os.path.dirname(candidate) not in ("/usr/bin", "/bin"):
         return False
-    for directory in ("/usr/bin", "/bin"):
-        trusted = os.path.realpath(directory)
-        try:
-            if os.path.commonpath((resolved, trusted)) == trusted:
-                return True
-        except ValueError:
-            continue
-    return False
+    return os.path.isfile(candidate) and os.access(candidate, os.X_OK)
 
 
 def _has_single_id_mapping(path: str) -> bool:
@@ -325,7 +318,7 @@ def main() -> int:
     bwrap_candidate = shutil.which("bwrap", path=TRUSTED_BWRAP_PATH)
     if not bwrap_candidate:
         return blocked("bubblewrap is required in trusted system directories")
-    bwrap = os.path.realpath(bwrap_candidate)
+    bwrap = os.path.abspath(bwrap_candidate)
     if not _is_within_trusted_system_directories(bwrap):
         return blocked("bubblewrap resolved outside trusted system directories")
 
