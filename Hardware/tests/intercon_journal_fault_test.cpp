@@ -11,7 +11,7 @@ struct Flash {
   uint8_t slot[2][IMAGE_BYTES]={};
   bool present[2]={false,false};
   bool failWrite=false,failRename=false,failPostRename=false;
-  Binding expected={0xAABBCCDD,0x11223344,0x37B91362,ROLE_SLAVE};
+  Binding expected={0xAABBCCDD,0x11223344,{0x37,0xB9,0x13,0x62,0xF7,0x1B,0xD0,0xA0,0x82,0x83,0x77,0x21,0x9B,0x38,0x41,0xA6},ROLE_SLAVE};
   Recovered current={};
   void recover(){
     current=inspect(present[0],slot[0],present[1],slot[1],expected);
@@ -80,9 +80,9 @@ int main(){
   assert(memcmp(initial,d.slot[1],IMAGE_BYTES)==0);
   // A swapped role, key or peer ID must fail before any money is accepted.
   d.expected.role=ROLE_MASTER;d.recover();expect(d.current.status,Status::Mismatch);
-  d.expected.role=ROLE_SLAVE;d.expected.keyTag^=1;d.recover();
+  d.expected.role=ROLE_SLAVE;d.expected.keyTag[0]^=1;d.recover();
   expect(d.current.status,Status::Mismatch);
-  d.expected.keyTag^=1;d.recover();expect(d.current.status,Status::Healthy);
+  d.expected.keyTag[0]^=1;d.recover();expect(d.current.status,Status::Healthy);
 
   // Master records pending paid event BEFORE any send. Power cut before rename.
   d.expected.role=ROLE_MASTER;d.present[0]=d.present[1]=false;
