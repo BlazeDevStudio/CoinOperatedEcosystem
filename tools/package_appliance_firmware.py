@@ -187,22 +187,98 @@ def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool =
 
 
 def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
-    """Create a real directory chain beneath staging without traversing copied symlinks."""
-    current = staging_dir
-    for component in relative_path.split("/"):
+    """Create staging directories through pinned descriptors without following links."""
+    components = relative_path.split("/")
+    for component in components:
         if component in ("", ".", ".."):
             raise ValueError(f"Invalid staged directory component: {component!r}")
-        current = os.path.join(current, component)
+
+    if (
+        os.mkdir not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+    ):
+        raise OSError(
+            "Safe staged directory creation requires POSIX dir_fd mkdir/stat support"
+        )
+
+    staging_root = os.path.abspath(staging_dir)
+    root_parent_fd = -1
+    current_fd = -1
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        root_parent_fd, root_name = _open_parent_directory_without_symlink_parents(
+            staging_root,
+            "Staging root",
+            "Safe staged directory creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staging root directory name",
+        )
         try:
-            os.mkdir(current)
-        except FileExistsError:
-            pass
-        mode = os.lstat(current).st_mode
-        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-            raise ValueError(
-                f"Refusing symlink or non-directory in staged configuration path: {current}"
-            )
-    return current
+            current_fd = os.open(root_name, directory_flags, dir_fd=root_parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staging root path contains a symlink or non-directory: {staging_root}"
+                ) from exc
+            raise
+
+        root_entry = os.stat(root_name, dir_fd=root_parent_fd, follow_symlinks=False)
+        root_opened = os.fstat(current_fd)
+        if not stat.S_ISDIR(root_entry.st_mode) or (
+            root_entry.st_dev,
+            root_entry.st_ino,
+        ) != (root_opened.st_dev, root_opened.st_ino):
+            raise ValueError(f"Staging root path changed while opening: {staging_root}")
+
+        os.close(root_parent_fd)
+        root_parent_fd = -1
+        current_path = staging_root
+
+        for component in components:
+            try:
+                os.mkdir(component, 0o755, dir_fd=current_fd)
+            except FileExistsError:
+                pass
+
+            try:
+                next_fd = os.open(component, directory_flags, dir_fd=current_fd)
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise ValueError(
+                        "Refusing symlink or non-directory in staged configuration path: "
+                        f"{os.path.join(current_path, component)}"
+                    ) from exc
+                raise
+
+            try:
+                entry_stat = os.stat(
+                    component,
+                    dir_fd=current_fd,
+                    follow_symlinks=False,
+                )
+                opened_stat = os.fstat(next_fd)
+                if not stat.S_ISDIR(entry_stat.st_mode) or (
+                    entry_stat.st_dev,
+                    entry_stat.st_ino,
+                ) != (opened_stat.st_dev, opened_stat.st_ino):
+                    raise ValueError(
+                        "Staging directory path changed while opening: "
+                        f"{os.path.join(current_path, component)}"
+                    )
+            except Exception:
+                os.close(next_fd)
+                raise
+
+            os.close(current_fd)
+            current_fd = next_fd
+            current_path = os.path.join(current_path, component)
+
+        return current_path
+    finally:
+        if current_fd >= 0:
+            os.close(current_fd)
+        if root_parent_fd >= 0:
+            os.close(root_parent_fd)
 
 
 def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
