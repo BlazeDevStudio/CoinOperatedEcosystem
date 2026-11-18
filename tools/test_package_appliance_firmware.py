@@ -117,6 +117,22 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 ):
                     generate_network_uci(profile)
 
+    def test_generate_network_uci_rejects_duplicate_isolation_vlans(self):
+        duplicate_pairs = [
+            ("lan", "guest"),
+            ("lan", "vendo"),
+            ("guest", "vendo"),
+        ]
+        for first, second in duplicate_pairs:
+            with self.subTest(first=first, second=second):
+                profile = load_profile("ew1200g-pro")
+                vlan_ids = profile["networking"]["default_vlan_ids"]
+                vlan_ids[second] = vlan_ids[first]
+                with self.assertRaisesRegex(
+                    ValueError, "LAN, guest, and vendo VLAN IDs must be distinct"
+                ):
+                    generate_network_uci(profile)
+
     def test_generate_network_uci_orangepi(self):
         p = load_profile("orangepi-r1-plus-lts")
         uci = generate_network_uci(p)
