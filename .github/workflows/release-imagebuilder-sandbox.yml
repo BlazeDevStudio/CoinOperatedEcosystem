@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - integration/ecosystem-nonproprietary-candidate-20261111
+      - phoenix/release-imagebuilder-failclosed-20261115
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
@@ -15,6 +16,7 @@ on:
   push:
     branches:
       - phoenix/release-imagebuilder-failclosed-20261115
+      - phoenix/release-build-script-publication-safety-20261117
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"

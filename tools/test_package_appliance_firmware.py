@@ -489,15 +489,28 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             test_env = env.copy()
             test_env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
             test_env["PHX_BWRAP_OWNER_PROBE"] = probe_name
+            command = ["sh", wrapper_path]
             try:
-                return subprocess.run(
-                    ["sh", wrapper_path],
+                process = subprocess.Popen(
+                    command,
                     cwd=cwd_path,
                     env=test_env,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    check=False,
+                    start_new_session=True,
                 )
+                (stdout, stderr), timed_out = run_imagebuilder_sandbox._communicate_with_timeout(
+                    process, timeout_seconds
+                )
+                if timed_out:
+                    timeout_message = (
+                        f"RELEASE-BLOCKED: generated wrapper exceeded its "
+                        f"{timeout_seconds}s test timeout"
+                    )
+                    stderr = "\n".join(part for part in (stderr, timeout_message) if part)
+                    return subprocess.CompletedProcess(command, 124, stdout, stderr)
+                return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
             finally:
                 if os.path.lexists(probe_path):
                     os.unlink(probe_path)
@@ -546,7 +559,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                                image_symlink_subpath=None,
                                image_symlink_dir_subpath=None,
                                preexisting_image_symlink=False,
-                               symlinked_output_dir=False):
+                               symlinked_output_dir=False,
+                               timeout_seconds=60,
+                               sleep_seconds=None,
+                               timeout_marker=None):
         """Execute a generated wrapper against a disposable local Makefile."""
         profile = load_profile("gl-mt1300")
         stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
@@ -595,6 +611,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             with open(external_image, "wb") as fp:
                 fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
             recipe += '\t@ln -s ' + shlex.quote(external_dir) + ' ' + image_symlink_dir_subpath + '\n'
+        if sleep_seconds is not None:
+            if isinstance(sleep_seconds, bool) or not isinstance(sleep_seconds, int) or sleep_seconds < 1:
+                raise ValueError("sleep_seconds must be a positive integer")
+            if not timeout_marker:
+                raise ValueError("timeout_marker is required for the timeout fixture")
+            recipe += (
+                f'\t@sleep {sleep_seconds}; printf "late" > {shlex.quote(timeout_marker)}\n'
+            )
+
         with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
 
@@ -622,7 +647,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
-        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+        result = self._run_generated_wrapper(
+            wrapper, self.temp_dir, env, timeout_seconds=timeout_seconds
+        )
         return result, fake_builder, wrapper, stage_absolute
 
     def test_generated_wrapper_routes_operator_invocation_through_unprivileged_runner(self):
@@ -694,6 +721,29 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(runner_args[runner_args.index("--wrapper") + 1], wrapper)
         self.assertFalse(os.path.exists(sudo_called_path), "operator entrypoint must never invoke sudo")
         self.assertFalse(os.path.exists(image_path), "operator Makefile must not run outside the sandbox")
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_mock_execution_enforces_timeout_and_kills_child_group(self):
+        marker_path = os.path.join(self.temp_dir, "late-make-completion")
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            timeout_seconds=1,
+            sleep_seconds=3,
+            timeout_marker=marker_path,
+        )
+
+        self.assertEqual(result.returncode, 124, result.stderr + result.stdout)
+        self.assertIn(
+            "RELEASE-BLOCKED: generated wrapper exceeded its 1s test timeout",
+            result.stderr,
+        )
+        self.assertFalse(
+            os.path.exists(marker_path),
+            "A timed-out Makefile child must not continue after the test returns",
+        )
+        self.assertFalse(
+            os.path.lexists(os.path.join(builder, ".phx-test-owner-probe")),
+            "The test ownership probe must be removed after timeout",
+        )
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
     def test_generated_wrapper_denies_missing_target_images(self):
@@ -1035,6 +1085,32 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertFalse(os.path.lexists(staging_dest))
 
 
+
+    def test_stage_overlay_rejects_symlinked_output_parent_without_external_creation(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-parent-source")
+        os.makedirs(source_rootfs)
+        with open(os.path.join(source_rootfs, "source-marker.txt"), "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        external_parent = os.path.join(self.temp_dir, "operator-owned-parent")
+        os.makedirs(external_parent)
+        sentinel = os.path.join(external_parent, "operator-data.txt")
+        with open(sentinel, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-DATA")
+
+        parent_link = os.path.join(self.temp_dir, "staging-parent-link")
+        os.symlink(external_parent, parent_link, target_is_directory=True)
+        requested_staging = os.path.join(parent_link, "generated-overlay")
+
+        with self.assertRaisesRegex(ValueError, "Staging destination parent path contains a symlink"):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, requested_staging)
+
+        self.assertTrue(os.path.islink(parent_link))
+        self.assertFalse(os.path.lexists(os.path.join(external_parent, "generated-overlay")))
+        with open(sentinel, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
+        with open(os.path.join(source_rootfs, "source-marker.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "SOURCE-PRESERVED")
 
     def test_stage_overlay_does_not_chmod_external_directory_symlink_target(self):
         # copytree preserves directory symlinks. Permission normalization must

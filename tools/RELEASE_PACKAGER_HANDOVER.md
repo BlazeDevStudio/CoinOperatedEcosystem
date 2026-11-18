@@ -788,3 +788,105 @@ The new preflight proves only that the host can create the required user namespa
 The invalid \`fd00:db8:blaze::/48\` remains a separate MASTER/CORE P0. Master’s UTC19 audit requires an installation/site-scoped RFC 4193 /48 that remains durable across reboot/upgrade/restore and is shared by devices on the same LAN; no prefix is guessed and no profile/interface change is made before the CORE/MASTER contract is approved. Canonical private Drive registry v11 remains inaccessible through the exposed Library surface; no v3–v7 substitute is used. COE #26 remains draft with eight queued workflows and zero completed jobs; MASTER #288 has no current-head workflow runs. No independent PHX-QA review is recorded on #31.
 
 No merge, signing, publication, real OpenWrt firmware admission, hardware flash, payment migration or customer deployment occurred. No physical acceptance is established: 150 power cuts and 30-device/24-hour soak remain NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE 2026-11-18 UTC00 — bound synthetic ImageBuilder wrapper invocations
+
+**Disposition: TEST-FIRST RED REPRODUCED / MOCK EXECUTION PROCESS-GROUP TIMEOUT FIXED / SOURCE-HEAD SHARED CI + BOTH BOARD COMPILES PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP HOST PREFLIGHT STILL BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on \`phoenix/release-imagebuilder-failclosed-20261115\`, based on integration #26 at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`.
+
+### Defect and scope
+
+The test helper \`TestPackageApplianceFirmware._run_generated_wrapper()\` accepted \`timeout_seconds\`, but the non-\`PHX_REQUIRE_BWRAP\` mock-execution branch called \`subprocess.run()\` without applying that timeout. A stalled synthetic Makefile could therefore hold the shared CI test process until the outer workflow timeout. The real sandbox branch already passed its timeout to \`run_imagebuilder_sandbox.py\`; this change aligns the non-sandbox mock branch with the same bounded execution contract.
+
+Only \`tools/test_package_appliance_firmware.py\` changed. No production packager, sandbox runner, firmware, profile, shared contract, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source changed.
+
+### Test-first progression
+
+- Initial test commit [\`a2d7ab8f\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a2d7ab8f33b5320ecdf0e01b5f96ee5c026b2a1b) had a fixture-ordering mistake: the sleep recipe was appended after the Makefile had been written. Shared run [#44206073239](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206073239) failed at the target-directory assertion, so this run is **test-authoring failure, not product evidence**. The separate sandbox run [#44206073161](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206073161) failed at the existing hosted UID-map preflight; case-collision [#44206073160](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206073160) passed.
+- Fixture correction [\`8d4ed816\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8d4ed81611896f239ad12374cc9b875c66c1f301) moved the bounded sleep/late-marker recipe before the Makefile write.
+- Corrected test-first RED: shared run [#44206156044](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206156044) failed at the new assertion because the mock helper waited for the 3-second Makefile recipe and returned the later missing-image error instead of timeout status 124. The suite ran 77 tests with one expected new failure and two intentional sandbox-only skips. Sandbox [#44206156052](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206156052) remained blocked at host UID-map setup; case-collision [#44206156078](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206156078) passed.
+- Source correction [\`46e0d55e\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/46e0d55e1ccf9aa4646295f7201c50284c7c4518) starts the mock wrapper in its own session and uses the existing release runner's process-group timeout/termination helper. A timeout returns synthetic status 124 with a \`RELEASE-BLOCKED\` message; the test asserts the late marker is not written and the ownership probe is removed. The real bubblewrap runner path is unchanged.
+
+### Exact source/test-head Actions at \`46e0d55e\`
+
+- Shared/hardware [#44206299623](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206299623): **COMPLETED SUCCESS**. Firmware-hardening/shared validation passed; Python suite **77 tests, 2 intentional sandbox-only skips**; all 10 appliance profiles passed; ESP8266 compile/artifact upload passed; ESP32 compile/artifact upload passed. The new timeout regression passed.
+- Case-collision [#44206299677](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206299677): **COMPLETED SUCCESS**.
+- Mandatory sandbox [#44206299772](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44206299772): **FAILED CLOSED AT HOST PREFLIGHT** with \`bwrap: setting up uid map: Permission denied\`, exit 125. The sandbox-dependent packaging regression suite was **SKIPPED**. This is a hosted-runner capability blocker, not a source-test failure or sandbox acceptance.
+
+The ESP32/ESP8266 compile outputs are synthetic CI artifacts for the existing Hardware workflow; they are not release-approved target images, physical hardware evidence, or production packages. No ImageBuilder firmware image was built or admitted by this task.
+
+### Current coordination / remaining gates
+
+- MASTER #288: \`phoenix/master-coordination@f657a177e17b61e54dc507984c551cfc65a9f10a\`, OPEN/DRAFT; 64 changed paths remain under \`coordination/phoenix/\`. \`OWNERSHIP_ROUTES.json\` remains \`DRAFT_REVIEW_ONLY\`; the PHX-RELEASE workflow route is reimplementation-review, not a copy/move authorization.
+- Experiments #242: \`734b89d9e7792247e8376335c3f3685500ab3f89\`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) handover/build SUCCESS.
+- Experiments #291: \`a74b8b940fba3aa8651f1a9ee8bbf23cf112726e\`; Windows run [#44199987756](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44199987756) handover/build SUCCESS; write-privileged publisher SKIPPED. No independent submitted reviews were returned for #291.
+- COE integration #26 remains OPEN/DRAFT at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`; five PR-triggered workflows are QUEUED with zero jobs returned. No combined integration acceptance.
+- No independent PHX-QA review was returned for COE #31.
+- The invalid \`fd00:db8:blaze::/48\` remains blocked on the MASTER/CORE installation-scoped RFC 4193 ULA contract; PHX-RELEASE did not invent a replacement.
+- The canonical private Drive registry v11 remains unavailable through the exposed Library/connector surface; no older snapshot was substituted and no private identifiers or contents were published.
+
+**Next:** PHX-QA independently reviews the timeout test at \`46e0d55e\`; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for the mandatory sandbox suite; MASTER/CORE resolve durable site-scoped ULA provisioning. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE 2026-11-18 UTC01 — reject symlinked staging-output parents
+
+**Disposition: TEST-FIRST RED REPRODUCED / PACKAGER FIX COMMITTED / SOURCE-HEAD SHARED VALIDATION PASS / CASE-COLLISION PASS / BOARD COMPILES IN PROGRESS AT HANDOVER / MANDATORY BUBBLEWRAP PREFLIGHT HOST-BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on `phoenix/release-imagebuilder-failclosed-20261115`, based on integration #26 at `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+### Defect and bounded correction
+
+`stage_overlay()` rejected an existing requested destination, but then called `os.path.realpath()` on a not-yet-existing destination. If an operator-selected parent component was a symlink, the resolved path pointed into the symlink target and `copytree()` created the new staging tree there instead of refusing the ambiguous path.
+
+The correction checks that the requested absolute parent path equals its resolved real path before any copy, rejects a symlinked parent with `ValueError`, and retains the already-validated requested destination path rather than replacing it with a resolved target. Existing output, source/output overlap and staged-content symlink protections are unchanged. No external path is created or deleted on rejection.
+
+Only these release-owned files changed in the source/test stack:
+- `tools/test_package_appliance_firmware.py`
+- `tools/package_appliance_firmware.py`
+
+### Test-first progression
+
+- Test-first regression [`b241e868`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b241e8686ec60b39ed7cbf5bcb2c1f040b5b4a6f) creates an external operator-owned parent with a sentinel, symlinks the requested staging parent to it, and requires rejection before staging creation. It also asserts the symlink, sentinel and source marker remain unchanged.
+- Exact RED: PR shared validation [#44213469913](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213469913) and push shared validation [#44213465845](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213465845) both **FAILED at the new assertion**: `AssertionError: ValueError not raised`. Each run executed 78 packaging/tool tests with one expected failure and two intentional sandbox-only skips. ESP8266/ESP32 compile jobs were **SKIPPED** after the validation failure. Case-collision [#44213469942](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213469942) **PASS**.
+- Source correction [`2d6d80fe`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2d6d80feb3208d03d0dda8be3d13ba31e0d10371) adds the parent-path rejection before `copytree()`; no other subsystem or shared interface changed.
+
+### Exact source/test-head CI at `2d6d80fe`
+
+- PR shared/hardware [#44213536857](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213536857): validation job **SUCCESS**. The packaging/tool suite ran **78 tests, 2 intentional sandbox-only skips**, including the new symlink-parent regression; firmware-hardening and shared-contract test groups passed; all **10/10** appliance profile staging validations passed. ESP8266 and ESP32 compile jobs were **IN PROGRESS** at handover preparation and are not credited as passed.
+- Push shared/hardware [#44213529806](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213529806): validation job **SUCCESS** with the same 78-test / 2-skip result and 10/10 profile staging. ESP8266 and ESP32 compile jobs were **IN PROGRESS** at handover preparation.
+- Case-collision [#44213536850](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213536850): **COMPLETED SUCCESS**.
+- Mandatory sandbox [#44213536824](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213536824): **FAILED CLOSED AT HOST PREFLIGHT**. Seven host-preflight tests passed; the actual unprivileged bubblewrap probe returned `bwrap: setting up uid map: Permission denied`, exit 125. Sandbox-dependent packaging regressions were not run. This is not sandbox acceptance.
+
+Board compile jobs are firmware source compilation only, not approved OpenWrt ImageBuilder appliance images or physical hardware acceptance. No real ImageBuilder binary, signed package, hardware flash, power-cut test or device soak was performed.
+
+### Current coordination / remaining gates
+
+- MASTER #288: `phoenix/master-coordination@583a2053cc29825b63ead1b614192331d78fd730`, OPEN/DRAFT. Its routing manifest remains `DRAFT_REVIEW_ONLY`; the release workflow route is reimplementation-review, not copy/move authorization.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) handover/build SUCCESS.
+- Experiments #291: `a74b8b940fba3aa8651f1a9ee8bbf23cf112726e`; Windows run [#44199987756](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44199987756) handover/build SUCCESS; write-privileged publisher SKIPPED. No independent submitted QA review was returned.
+- COE integration #26 remains OPEN/DRAFT at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR-triggered workflows remain QUEUED with no jobs returned. No combined integration acceptance.
+- No independent PHX-QA review was returned for COE #31.
+- The invalid `fd00:db8:blaze::/48` remains a MASTER/CORE P0; PHX-RELEASE did not change network configuration or invent a replacement.
+- Canonical private Drive registry v11 remains unavailable through the exposed Library/connector surface. No older snapshot was substituted and no private identifiers or contents were published.
+
+**Next:** obtain independent PHX-QA review of the staging-parent regression and source fix; finish/inspect terminal board compile jobs; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for the mandatory sandbox suite; MASTER/CORE resolve durable site-scoped ULA provisioning. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
+
+## 2026-11-18 UTC02 — child release PR sandbox trigger coverage
+
+**Owner / scope:** PHX-RELEASE only; existing COE release-packager PR #31 and stacked child PR #35. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was changed.
+
+**MASTER coordination:** the live #172 control-plane reconciliation at MASTER draft #288 head `650c6e5991ed8ba30d82dd98216316b3ae3a3780` identified child PR #35 at `61e2d8ef77e5cd3740ab9e630e5bfcc1994b7d09`, based on the old #31 head `7bdba18b86f706d7fb96831094338600e28cc9c5`, while current #31 was `20e75fc0e6fb7e7ada560a9ec41cb9695d198fa8`. The child branch had two commits ahead and seven behind, with overlapping release-owned packager/test files.
+
+**Verified child change already present:** #35 adds a fail-closed generated-script publication correction. It creates the script non-executable (0600), writes and flushes the complete content, fsyncs the descriptor, then publishes 0755 with fchmod. A simulated partial-write regression requires the partial file to remain non-executable. Exact child-head shared CI [#44180549950](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44180549950) passed 77 packaging/tool tests with two intentional sandbox-only skips; ESP32 and ESP8266 compile jobs passed. This is CI evidence, not physical or production acceptance.
+
+**New CI trigger defect reproduced and corrected on parent #31:**
+- Test-first commit [`3db49ce1a1b1e9d8a23cf2803cb580b1c3b051bc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3db49ce1a1b1e9d8a23cf2803cb580b1c3b051bc) added `test_workflow_triggers_for_release_child_branch`.
+- Exact RED [#44222148410](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222148410): shared validation failed only at the new missing-base-branch assertion; 79 tests ran, one failed, two intentional skips. The mandatory sandbox workflow also failed at the same unit-test assertion before the real host probe; packaging regressions were skipped.
+- First workflow edit [`b9fa5c9d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b9fa5c9da2416bc944b8b91145a75343c40d1076) put the child branch in the wrong trigger section; exact validation [#44222257690](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222257690) caught the remaining push-filter assertion failure. This was an implementation-placement failure, not a product regression.
+- Corrected workflow commit [`f56bdf60`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f56bdf609632d3e096684a2d1873dd12c3cdeb02) now runs the mandatory sandbox for PRs targeting the release parent branch and pushes to the child branch. The token remains `contents: read`; no permission or sandbox fallback was added.
+
+**Corrected parent-head CI:** shared validation [#44222357808](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222357808) passed the 79-test tools suite, shared contracts, firmware-hardening and 10/10 profile staging validation. ESP32/ESP8266 compile jobs were still running at handover authoring. Case-collision [#44222357680](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222357680) passed. Mandatory sandbox PR [#44222357646](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222357646) and push [#44222351423](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222351423) passed the host unit tests and non-root identity check, then failed closed at the real namespace probe with `bwrap: setting up uid map: Permission denied`; packaging regressions were skipped. This remains an infrastructure blocker, not sandbox acceptance.
+
+**Next exact action:** reconcile current parent #31 into child #35 without force-pushing, preserve the child publication-safety fix, and verify PR/push sandbox workflows on the resulting exact child head. Expect the hosted-runner UID-map blocker to remain until an authorized disposable, no-secret user-namespace runner is supplied. Do not weaken the boundary or claim packaging regressions passed in the blocked sandbox job.

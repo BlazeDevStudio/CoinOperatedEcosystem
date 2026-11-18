@@ -127,5 +127,22 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertIn("not found", detail.lower())
 
 
+    def test_workflow_triggers_for_release_child_branch(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        pull_request_section = workflow.split("  pull_request:", 1)[1].split("  push:", 1)[0]
+        push_section = workflow.split("  push:", 1)[1].split("  workflow_dispatch:", 1)[0]
+        self.assertIn(
+            "      - phoenix/release-imagebuilder-failclosed-20261115",
+            pull_request_section,
+            "the mandatory sandbox must run when a release child PR targets the packager branch",
+        )
+        self.assertIn(
+            "      - phoenix/release-build-script-publication-safety-20261117",
+            push_section,
+            "the mandatory sandbox must run on the release child branch after reconciliation",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
