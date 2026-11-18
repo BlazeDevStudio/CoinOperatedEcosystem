@@ -1074,3 +1074,45 @@ This is a release-owned CI maintenance correction on the existing child PR #35. 
 - Case-collision [#44258725104](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258725104): **SUCCESS**.
 - Mandatory sandbox [#44258724895](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258724895): **FAILED CLOSED** after all 9 host-preflight unit tests passed, including the new action-pin regression. The actual bubblewrap UID-map probe failed with `Permission denied`; mandatory packaging regressions were skipped.
 - This addendum is documentation-only; the exact source/test SHA remains `5fe815f9e985bf2280b05fb189598826c68a7be6`. CI firmware artifacts are synthetic outputs, not approved target binaries or physical acceptance.
+
+## UTC09 — reap detached ImageBuilder sandbox process groups — 2026-11-18
+
+**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / EXACT SOURCE-TEST SHARED CI PASS / 10 OF 10 PROFILES PASS / ESP32 + ESP8266 CI COMPILE AND ARTIFACT UPLOAD PASS / CASE-COLLISION PASS / REAL BWRAP HOST PREFLIGHT STILL BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Defect
+
+The runner previously returned success when the ImageBuilder shell leader exited normally without checking whether a detached descendant remained in the per-invocation sandbox process group. The timeout path attempted group termination, but a normal leader exit bypassed that cleanup. A surviving descendant could therefore continue writing inside the writable ImageBuilder bind after the wrapper had returned.
+
+### Test-first and correction history
+
+- Test-first regression commit [`bd953dca`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bd953dca37a6a905e0d2c89c700bed6c21f4e453) adds two synthetic unit regressions: normal leader exit must terminate and wait for a detached child group; a group that remains after SIGKILL must fail closed.
+- Expected RED [#44274660873](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44274660873): packaging validation ran 87 tests and failed exactly at the two new assertions; the existing tests passed, with two intentional sandbox-only skips. ESP32/ESP8266 matrix jobs were skipped after validation failed. Case-collision [#44274671560](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44274671560) passed.
+- Source correction [`79cd7480`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/79cd748029aecb536caa2e3bcca945948b8e1f25) now terminates and polls both the outer bubblewrap group and inner sandbox child group after normal completion and timeout. It waits for group disappearance within a bounded grace period and fails closed if SIGKILL cannot be confirmed or any group remains.
+- Test mock adjustment [`59f88f5b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/59f88f5bd8568220b73d061a527b518f9b67c787) models already-reaped process groups in the timeout test.
+- Deterministic timeout-clock correction [`233a9add`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/233a9adde1f51e73ff5b228d59e058900430d73c) fixes an intermediate test-harness `StopIteration`; it does not change runner behavior.
+
+### Exact source/test-head evidence
+
+Source/test HEAD: `233a9adde1f51e73ff5b228d59e058900430d73c`.
+
+- Push shared/firmware [#44275038491](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44275038491): **SUCCESS**. Packaging/tool suite 87 tests, two intentional sandbox-only skips; both new process-group regressions PASS; all 10 appliance profiles PASS; ESP8266 and ESP32 compile and artifact-upload jobs both PASS.
+- PR shared/firmware [#44275051365](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44275051365): **SUCCESS**, same exact head; validation and both board compile/upload jobs PASS.
+- PR case-collision [#44275051357](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44275051357): **SUCCESS**.
+- An intermediate push run [#44274944632](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44274944632) failed in the newly added test's mocked clock because its finite `side_effect` was exhausted. The test clock was made deterministic in `233a9add`; final exact-head push and PR shared runs above passed.
+
+### Mandatory real bubblewrap boundary remains unaccepted
+
+- Push sandbox [#44275038819](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44275038819): **FAILED CLOSED**.
+- PR sandbox [#44275051408](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44275051408): **FAILED CLOSED**.
+- Host-preflight unit tests: 9/9 PASS; unprivileged identity checks PASS.
+- Actual bubblewrap user-namespace probe: FAIL, `bwrap: setting up uid map: Permission denied`, exit 125.
+- Mandatory `PHX_REQUIRE_BWRAP=1` packaging regressions were SKIPPED, not passed. The two new regressions are synthetic unit tests in the shared CI suite; they do not establish real bubblewrap sandbox acceptance.
+
+### Current stack and next owner action
+
+- Child PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35) remains OPEN / DRAFT / UNMERGED, stacked on parent #31 at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Exact source/test HEAD: `233a9adde1f51e73ff5b228d59e058900430d73c`; documentation update follows as a separate commit.
+- Only release-owned runner, release packaging tests and this handover are in scope. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed.
+- Next: PHX-QA independently reviews normal-exit/timeout group cleanup; infrastructure owner provides an authorized disposable, no-secret runner with unprivileged user namespaces and reruns the mandatory sandbox tests at the latest exact head.
+
+No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. CI board artifacts are synthetic build outputs, not approved target binaries or physical acceptance. **PRODUCTION NO-GO.**
