@@ -144,6 +144,30 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         )
 
 
+    def test_workflow_requires_existing_bubblewrap_without_privileged_install(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        bootstrap_section = workflow.split(
+            "      - name: Checkout exact PR head", 1
+        )[1].split("      - name: Run sandbox host preflight unit tests", 1)[0]
+        self.assertIn(
+            "command -v bwrap",
+            bootstrap_section,
+            "sandbox workflow must fail closed when bubblewrap is unavailable",
+        )
+        self.assertIn("bwrap --version", bootstrap_section)
+        self.assertNotRegex(
+            bootstrap_section,
+            r"\\bsudo\\s+apt-get\\b",
+            "sandbox workflow must not install runtime dependencies with sudo",
+        )
+        self.assertNotIn(
+            "apt-get install",
+            bootstrap_section,
+            "sandbox workflow must not mutate the hosted runner before the NO-GO preflight",
+        )
+
+
     def test_workflow_uses_immutable_node24_checkout_action(self):
         with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
             workflow = fp.read()
