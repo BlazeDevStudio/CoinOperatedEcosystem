@@ -12,7 +12,7 @@ struct FakeFlash {
   static bool read(void*ctx,char c,uint8_t out[RECORD_SIZE],size_t&actual){
     auto& f=*static_cast<FakeFlash*>(ctx);
     const int n=index(c);if(n<0||f.fault==ReadFault)return false;
-    actual=f.slot[n].exists?f.slot[n].length:0;
+    actual=f.slot[n].exists?(f.slot[n].length?f.slot[n].length:1):0;
     if(actual==RECORD_SIZE)memcpy(out,f.slot[n].bytes,RECORD_SIZE);
     return true;
   }
@@ -101,6 +101,10 @@ int main(){
   Journal wrongKind(fs.port(),Kind::Master);
   assert(wrongKind.recover()==Status::WrongKind);
 
+  FakeFlash zero={};
+  zero.slot[0].exists=true;zero.slot[0].length=0;
+  Journal absentOrCorrupt(zero.port(),Kind::Slave);
+  assert(absentOrCorrupt.recover()==Status::Corrupt);
   FakeFlash mf={};
   Journal master(mf.port(),Kind::Master);
   assert(master.recover()==Status::Empty);
