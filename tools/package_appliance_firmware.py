@@ -58,23 +58,8 @@ ULA_FIRSTBOOT_FILENAME = "99-blazepwifi-ula-prefix"
 
 
 def generate_ula_firstboot_script() -> str:
-    """Generate the target-side, one-time installation ULA provisioner.
-
-    Generic hardware images deliberately carry no site ULA.  OpenWrt runs
-    /etc/uci-defaults before normal network services and removes a default only
-    after success, so a failed validation or persistence attempt remains
-    visible for remediation instead of silently generating a replacement.
-    """
-    return """#!/bin/sh
-# Installation-scoped RFC 4193 ULA provisioner.
-# A generic image must never share a site identity across independent installs.
-
-log_error() {
-    logger -t blazepwifi-ula -- "$*" 2>/dev/null || true
-}
-
-is_valid_ula_prefix() {
-    printf '%s\\n' "$1" | grep -Eq '^fd[0-9a-f]{2}:[0-9a-f]{4}:[0-9a-f]{4}::/48
+    """Generate the target-side one-time, installation-scoped ULA provisioner."""
+    return "\n".join(["#!/bin/sh","# Installation-scoped RFC 4193 ULA provisioner.","# A generic image must never share a site identity across independent installs.","","log_error() {","    logger -t blazepwifi-ula -- \"$*\" 2>/dev/null || true","}","","is_valid_ula_prefix() {","    printf '%s\\\\n' \"$1\" | grep -Eq '^fd[0-9a-f]{2}:[0-9a-f]{4}:[0-9a-f]{4}::/48
 def load_profile(profile_id_or_path: str) -> dict:
     if os.path.isfile(profile_id_or_path):
         path = profile_id_or_path
@@ -218,7 +203,10 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             raise ValueError(
                 f"Refusing symlink or non-directory in staged configuration path: {current}"
             )
-    redef _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+    return current
+
+
+def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
     """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
@@ -313,8 +301,6 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             os.close(directory_fd)
 
 
-ose(file_fd)
-
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
     """Write UTF-8 staged configuration without following copied symlinks."""
@@ -404,9 +390,8 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
     etc_config = _ensure_staging_directory(staging_dir, "etc/config")
     _write_staging_file(etc_config, "network", generate_network_uci(profile))
 
-    # ULA identity belongs to the installation, not to the reusable hardware
-    # profile.  OpenWrt applies this one-time provisioner before normal network
-    # services and retains it if generation or persistence fails.
+    # ULA identity belongs to the installation, not the reusable hardware
+    # profile. OpenWrt retries this default if generation or persistence fails.
     uci_defaults = _ensure_staging_directory(staging_dir, "etc/uci-defaults")
     _write_staging_file(
         uci_defaults, ULA_FIRSTBOOT_FILENAME, generate_ula_firstboot_script()
@@ -873,22 +858,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-
-}
-
-existing="$(uci -q get network.globals.ula_prefix 2>/dev/null || true)"
-if [ -n "$existing" ]; then
-    if is_valid_ula_prefix "$existing"; then
-        # Preserve the installation identity across reboot and normal upgrade.
-        exit 0
-    fi
-    log_error "refusing invalid persisted ULA prefix"
-    exit 1
-fi
-
-# RFC 4193 locally assigned ULAs use fd + a 40-bit pseudorandom global ID.
-global_id="$(od -An -N5 -tx1 /dev/urandom 2>/dev/null | tr -d '[:space:]')"
-if ! printf '%s\\n' "$global_id" | grep -Eq '^[0-9a-f]{10}
+","}","","existing=\"$(uci -q get network.globals.ula_prefix 2>/dev/null || true)\"","if [ -n \"$existing\" ]; then","    if is_valid_ula_prefix \"$existing\"; then","        # Preserve the installation identity across reboot and normal upgrade.","        exit 0","    fi","    log_error \"refusing invalid persisted ULA prefix\"","    exit 1","fi","","# RFC 4193 locally assigned ULAs use fd + a 40-bit pseudorandom global ID.","global_id=\"$(od -An -N5 -tx1 /dev/urandom 2>/dev/null | tr -d '[:space:]')\"","if ! printf '%s\\\\n' \"$global_id\" | grep -Eq '^[0-9a-f]{10}
 def load_profile(profile_id_or_path: str) -> dict:
     if os.path.isfile(profile_id_or_path):
         path = profile_id_or_path
@@ -1033,7 +1003,10 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             raise ValueError(
                 f"Refusing symlink or non-directory in staged configuration path: {current}"
             )
-    redef _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+    return current
+
+
+def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
     """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
@@ -1127,8 +1100,6 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
         if directory_fd >= 0:
             os.close(directory_fd)
 
-
-ose(file_fd)
 
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
@@ -1679,35 +1650,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-; then
-    log_error "unable to obtain a 40-bit random ULA global ID"
-    exit 1
-fi
-prefix="fd$(printf '%s' "$global_id" | cut -c1-2):$(printf '%s' "$global_id" | cut -c3-6):$(printf '%s' "$global_id" | cut -c7-10)::/48"
-if ! is_valid_ula_prefix "$prefix"; then
-    log_error "generated ULA prefix failed canonical validation"
-    exit 1
-fi
-
-if ! uci -q get network.globals >/dev/null 2>&1; then
-    uci set network.globals='globals' || exit 1
-fi
-uci set network.globals.ula_prefix="$prefix" || exit 1
-
-# Native UCI commit publishes the complete network configuration; require a
-# successful readback before this one-time script is allowed to disappear.
-if ! uci commit network; then
-    uci revert network || true
-    log_error "unable to persist generated ULA prefix"
-    exit 1
-fi
-persisted="$(uci -q get network.globals.ula_prefix 2>/dev/null || true)"
-if [ "$persisted" != "$prefix" ] || ! is_valid_ula_prefix "$persisted"; then
-    log_error "persisted ULA prefix failed readback validation"
-    exit 1
-fi
-exit 0
-"""
+; then","    log_error \"unable to obtain a 40-bit random ULA global ID\"","    exit 1","fi","prefix=\"fd$(printf '%s' \"$global_id\" | cut -c1-2):$(printf '%s' \"$global_id\" | cut -c3-6):$(printf '%s' \"$global_id\" | cut -c7-10)::/48\"","if ! is_valid_ula_prefix \"$prefix\"; then","    log_error \"generated ULA prefix failed canonical validation\"","    exit 1","fi","","if ! uci -q get network.globals >/dev/null 2>&1; then","    uci set network.globals='globals' || exit 1","fi","uci set network.globals.ula_prefix=\"$prefix\" || exit 1","","# Native UCI commit publishes the complete network configuration; require a","# successful readback before this one-time script is allowed to disappear.","if ! uci commit network; then","    uci revert network || true","    log_error \"unable to persist generated ULA prefix\"","    exit 1","fi","persisted=\"$(uci -q get network.globals.ula_prefix 2>/dev/null || true)\"","if [ \"$persisted\" != \"$prefix\" ] || ! is_valid_ula_prefix \"$persisted\"; then","    log_error \"persisted ULA prefix failed readback validation\"","    exit 1","fi","exit 0",""]) + "\n"
 
 
 
@@ -1855,7 +1798,10 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             raise ValueError(
                 f"Refusing symlink or non-directory in staged configuration path: {current}"
             )
-    redef _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
+    return current
+
+
+def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
     """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
@@ -1949,8 +1895,6 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
         if directory_fd >= 0:
             os.close(directory_fd)
 
-
-ose(file_fd)
 
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
