@@ -47,6 +47,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
+      - name: Run sandbox host preflight unit tests
+        run: python3 tools/test_imagebuilder_sandbox_host.py -v
+
       - name: Verify bubblewrap availability (no privileged install)
         run: |
           if ! command -v bwrap >/dev/null 2>&1; then
@@ -54,9 +57,6 @@ jobs:
             exit 125
           fi
           bwrap --version
-
-      - name: Run sandbox host preflight unit tests
-        run: python3 tools/test_imagebuilder_sandbox_host.py -v
 
       - name: Verify unprivileged single-ID runner identity
         run: |
