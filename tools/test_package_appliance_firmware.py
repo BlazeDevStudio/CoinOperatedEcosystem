@@ -1037,6 +1037,32 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
 
 
+    def test_stage_overlay_rejects_symlinked_output_parent_without_external_creation(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-parent-source")
+        os.makedirs(source_rootfs)
+        with open(os.path.join(source_rootfs, "source-marker.txt"), "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        external_parent = os.path.join(self.temp_dir, "operator-owned-parent")
+        os.makedirs(external_parent)
+        sentinel = os.path.join(external_parent, "operator-data.txt")
+        with open(sentinel, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-DATA")
+
+        parent_link = os.path.join(self.temp_dir, "staging-parent-link")
+        os.symlink(external_parent, parent_link, target_is_directory=True)
+        requested_staging = os.path.join(parent_link, "generated-overlay")
+
+        with self.assertRaisesRegex(ValueError, "Staging destination parent path contains a symlink"):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, requested_staging)
+
+        self.assertTrue(os.path.islink(parent_link))
+        self.assertFalse(os.path.lexists(os.path.join(external_parent, "generated-overlay")))
+        with open(sentinel, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
+        with open(os.path.join(source_rootfs, "source-marker.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "SOURCE-PRESERVED")
+
     def test_stage_overlay_does_not_chmod_external_directory_symlink_target(self):
         # copytree preserves directory symlinks. Permission normalization must
         # not follow one and mutate an operator-owned directory outside staging.
