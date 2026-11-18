@@ -1,0 +1,78 @@
+name: Release ImageBuilder Sandbox (NO-GO)
+
+on:
+  pull_request:
+    branches:
+      - integration/ecosystem-nonproprietary-candidate-20261111
+      - phoenix/release-imagebuilder-failclosed-20261115
+    paths:
+      - "tools/package_appliance_firmware.py"
+      - "tools/test_package_appliance_firmware.py"
+      - "tools/test_imagebuilder_sandbox_host.py"
+      - "tools/check_imagebuilder_sandbox_host.py"
+      - "tools/run_imagebuilder_sandbox.py"
+      - "tools/RELEASE_PACKAGER_HANDOVER.md"
+      - ".github/workflows/release-imagebuilder-sandbox.yml"
+  push:
+    branches:
+      - phoenix/release-imagebuilder-failclosed-20261115
+      - phoenix/release-build-script-publication-safety-20261117
+    paths:
+      - "tools/package_appliance_firmware.py"
+      - "tools/test_package_appliance_firmware.py"
+      - "tools/test_imagebuilder_sandbox_host.py"
+      - "tools/check_imagebuilder_sandbox_host.py"
+      - "tools/run_imagebuilder_sandbox.py"
+      - "tools/RELEASE_PACKAGER_HANDOVER.md"
+      - ".github/workflows/release-imagebuilder-sandbox.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # New key prevents stale pre-timeout runs from blocking this bounded-runner revision.
+  group: release-imagebuilder-single-id-userns-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  imagebuilder-sandbox:
+    name: ImageBuilder write-boundary regression (NO-GO)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install bubblewrap (no UID/GID mapping helpers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          bwrap --version
+
+      - name: Run sandbox host preflight unit tests
+        run: python3 tools/test_imagebuilder_sandbox_host.py -v
+
+      - name: Verify unprivileged single-ID runner identity
+        run: |
+          command -v bwrap
+          bwrap --version
+          test "$(id -u)" -gt 0
+          test "$(id -g)" -gt 0
+          if grep -Eq 'SUDO_UID|SUDO_GID|newuidmap|newgidmap' tools/run_imagebuilder_sandbox.py; then
+            echo "Release runner must not depend on privileged or subordinate-ID mapping" >&2
+            exit 1
+          fi
+
+      - name: Preflight unprivileged bubblewrap namespace (fail fast; no fallback)
+        run: python3 tools/check_imagebuilder_sandbox_host.py
+
+      - name: Run packaging regressions with mandatory bubblewrap
+        env:
+          PHX_REQUIRE_BWRAP: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+          TMPDIR: /var/tmp
+        run: python3 tools/test_package_appliance_firmware.py -v

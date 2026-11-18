@@ -2,9 +2,17 @@
 """Automated tests for Appliance Firmware Packager and ImageBuilder Configurator."""
 import json
 import os
+import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
+
+import run_imagebuilder_sandbox
+import package_appliance_firmware as packager
 
 from package_appliance_firmware import (
     load_profile,
@@ -53,6 +61,62 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option device 'br-lan.20'", uci)
         self.assertIn("option device 'wan'", uci)
 
+    def test_generate_network_uci_uses_real_newlines_and_tabs(self):
+        profile = load_profile("ew1200g-pro")
+        uci = generate_network_uci(profile)
+
+        self.assertIn(
+            "\n",
+            uci,
+            "Generated UCI must contain real newline characters between sections",
+        )
+        self.assertNotIn(
+            "\\n",
+            uci,
+            "Generated UCI must not contain literal backslash-n sequences",
+        )
+        self.assertNotIn(
+            "\\t",
+            uci,
+            "Generated UCI must not contain literal backslash-t sequences",
+        )
+        self.assertIn("\toption name 'br-lan'", uci)
+        self.assertIn("\nconfig interface 'wan'\n", uci)
+        self.assertGreater(len(uci.splitlines()), 10)
+
+    def test_generate_network_uci_rejects_profile_uci_injection(self):
+        mutations = [
+            (
+                "wan_interface",
+                lambda profile: profile["networking"].__setitem__(
+                    "wan_interface",
+                    "wan'\\nconfig interface 'injected"
+                ),
+            ),
+            (
+                "port_interface",
+                lambda profile: profile["networking"]["ports"][1].__setitem__(
+                    "interface",
+                    "lan1'\\nconfig interface 'injected"
+                ),
+            ),
+            (
+                "guest_vlan",
+                lambda profile: profile["networking"]["default_vlan_ids"].__setitem__(
+                    "guest",
+                    "10'\\nconfig interface 'injected"
+                ),
+            ),
+        ]
+        for field, mutate in mutations:
+            with self.subTest(field=field):
+                profile = load_profile("ew1200g-pro")
+                mutate(profile)
+                with self.assertRaisesRegex(
+                    ValueError, "Invalid (network interface|VLAN ID)"
+                ):
+                    generate_network_uci(profile)
+
     def test_generate_network_uci_orangepi(self):
         p = load_profile("orangepi-r1-plus-lts")
         uci = generate_network_uci(p)
@@ -74,7 +138,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("nftables", cmd)
         self.assertIn("firewall4", cmd)
         self.assertNotIn("openssl-util", cmd)
-        self.assertIn("FILES=\"/tmp/staging\"", cmd)
+        self.assertIn("FILES=/tmp/staging", shlex.split(cmd))
 
         # Rental enabled
         cmd_rental = build_imagebuilder_cmd(p, "/tmp/staging", include_rental=True)
@@ -107,6 +171,13 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(staging_dest, "usr", "sbin", "blazerentalctl")))
         self.assertTrue(os.path.isfile(os.path.join(staging_dest, "www", "cgi-bin", "blazerental")))
         self.assertTrue(os.path.isdir(os.path.join(staging_dest, "etc", "blazerental")))
+        rental_etc_path = os.path.join(staging_dest, "etc", "blazerental")
+        rental_etc_mode = os.stat(rental_etc_path).st_mode & 0o777
+        self.assertEqual(
+            rental_etc_mode,
+            0o700,
+            "etc/blazerental must retain its private mode after permission normalization",
+        )
 
         ctl_path = os.path.join(staging_dest, "usr", "sbin", "blazerentalctl")
         mode = os.stat(ctl_path).st_mode
@@ -115,6 +186,43 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         cgi_path = os.path.join(staging_dest, "www", "cgi-bin", "blazerental")
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
+
+    def test_stage_overlay_file_modes_are_relative_to_staging_root(self):
+        # The selected staging parent deliberately contains an executable-path
+        # marker. Permission policy must classify paths relative to the overlay,
+        # not by searching the absolute temporary destination.
+        source_rootfs = os.path.join(self.temp_dir, "mode-source")
+        utility_dir = os.path.join(source_rootfs, "usr", "sbin")
+        os.makedirs(utility_dir)
+        utility_source = os.path.join(utility_dir, "diagnostic")
+        with open(utility_source, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\\nexit 0\\n")
+        os.chmod(utility_source, 0o644)
+
+        staging_parent = os.path.join(self.temp_dir, "usr", "sbin")
+        os.makedirs(staging_parent)
+        staging_dest = os.path.join(staging_parent, "staging")
+        stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        network_path = os.path.join(staging_dest, "etc", "config", "network")
+        profile_path = os.path.join(staging_dest, "etc", "blazepwifi", "appliance_profile.json")
+        staged_utility = os.path.join(staging_dest, "usr", "sbin", "diagnostic")
+
+        self.assertEqual(
+            os.stat(network_path).st_mode & 0o777,
+            0o644,
+            "generated UCI config must remain non-executable when the staging root contains /usr/sbin/",
+        )
+        self.assertEqual(
+            os.stat(profile_path).st_mode & 0o777,
+            0o644,
+            "generated profile metadata must remain non-executable when the staging root contains /usr/sbin/",
+        )
+        self.assertEqual(
+            os.stat(staged_utility).st_mode & 0o777,
+            0o755,
+            "actual overlay usr/sbin utilities must remain executable",
+        )
 
     def test_flash_overflow_guard(self):
         staging_dest = os.path.join(self.temp_dir, "staging_overflow")
@@ -148,6 +256,721 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             content = f.read()
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
+    def test_generated_build_script_passes_posix_shell_syntax_check(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile,
+            DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_shell_syntax")
+        )
+        script_path = os.path.join(self.temp_dir, "shell-syntax-build.sh")
+        generate_build_script(manifest, script_path)
+
+        result = subprocess.run(
+            ["sh", "-n", script_path],
+            capture_output=True,
+            text=True
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"Generated ImageBuilder wrapper is not valid POSIX shell: {result.stderr}"
+        )
+
+    def test_generate_build_script_refuses_existing_file_without_overwriting(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_existing_build_script")
+        )
+        script_path = os.path.join(self.temp_dir, "operator-owned-build.sh")
+        sentinel = "# operator-owned build instructions\\n"
+        with open(script_path, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        with self.assertRaises(FileExistsError):
+            generate_build_script(manifest, script_path)
+
+        with open(script_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_generate_build_script_refuses_symlink_without_overwriting_target(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_symlink_build_script")
+        )
+        target_path = os.path.join(self.temp_dir, "operator-owned-target.sh")
+        script_path = os.path.join(self.temp_dir, "generated-build-link.sh")
+        sentinel = "# external operator-owned target\\n"
+        with open(target_path, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(target_path, script_path)
+
+        with self.assertRaises(FileExistsError):
+            generate_build_script(manifest, script_path)
+
+        self.assertTrue(os.path.islink(script_path))
+        with open(target_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_generate_build_script_rejects_symlinked_runner_paths(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_symlinked_runner")
+        )
+        sentinel = b"#!/usr/bin/env python3\\n# operator-owned runner\\n"
+
+        for case in ("final-component", "parent-directory"):
+            with self.subTest(case=case):
+                visible_tools_dir = os.path.join(self.temp_dir, f"visible-tools-{case}")
+                target_path = os.path.join(self.temp_dir, f"operator-owned-runner-{case}.py")
+
+                if case == "final-component":
+                    os.makedirs(visible_tools_dir)
+                    with open(target_path, "wb") as fp:
+                        fp.write(sentinel)
+                    runner_candidate = os.path.join(
+                        visible_tools_dir, "run_imagebuilder_sandbox.py"
+                    )
+                    os.symlink(target_path, runner_candidate)
+                else:
+                    real_tools_dir = os.path.join(self.temp_dir, "real-tools-parent")
+                    os.makedirs(real_tools_dir)
+                    target_path = os.path.join(real_tools_dir, "run_imagebuilder_sandbox.py")
+                    with open(target_path, "wb") as fp:
+                        fp.write(sentinel)
+                    os.symlink(real_tools_dir, visible_tools_dir, target_is_directory=True)
+                    runner_candidate = os.path.join(
+                        visible_tools_dir, "run_imagebuilder_sandbox.py"
+                    )
+
+                module_path = os.path.join(
+                    visible_tools_dir, "package_appliance_firmware.py"
+                )
+                script_path = os.path.join(self.temp_dir, f"generated-{case}.sh")
+                with mock.patch.object(packager, "__file__", module_path):
+                    with self.assertRaisesRegex(FileNotFoundError, "symlink"):
+                        generate_build_script(manifest, script_path)
+
+                self.assertFalse(os.path.lexists(script_path))
+                self.assertEqual(os.path.realpath(runner_candidate), target_path)
+                with open(target_path, "rb") as fp:
+                    self.assertEqual(fp.read(), sentinel)
+
+    def test_generated_wrapper_rejects_runner_parent_symlink_at_runtime(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_runtime_runner_symlink")
+        )
+        tools_dir = os.path.join(self.temp_dir, "runner-tools")
+        os.makedirs(tools_dir)
+        marker_path = os.path.join(self.temp_dir, "runner-was-invoked")
+        fake_runner = os.path.join(tools_dir, "run_imagebuilder_sandbox.py")
+        with open(fake_runner, "w", encoding="utf-8") as fp:
+            fp.write(
+                "#!/usr/bin/env python3\\n"
+                "import pathlib, sys\\n"
+                + f"pathlib.Path({marker_path!r}).write_text('invoked')\\n"
+                + "raise SystemExit(73)\\n"
+            )
+        module_path = os.path.join(tools_dir, "package_appliance_firmware.py")
+        wrapper = os.path.join(self.temp_dir, "runtime-runner-symlink-build.sh")
+        with mock.patch.object(packager, "__file__", module_path):
+            generate_build_script(manifest, wrapper)
+
+        moved_tools_dir = os.path.join(self.temp_dir, "runner-tools-real")
+        os.rename(tools_dir, moved_tools_dir)
+        os.symlink(moved_tools_dir, tools_dir, target_is_directory=True)
+
+        builder = os.path.join(self.temp_dir, "runtime-runner-symlink-builder")
+        os.makedirs(builder)
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = subprocess.run(
+            ["sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runner path contains a symlink", result.stderr)
+        self.assertFalse(
+            os.path.exists(marker_path),
+            "A runner reached through a symlinked parent must never execute",
+        )
+        self.assertFalse(
+            os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256"))
+        )
+
+    def _run_generated_wrapper(self, wrapper, cwd, env, timeout_seconds=60):
+        """Run the generated wrapper inside the release-owned filesystem sandbox in CI."""
+        cwd_path = os.path.realpath(os.path.abspath(cwd))
+        wrapper_path = os.path.abspath(
+            wrapper if os.path.isabs(wrapper) else os.path.join(cwd_path, wrapper)
+        )
+        if os.path.realpath(wrapper_path) != wrapper_path or not os.path.isfile(wrapper_path):
+            raise RuntimeError("Generated wrapper must be a regular file inside the test workspace")
+        try:
+            if os.path.commonpath((cwd_path, wrapper_path)) != cwd_path:
+                raise RuntimeError("Generated wrapper must remain inside the test workspace")
+        except ValueError as exc:
+            raise RuntimeError("Generated wrapper is outside the test workspace") from exc
+
+        if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
+            # Unit tests emulate the runner's short-lived ownership probe. The
+            # dedicated PHX_REQUIRE_BWRAP workflow exercises the real helper.
+            raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
+            if not raw_builder:
+                raise RuntimeError("ImageBuilder workspace is required for wrapper tests")
+            builder_path = os.path.abspath(
+                raw_builder if os.path.isabs(raw_builder) else os.path.join(cwd_path, raw_builder)
+            )
+            probe_name = ".phx-test-owner-probe"
+            probe_path = os.path.join(builder_path, probe_name)
+            if os.path.lexists(probe_path):
+                raise RuntimeError("Refusing to overwrite the test ownership probe")
+            with open(probe_path, "w", encoding="utf-8") as fp:
+                fp.write("test-only probe\n")
+            test_env = env.copy()
+            test_env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
+            test_env["PHX_BWRAP_OWNER_PROBE"] = probe_name
+            command = ["sh", wrapper_path]
+            try:
+                process = subprocess.Popen(
+                    command,
+                    cwd=cwd_path,
+                    env=test_env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+                (stdout, stderr), timed_out = run_imagebuilder_sandbox._communicate_with_timeout(
+                    process, timeout_seconds
+                )
+                if timed_out:
+                    timeout_message = (
+                        f"RELEASE-BLOCKED: generated wrapper exceeded its "
+                        f"{timeout_seconds}s test timeout"
+                    )
+                    stderr = "\n".join(part for part in (stderr, timeout_message) if part)
+                    return subprocess.CompletedProcess(command, 124, stdout, stderr)
+                return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+            finally:
+                if os.path.lexists(probe_path):
+                    os.unlink(probe_path)
+
+        sandbox_runner = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
+        if not os.path.isfile(sandbox_runner):
+            raise RuntimeError("PHX_REQUIRE_BWRAP=1 requires the release sandbox runner")
+
+        raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
+        if not raw_builder:
+            raise RuntimeError("ImageBuilder workspace is required for sandboxed execution")
+        builder_path = os.path.abspath(
+            raw_builder if os.path.isabs(raw_builder) else os.path.join(cwd_path, raw_builder)
+        )
+        if os.path.realpath(builder_path) != builder_path or not os.path.isdir(builder_path):
+            raise RuntimeError("ImageBuilder workspace must be a real directory without symlink parents")
+        try:
+            if os.path.commonpath((cwd_path, builder_path)) != cwd_path or builder_path == cwd_path:
+                raise RuntimeError("Writable ImageBuilder workspace must be a strict child of the test workspace")
+        except ValueError as exc:
+            raise RuntimeError("ImageBuilder workspace is outside the test workspace") from exc
+
+        # Run as the invoking unprivileged account. Bubblewrap maps only this
+        # single host UID/GID to namespace root; no sudo or subordinate-ID helper.
+        command = [
+            sys.executable,
+            sandbox_runner,
+            "--cwd", cwd_path,
+            "--builder", builder_path,
+            "--wrapper", wrapper_path,
+            "--timeout-seconds", str(timeout_seconds),
+        ]
+        return subprocess.run(
+            command,
+            cwd=cwd_path,
+            env={"PATH": "/usr/bin:/bin", "LANG": "C"},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=90,
+        )
+
+    def _run_mock_imagebuilder(self, image_subpath=None, mkdir_subtarget=False,
+                               preexisting_image=False, preexisting_manifest=False,
+                               manifest_symlink=False, temp_manifest_symlink=False,
+                               image_symlink_subpath=None,
+                               image_symlink_dir_subpath=None,
+                               preexisting_image_symlink=False,
+                               symlinked_output_dir=False,
+                               timeout_seconds=60,
+                               sleep_seconds=None,
+                               timeout_marker=None):
+        """Execute a generated wrapper against a disposable local Makefile."""
+        profile = load_profile("gl-mt1300")
+        stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
+        stage_relative = os.path.relpath(stage_absolute, os.getcwd())
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, stage_relative)
+        wrapper = os.path.join(self.temp_dir, "nonshipping-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        fake_builder = os.path.join(self.temp_dir, "fake-imagebuilder")
+        os.makedirs(fake_builder, exist_ok=True)
+        if preexisting_image_symlink:
+            image_dir = os.path.join(fake_builder, "bin", "targets", "ramips", "mt7621")
+            os.makedirs(image_dir, exist_ok=True)
+            external_image = os.path.join(self.temp_dir, "operator-owned-prior-image.img.gz")
+            with open(external_image, "wb") as fp:
+                fp.write(b"KEEP-OPERATOR-IMAGE")
+            os.symlink(external_image, os.path.join(image_dir, "linked.img.gz"))
+        if symlinked_output_dir:
+            image_parent = os.path.join(fake_builder, "bin", "targets", "ramips")
+            os.makedirs(image_parent, exist_ok=True)
+            external_dir = os.path.join(self.temp_dir, "operator-owned-image-output")
+            os.makedirs(external_dir, exist_ok=True)
+            with open(os.path.join(external_dir, "operator-owned.bin"), "wb") as fp:
+                fp.write(b"KEEP-OPERATOR-DIRECTORY")
+            os.symlink(external_dir, os.path.join(image_parent, "mt7621"))
+        recipe = 'image:\n\t@test -d "$(FILES)"\n'
+        if mkdir_subtarget:
+            recipe += '\t@mkdir -p bin/targets/ramips/mt7621\n'
+        if image_subpath is not None:
+            # Fixture paths are hardcoded by these tests, never user input.
+            recipe += '\t@mkdir -p "$(dir ' + image_subpath + ')"\n'
+            recipe += '\t@printf "SYNTHETIC-NOT-FIRMWARE" > ' + image_subpath + '\n'
+        if image_symlink_subpath is not None:
+            # Keep the symlink target outside the target-image directory.
+            external_image = os.path.join(self.temp_dir, "external-synthetic-image.bin")
+            with open(external_image, "wb") as fp:
+                fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
+            recipe += '\t@mkdir -p "$(dir ' + image_symlink_subpath + ')"\n'
+            recipe += '\t@ln -s ' + shlex.quote(external_image) + ' ' + image_symlink_subpath + '\n'
+        if image_symlink_dir_subpath is not None:
+            # Keep a firmware-looking file outside the target tree behind a
+            # directory symlink that find(1) will not traverse by default.
+            external_dir = os.path.join(self.temp_dir, "external-synthetic-image-directory")
+            os.makedirs(external_dir, exist_ok=True)
+            external_image = os.path.join(external_dir, "hidden.img.gz")
+            with open(external_image, "wb") as fp:
+                fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
+            recipe += '\t@ln -s ' + shlex.quote(external_dir) + ' ' + image_symlink_dir_subpath + '\n'
+        if sleep_seconds is not None:
+            if isinstance(sleep_seconds, bool) or not isinstance(sleep_seconds, int) or sleep_seconds < 1:
+                raise ValueError("sleep_seconds must be a positive integer")
+            if not timeout_marker:
+                raise ValueError("timeout_marker is required for the timeout fixture")
+            recipe += (
+                f'\t@sleep {sleep_seconds}; printf "late" > {shlex.quote(timeout_marker)}\n'
+            )
+
+        with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        if preexisting_image:
+            stale_image = os.path.join(fake_builder, "bin", "targets", "ramips", "mt7621", "old.bin")
+            os.makedirs(os.path.dirname(stale_image), exist_ok=True)
+            with open(stale_image, "wb") as fp:
+                fp.write(b"OLD-NOT-CURRENT-IMAGE")
+        if preexisting_manifest or manifest_symlink:
+            manifest_path = os.path.join(fake_builder, "RELEASE_MANIFEST.sha256")
+            if manifest_symlink:
+                outside = os.path.join(self.temp_dir, "outside-manifest.txt")
+                with open(outside, "w", encoding="utf-8") as fp:
+                    fp.write("DO-NOT-OVERWRITE\n")
+                os.symlink(outside, manifest_path)
+            else:
+                with open(manifest_path, "w", encoding="utf-8") as fp:
+                    fp.write("PRIOR-RUN-MANIFEST\n")
+
+        if temp_manifest_symlink:
+            outside = os.path.join(self.temp_dir, "outside-temp-manifest.txt")
+            with open(outside, "w", encoding="utf-8") as fp:
+                fp.write("DO-NOT-OVERWRITE-TEMP\n")
+            os.symlink(outside, os.path.join(fake_builder, "RELEASE_MANIFEST.sha256.tmp"))
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
+        result = self._run_generated_wrapper(
+            wrapper, self.temp_dir, env, timeout_seconds=timeout_seconds
+        )
+        return result, fake_builder, wrapper, stage_absolute
+
+    def test_generated_wrapper_routes_operator_invocation_through_unprivileged_runner(self):
+        profile = load_profile("gl-mt1300")
+        staging_dir = os.path.join(self.temp_dir, "operator staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging_dir)
+        wrapper = os.path.join(self.temp_dir, "operator-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "operator-imagebuilder")
+        os.makedirs(builder, exist_ok=True)
+        image_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621", "operator.bin")
+        recipe = (
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/operator.bin\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        fake_bin = os.path.join(self.temp_dir, "fake-bin")
+        os.makedirs(fake_bin, exist_ok=True)
+        python3_path = os.path.join(fake_bin, "python3")
+        sudo_path = os.path.join(fake_bin, "sudo")
+        args_path = os.path.join(self.temp_dir, "python3-runner-args.txt")
+        sudo_called_path = os.path.join(self.temp_dir, "sudo-was-called")
+        with open(python3_path, "w", encoding="utf-8") as fp:
+            fp.write(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  -c|-) exec \"$PHX_TEST_REAL_PYTHON3\" \"$@\" ;;\n"
+                "esac\n"
+                "printf '%s\n' \"$@\" > \"$PHX_TEST_PYTHON_ARGS\"\n"
+                "exit 73\n"
+            )
+        with open(sudo_path, "w", encoding="utf-8") as fp:
+            fp.write(
+                "#!/bin/sh\n"
+                "printf called > \"$PHX_TEST_SUDO_CALLED\"\n"
+                "exit 91\n"
+            )
+        os.chmod(python3_path, 0o755)
+        os.chmod(sudo_path, 0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = fake_bin + os.pathsep + env.get("PATH", "")
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        env["PHX_TEST_REAL_PYTHON3"] = shutil.which("python3") or sys.executable
+        env["PHX_TEST_PYTHON_ARGS"] = args_path
+        env["PHX_TEST_SUDO_CALLED"] = sudo_called_path
+        env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
+        env.pop("PHX_BWRAP_OWNER_PROBE", None)
+        result = subprocess.run(
+            ["sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 73, result.stderr)
+        with open(args_path, "r", encoding="utf-8") as fp:
+            runner_args = [line.rstrip("\n") for line in fp]
+        runner_path = os.path.join(os.path.dirname(__file__), "run_imagebuilder_sandbox.py")
+        self.assertEqual(runner_args[0], runner_path)
+        self.assertEqual(runner_args[runner_args.index("--cwd") + 1], self.temp_dir)
+        self.assertEqual(runner_args[runner_args.index("--builder") + 1], builder)
+        self.assertEqual(runner_args[runner_args.index("--wrapper") + 1], wrapper)
+        self.assertFalse(os.path.exists(sudo_called_path), "operator entrypoint must never invoke sudo")
+        self.assertFalse(os.path.exists(image_path), "operator Makefile must not run outside the sandbox")
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_mock_execution_enforces_timeout_and_kills_child_group(self):
+        marker_path = os.path.join(self.temp_dir, "late-make-completion")
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            timeout_seconds=1,
+            sleep_seconds=3,
+            timeout_marker=marker_path,
+        )
+
+        self.assertEqual(result.returncode, 124, result.stderr + result.stdout)
+        self.assertIn(
+            "RELEASE-BLOCKED: generated wrapper exceeded its 1s test timeout",
+            result.stderr,
+        )
+        self.assertFalse(
+            os.path.exists(marker_path),
+            "A timed-out Makefile child must not continue after the test returns",
+        )
+        self.assertFalse(
+            os.path.lexists(os.path.join(builder, ".phx-test-owner-probe")),
+            "The test ownership probe must be removed after timeout",
+        )
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_missing_target_images(self):
+        result, builder, _, _ = self._run_mock_imagebuilder()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: target/subtarget image directory missing", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_empty_expected_subtarget(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(mkdir_subtarget=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: no firmware images found", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_wrong_subtarget_images(self):
+        result, _, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7620/decoy.bin"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: target/subtarget image directory missing", result.stderr)
+
+    def test_generated_wrapper_denies_stale_image_from_prior_build(self):
+        # GNU Make reports success without generating a new image. Old
+        # binaries must never be accepted as this run's deliverable.
+        result, builder, _, _ = self._run_mock_imagebuilder(preexisting_image=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: stale firmware images", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(builder, "bin", "targets", "ramips", "mt7621", "old.bin")
+        ), "release guard must not delete prior operator data")
+
+    def test_generated_wrapper_denies_preexisting_symlinked_firmware_candidate_before_make(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/linked.img.gz",
+            preexisting_image_symlink=True,
+        )
+        link_path = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "linked.img.gz"
+        )
+        external_image = os.path.join(self.temp_dir, "operator-owned-prior-image.img.gz")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(os.path.islink(link_path))
+        with open(external_image, "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-OPERATOR-IMAGE")
+        self.assertIn("RELEASE-BLOCKED: stale symlinked firmware images", result.stderr)
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+
+    def test_generated_wrapper_denies_symlinked_target_output_directory_before_make(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
+            symlinked_output_dir=True,
+        )
+        link_path = os.path.join(builder, "bin", "targets", "ramips", "mt7621")
+        external_dir = os.path.join(self.temp_dir, "operator-owned-image-output")
+        external_output = os.path.join(external_dir, "synthetic.bin")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(os.path.islink(link_path))
+        self.assertFalse(os.path.exists(external_output))
+        with open(os.path.join(external_dir, "operator-owned.bin"), "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-OPERATOR-DIRECTORY")
+        self.assertIn("RELEASE-BLOCKED: symlinked ImageBuilder output directory", result.stderr)
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+
+    def test_generated_wrapper_denies_previous_manifest_without_clobber(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
+            preexisting_manifest=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: previous release manifest", result.stderr)
+        with open(os.path.join(builder, "RELEASE_MANIFEST.sha256"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "PRIOR-RUN-MANIFEST\n")
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")
+        ), "the build must not execute after an existing manifest is detected")
+
+    def test_generated_wrapper_denies_symlinked_manifest(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(manifest_symlink=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: previous release manifest", result.stderr)
+        with open(os.path.join(self.temp_dir, "outside-manifest.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "DO-NOT-OVERWRITE\n")
+        self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_symlinked_temporary_manifest_before_make(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin",
+            temp_manifest_symlink=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: previous temporary release manifest", result.stderr)
+        with open(os.path.join(self.temp_dir, "outside-temp-manifest.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "DO-NOT-OVERWRITE-TEMP\n")
+        self.assertTrue(os.path.islink(os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")))
+        self.assertFalse(os.path.exists(os.path.join(builder, "bin", "targets", "ramips", "mt7621", "synthetic.bin")))
+
+    def test_generated_wrapper_emits_empty_image_guard_as_real_shell_lines(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "guard-lines-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "guard-lines-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            contents = fp.read()
+
+        self.assertIn('EMPTY_IMAGE=$(find "$IMAGE_REL_DIR"', contents)
+        self.assertIn(
+            ' -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then\n',
+            contents,
+            "The generated empty-image guard must be emitted as real shell lines",
+        )
+        self.assertNotIn(
+            r' -size 0 -print -quit)\nif [ -n "$EMPTY_IMAGE" ]; then',
+            contents,
+            "Literal backslash-n text is not a shell command separator",
+        )
+
+    def test_generated_wrapper_denies_empty_firmware_payload(self):
+        # Empty output is not a usable firmware binary, even with .bin suffix.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "empty-build.sh")
+        generate_build_script(manifest, wrapper)
+        builder = os.path.join(self.temp_dir, "empty-imagebuilder")
+        os.makedirs(builder)
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\n\t@mkdir -p bin/targets/ramips/mt7621\n"
+                     "\t@: > bin/targets/ramips/mt7621/empty.bin\n")
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: empty firmware image", result.stderr)
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_denies_symlinked_firmware_candidate(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/regular.bin",
+            image_symlink_subpath="bin/targets/ramips/mt7621/linked.img.gz",
+        )
+        linked_image = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "linked.img.gz"
+        )
+        regular_image = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "regular.bin"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RELEASE-BLOCKED: symlinked entry in firmware output tree", result.stderr)
+        self.assertTrue(os.path.isfile(regular_image))
+        self.assertTrue(os.path.islink(linked_image))
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+        with open(os.path.join(self.temp_dir, "external-synthetic-image.bin"), "rb") as fp:
+            self.assertEqual(fp.read(), b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
+
+    def test_generated_wrapper_denies_symlinked_directory_hiding_firmware_candidates(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/regular.bin",
+            image_symlink_dir_subpath="bin/targets/ramips/mt7621/linked-images",
+        )
+        linked_dir = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "linked-images"
+        )
+        external_image = os.path.join(
+            self.temp_dir, "external-synthetic-image-directory", "hidden.img.gz"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "RELEASE-BLOCKED: symlinked entry in firmware output tree",
+            result.stderr,
+        )
+        self.assertTrue(os.path.islink(linked_dir))
+        self.assertTrue(os.path.isfile(os.path.join(linked_dir, "hidden.img.gz")))
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+        with open(external_image, "rb") as fp:
+            self.assertEqual(fp.read(), b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
+
+    def test_generated_wrapper_rejects_preexisting_nested_symlink_before_make(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile,
+            DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_nested_symlink"),
+        )
+        wrapper = os.path.join(self.temp_dir, "nested-symlink-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "nested-symlink-imagebuilder")
+        output_dir = os.path.join(builder, "bin", "targets", "ramips", "mt7621")
+        os.makedirs(output_dir)
+        external_dir = os.path.join(self.temp_dir, "operator-owned-nested-output")
+        os.makedirs(external_dir)
+        sentinel_path = os.path.join(external_dir, "operator-owned.txt")
+        sentinel = "KEEP-OPERATOR-NESTED-OUTPUT"
+        with open(sentinel_path, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        link_path = os.path.join(output_dir, "cache")
+        os.symlink(external_dir, link_path)
+        escaped_image = os.path.join(external_dir, "escaped.img.gz")
+        recipe = (
+            "image:\n"
+            "\t@test -d \"$(FILES)\"\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621/cache\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/cache/escaped.img.gz\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertFalse(
+            os.path.exists(escaped_image),
+            "ImageBuilder must not write through a pre-existing nested output symlink",
+        )
+        self.assertIn(
+            "RELEASE-BLOCKED: pre-existing symlink entry in ImageBuilder output tree",
+            result.stderr,
+        )
+        self.assertTrue(os.path.islink(link_path))
+        with open(sentinel_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+        self.assertFalse(
+            os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256"))
+        )
+
+    def test_generated_wrapper_relative_stage_uses_absolute_path(self):
+        result, builder, wrapper, stage_absolute = self._run_mock_imagebuilder(
+            image_subpath="bin/targets/ramips/mt7621/synthetic.bin"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("Appliance PREVIEW build completed", result.stdout)
+        manifest = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        with open(manifest, "r", encoding="utf-8") as fp:
+            lines = fp.read().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("synthetic.bin", lines[0])
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            contents = fp.read()
+        self.assertIn("FILES=" + shlex.quote(stage_absolute), contents)
+
+    def test_generated_wrapper_relative_imagebuilder_dir_uses_absolute_path(self):
+        # A relative environment override must be normalized before the
+        # wrapper changes directory; otherwise BIN_DIR and manifest paths
+        # are accidentally resolved relative to the builder twice.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "relative-builder-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "relative-builder.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "relative-imagebuilder")
+        os.makedirs(builder)
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\n\t@mkdir -p bin/targets/ramips/mt7621\n"
+                     "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n")
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = os.path.relpath(builder, self.temp_dir)
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("Appliance PREVIEW build completed", result.stdout)
+        manifest_path = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        with open(manifest_path, "r", encoding="utf-8") as fp:
+            lines = fp.read().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("synthetic.bin", lines[0])
 
     def test_generate_network_uci_xiaomi(self):
         p = load_profile("xiaomi-4a-gigabit")
@@ -163,6 +986,528 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option name 'br-lan'", uci)
         self.assertIn("list ports 'eth1'", uci)
         self.assertIn("option device 'eth0'", uci)
+
+
+    def test_stage_overlay_refuses_existing_output_without_deleting_contents(self):
+        source_rootfs = os.path.join(self.temp_dir, "safe-source")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "source-preserved.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        staging_dest = os.path.join(self.temp_dir, "existing-staging")
+        os.makedirs(staging_dest)
+        operator_file = os.path.join(staging_dest, "operator-data.txt")
+        with open(operator_file, "w", encoding="utf-8") as fp:
+            fp.write("DO-NOT-DELETE")
+
+        with self.assertRaises(FileExistsError):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        with open(operator_file, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "DO-NOT-DELETE")
+        self.assertTrue(os.path.isfile(source_marker))
+
+    def test_stage_overlay_refuses_source_rootfs_as_output(self):
+        source_rootfs = os.path.join(self.temp_dir, "source-is-output")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "owner-source.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-SOURCE")
+
+        with self.assertRaises(FileExistsError):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, source_rootfs)
+
+        with open(source_marker, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-SOURCE")
+
+    def test_stage_overlay_refuses_new_output_nested_inside_source(self):
+        source_rootfs = os.path.join(self.temp_dir, "nested-source")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "owner-source.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-SOURCE")
+        staging_dest = os.path.join(source_rootfs, "generated-overlay")
+
+        with self.assertRaises(ValueError):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        self.assertTrue(os.path.isfile(source_marker))
+        self.assertFalse(os.path.lexists(staging_dest))
+
+
+
+    def test_stage_overlay_rejects_symlinked_output_parent_without_external_creation(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-parent-source")
+        os.makedirs(source_rootfs)
+        with open(os.path.join(source_rootfs, "source-marker.txt"), "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        external_parent = os.path.join(self.temp_dir, "operator-owned-parent")
+        os.makedirs(external_parent)
+        sentinel = os.path.join(external_parent, "operator-data.txt")
+        with open(sentinel, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-DATA")
+
+        parent_link = os.path.join(self.temp_dir, "staging-parent-link")
+        os.symlink(external_parent, parent_link, target_is_directory=True)
+        requested_staging = os.path.join(parent_link, "generated-overlay")
+
+        with self.assertRaisesRegex(ValueError, "Staging destination parent path contains a symlink"):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, requested_staging)
+
+        self.assertTrue(os.path.islink(parent_link))
+        self.assertFalse(os.path.lexists(os.path.join(external_parent, "generated-overlay")))
+        with open(sentinel, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
+        with open(os.path.join(source_rootfs, "source-marker.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "SOURCE-PRESERVED")
+
+    def test_stage_overlay_does_not_chmod_external_directory_symlink_target(self):
+        # copytree preserves directory symlinks. Permission normalization must
+        # not follow one and mutate an operator-owned directory outside staging.
+        source_rootfs = os.path.join(self.temp_dir, "symlink-source")
+        external_target = os.path.join(self.temp_dir, "operator-owned")
+        os.makedirs(source_rootfs)
+        os.makedirs(external_target)
+        os.chmod(external_target, 0o700)
+        with open(os.path.join(external_target, "operator-data.txt"), "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-DATA")
+
+        source_link = os.path.join(source_rootfs, "external-assets")
+        os.symlink(external_target, source_link)
+        staging_dest = os.path.join(self.temp_dir, "symlink-staging")
+        expected_mode = os.stat(external_target).st_mode & 0o777
+
+        stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        staged_link = os.path.join(staging_dest, "external-assets")
+        self.assertTrue(os.path.islink(staged_link))
+        self.assertEqual(os.readlink(staged_link), external_target)
+        self.assertEqual(
+            os.stat(external_target).st_mode & 0o777,
+            expected_mode,
+            "staging permission normalization must not chmod a directory symlink target",
+        )
+        with open(os.path.join(external_target, "operator-data.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
+
+    def test_generated_wrapper_manifest_is_independent_of_build_workspace(self):
+        # The same synthetic image bytes must produce the same checksum
+        # manifest regardless of the absolute workspace path.
+        manifests = []
+        for workspace_name in ("builder-one", "builder-two"):
+            workspace = os.path.join(self.temp_dir, workspace_name)
+            os.makedirs(workspace, exist_ok=True)
+            staging = os.path.join(workspace, "staging")
+            manifest = stage_overlay(load_profile("gl-mt1300"), DEFAULT_ROOTFS, staging)
+            wrapper = os.path.join(workspace, "build.sh")
+            generate_build_script(manifest, wrapper)
+
+            builder = os.path.join(workspace, "imagebuilder")
+            os.makedirs(builder)
+            with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+                fp.write(
+                    "image:\n\t@mkdir -p bin/targets/ramips/mt7621\n"
+                    "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+                )
+
+            env = os.environ.copy()
+            env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+            result = self._run_generated_wrapper(wrapper, workspace, env)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+            manifest_path = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+            with open(manifest_path, "r", encoding="utf-8") as fp:
+                lines = fp.read().splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertIn("bin/targets/ramips/mt7621/synthetic.bin", lines[0])
+            self.assertNotIn(builder, lines[0])
+            manifests.append(lines)
+
+        self.assertEqual(
+            manifests[0],
+            manifests[1],
+            "identical image bytes must produce workspace-independent checksum manifests",
+        )
+
+
+    def test_generated_wrapper_refuses_temp_manifest_symlink_created_by_make(self):
+        # The Makefile runs after the wrapper's preflight checks. A compromised
+        # builder must not replace the temporary manifest path with a symlink
+        # and redirect the checksum write into an operator-owned file.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "race-temp-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "race-temp-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "race-temp-imagebuilder")
+        os.makedirs(builder)
+        external_target = os.path.join(self.temp_dir, "operator-temp-manifest.txt")
+        sentinel = "KEEP-OPERATOR-TEMP-MANIFEST\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        recipe = (
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+            "\t@ln -s " + shlex.quote(external_target) + " RELEASE_MANIFEST.sha256.tmp\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("cannot create", (result.stderr + result.stdout).lower())
+        self.assertTrue(os.path.islink(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256.tmp")
+        ))
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+        self.assertFalse(os.path.exists(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+
+    def test_generated_wrapper_refuses_final_manifest_symlink_created_by_make(self):
+        # The final manifest path is also re-opened after the build. It must
+        # not follow a symlink created after the earlier preflight check.
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "race-final-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "race-final-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "race-final-imagebuilder")
+        os.makedirs(builder)
+        external_target = os.path.join(self.temp_dir, "operator-final-manifest.txt")
+        sentinel = "KEEP-OPERATOR-FINAL-MANIFEST\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+
+        recipe = (
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+            "\t@ln -s " + shlex.quote(external_target) + " RELEASE_MANIFEST.sha256\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("cannot create", (result.stderr + result.stdout).lower())
+        self.assertTrue(os.path.islink(
+            os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        ))
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+
+    def test_stage_overlay_rejects_network_file_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-network-source")
+        config_dir = os.path.join(source_rootfs, "etc", "config")
+        os.makedirs(config_dir)
+        external_target = os.path.join(self.temp_dir, "operator-network.conf")
+        sentinel = "KEEP-OPERATOR-NETWORK-CONFIG\\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_target, os.path.join(config_dir, "network"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-network-staging"),
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_stage_overlay_rejects_config_directory_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-config-dir-source")
+        etc_dir = os.path.join(source_rootfs, "etc")
+        external_dir = os.path.join(self.temp_dir, "operator-config-dir")
+        os.makedirs(etc_dir)
+        os.makedirs(external_dir)
+        external_target = os.path.join(external_dir, "network")
+        sentinel = "KEEP-OPERATOR-CONFIG-DIRECTORY\\n"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_dir, os.path.join(etc_dir, "config"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-config-dir-staging"),
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+    def test_stage_overlay_rejects_appliance_profile_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-profile-source")
+        os.makedirs(os.path.join(source_rootfs, "etc", "config"))
+        profile_dir = os.path.join(source_rootfs, "etc", "blazepwifi")
+        os.makedirs(profile_dir)
+        external_target = os.path.join(self.temp_dir, "operator-appliance-profile.json")
+        sentinel = '{"operator":"preserve"}\\n'
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_target, os.path.join(profile_dir, "appliance_profile.json"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-profile-staging"),
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+
+    def test_stage_overlay_rejects_rental_destination_directory_symlink_without_external_write(self):
+        source_rootfs = os.path.join(self.temp_dir, "symlink-rental-source")
+        usr_dir = os.path.join(source_rootfs, "usr")
+        external_dir = os.path.join(self.temp_dir, "operator-sbin")
+        os.makedirs(usr_dir)
+        os.makedirs(external_dir)
+        external_target = os.path.join(external_dir, "blazerentalctl")
+        sentinel = "KEEP-OPERATOR-RENTAL-EXECUTABLE"
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write(sentinel)
+        os.symlink(external_dir, os.path.join(usr_dir, "sbin"))
+
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            stage_overlay(
+                load_profile("ew1200g-pro"),
+                source_rootfs,
+                os.path.join(self.temp_dir, "symlink-rental-staging"),
+                include_rental=True,
+            )
+
+        with open(external_target, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), sentinel)
+
+
+    def test_generate_build_script_refuses_symlinked_parent_directory_without_external_write(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile, DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "staging_symlinked_script_parent")
+        )
+        external_dir = os.path.join(self.temp_dir, "operator-owned-output")
+        os.makedirs(external_dir)
+        parent_link = os.path.join(self.temp_dir, "build-output-link")
+        os.symlink(external_dir, parent_link)
+        script_path = os.path.join(parent_link, "generated-build.sh")
+
+        with self.assertRaisesRegex(ValueError, "parent path contains a symlink or non-directory"):
+            generate_build_script(manifest, script_path)
+
+        self.assertTrue(os.path.islink(parent_link))
+        self.assertFalse(os.path.lexists(os.path.join(external_dir, "generated-build.sh")))
+
+
+
+
+
+
+    def test_generated_wrapper_timeout_terminates_make_process_group(self):
+        if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
+            self.skipTest("Run in the dedicated release-imagebuilder-sandbox workflow")
+        if not shutil.which("bwrap"):
+            self.fail("PHX_REQUIRE_BWRAP=1 but bubblewrap is not installed")
+
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "timeout-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "timeout-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "timeout-imagebuilder")
+        os.makedirs(builder)
+        late_image = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "late.img.gz"
+        )
+        recipe = (
+            "image:\n"
+            "\t@sleep 2\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'LATE-WRITE' > bin/targets/ramips/mt7621/late.img.gz\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(
+            wrapper, self.temp_dir, env, timeout_seconds=1
+        )
+
+        self.assertEqual(result.returncode, 125, result.stdout + result.stderr)
+        self.assertIn("exceeded its 1s timeout", result.stderr)
+        time.sleep(2.2)
+        self.assertFalse(
+            os.path.lexists(late_image),
+            "timed-out ImageBuilder child process continued writing after the runner returned",
+        )
+
+    def test_generated_wrapper_contains_make_created_symlink_write_to_host(self):
+        # This test runs only in the dedicated bubblewrap workflow. The sentinel
+        # is deliberately outside both the ImageBuilder workspace and /tmp.
+        if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
+            self.skipTest("Run in the dedicated release-imagebuilder-sandbox workflow")
+        if not shutil.which("bwrap"):
+            self.fail("PHX_REQUIRE_BWRAP=1 but bubblewrap is not installed")
+        if not os.path.isdir("/var/tmp") or not os.access("/var/tmp", os.W_OK):
+            self.fail("The dedicated Linux sandbox runner must provide writable /var/tmp")
+
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "sandbox-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "sandbox-wrapper.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "sandbox-imagebuilder")
+        os.makedirs(builder)
+        external_dir = tempfile.mkdtemp(prefix="phx-imagebuilder-external-", dir="/var/tmp")
+        try:
+            external_target = os.path.join(external_dir, "operator-owned-sentinel.txt")
+            sentinel = "KEEP-OPERATOR-OWNED-SENTINEL\n"
+            with open(external_target, "w", encoding="utf-8") as fp:
+                fp.write(sentinel)
+
+            escaped_image = "bin/targets/ramips/mt7621/cache/escape.img.gz"
+            symlink_marker = "bin/targets/ramips/mt7621/cache/symlink-created.txt"
+            recipe = (
+                "image:\n"
+                "\t@mkdir -p bin/targets/ramips/mt7621/cache\n"
+                "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
+                "\t@ln -s " + shlex.quote(external_target) + " " + escaped_image + "\n"
+                "\t@printf 'SYMLINK-CREATED' > " + symlink_marker + "\n"
+                "\t@printf 'BUILDER-OVERWRITE' > " + escaped_image + "\n"
+            )
+            with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+                fp.write(recipe)
+
+            env = os.environ.copy()
+            env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+            result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+            escaped_path = os.path.join(builder, escaped_image)
+            marker_path = os.path.join(builder, symlink_marker)
+            self.assertIn("Building Appliance Firmware", result.stdout, result.stderr + result.stdout)
+            self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertTrue(
+                os.path.islink(escaped_path),
+                result.stderr + result.stdout + "\nMakefile-created symlink should remain inside the disposable workspace",
+            )
+            self.assertTrue(os.path.isfile(marker_path), result.stderr + result.stdout)
+            with open(external_target, "r", encoding="utf-8") as fp:
+                self.assertEqual(
+                    fp.read(), sentinel,
+                    "ImageBuilder must not write through a symlink to a host-owned file",
+                )
+        finally:
+            shutil.rmtree(external_dir, ignore_errors=True)
+
+
+class TestImageBuilderSandboxTimeouts(unittest.TestCase):
+    def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
+        with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=1001):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=1001):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=1001):
+                        self.assertEqual(
+                            run_imagebuilder_sandbox._invoking_unprivileged_identity(),
+                            (1001, 1001),
+                        )
+
+    def test_unprivileged_identity_rejects_root_execution(self):
+        with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=0):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=0):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=0):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=0):
+                        with self.assertRaisesRegex(PermissionError, "non-root"):
+                            run_imagebuilder_sandbox._invoking_unprivileged_identity()
+
+    def test_unprivileged_identity_rejects_mismatched_effective_ids(self):
+        with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=1001):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=0):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=0):
+                        with self.assertRaisesRegex(PermissionError, "mismatched effective"):
+                            run_imagebuilder_sandbox._invoking_unprivileged_identity()
+
+    def test_communicate_timeout_kills_bwrap_and_sandbox_process_groups(self):
+        class TimedOutProcess:
+            pid = 41001
+
+            def __init__(self):
+                self.timeouts = []
+                self.returncode = None
+
+            def communicate(self, timeout=None):
+                self.timeouts.append(timeout)
+                if len(self.timeouts) == 1:
+                    raise subprocess.TimeoutExpired(
+                        ["bwrap"], timeout,
+                        output="partial stdout", stderr="partial stderr"
+                    )
+                self.returncode = -9
+                return "partial stdout", "terminated stderr"
+
+            def poll(self):
+                return self.returncode
+
+            def kill(self):
+                self.returncode = -9
+
+        process = TimedOutProcess()
+        with mock.patch.object(run_imagebuilder_sandbox.os, "killpg") as killpg:
+            (stdout, stderr), timed_out = run_imagebuilder_sandbox._communicate_with_timeout(
+                process, timeout_seconds=1, child_pgid=41002
+            )
+
+        self.assertTrue(timed_out)
+        self.assertIn("partial stdout", stdout)
+        self.assertIn("terminated stderr", stderr)
+        self.assertEqual(process.timeouts, [1, run_imagebuilder_sandbox.PROCESS_TERMINATION_GRACE_SECONDS])
+        self.assertEqual(
+            [(call.args[0], call.args[1]) for call in killpg.call_args_list],
+            [
+                (41001, run_imagebuilder_sandbox.signal.SIGTERM),
+                (41002, run_imagebuilder_sandbox.signal.SIGTERM),
+                (41001, run_imagebuilder_sandbox.signal.SIGKILL),
+                (41002, run_imagebuilder_sandbox.signal.SIGKILL),
+            ],
+        )
+
+    def test_runner_rejects_unbounded_build_timeout(self):
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "run_imagebuilder_sandbox.py",
+                "--cwd", ".",
+                "--builder", "./builder",
+                "--wrapper", "./build.sh",
+                "--timeout-seconds", "0",
+            ],
+        ):
+            result = run_imagebuilder_sandbox.main()
+
+        self.assertEqual(result, 125)
 
 
 if __name__ == "__main__":
