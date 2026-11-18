@@ -422,7 +422,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:8px 4px;bord
 footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
 @media(max-width:680px){.grid,.three,.fields{grid-template-columns:1fr}.fields.three{grid-template-columns:repeat(3,minmax(0,1fr))}.card{padding:15px}.nav button{font-size:12px;padding:9px 5px}.buttons button{flex:1}}
 </style></head><body>
-<header><h1>BLAZE PISONET</h1><p>ESP8266 Station Controller · Local access point · V1.5 CS &amp; power control</p></header>
+<header><h1>BLAZE PISONET</h1><p>ESP8266 Station Controller · Local access point · V1.6 INTERCON Stage 1 · CS &amp; power control</p></header>
 <main><div id="toast" role="status"></div>
 <div class="nav" role="navigation" aria-label="Sections">
 <button aria-current="page" data-tab="dashboard">Overview</button><button data-tab="hardware">Display &amp; GPIO</button>
@@ -458,7 +458,11 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <p class="help">Admin-only; disabling also rejects coin pulses in firmware. Display a clear Out-of-service notice if customers may attempt to insert coins.</p></div>
  <div class="card"><h2>Station actions</h2><p class="note">Admin-only actions. A reset ends paid time immediately.</p>
  <div class="buttons"><button onclick="act('warn')">Play warning</button><button class="danger" onclick="confirmAction('resetTimer','End the paid session?')">Reset timer</button></div>
- <p class="help" id="statusline">Status not yet available</p></div></div>
+ <p class="help" id="statusline">Status not yet available</p></div>
+ <div class="card"><h2>INTERCON · Nearby nodes</h2><div class="row"><strong>Role</strong><span id="roleLabel">STANDARD</span></div>
+ <div class="row"><strong>Discovered nodes (last 30 seconds)</strong><span id="peerCount">0</span></div>
+ <div class="row"><strong>Wi-Fi STA</strong><span id="staAddress">Disabled</span></div>
+ <p class="help">Discovery is informational only. Master/Slave remote crediting is locked until a paired, signed, durable protocol is implemented. Standard local coin timing remains active.</p></div></div>
 </section>
 <section id="hardware" class="panel">
  <div class="notice">A blank TM1637 display is not automatically a firmware failure. Confirm CLK, DIO, VCC, GND and the actual module type. Never apply 5 V to ESP8266 GPIO inputs.</div>
@@ -499,6 +503,12 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <label><input name="relayActiveLow" type="checkbox">Relay 1 active-low</label><label><input name="relay2ActiveLow" type="checkbox">Relay 2 active-low</label>
  <label><input name="buzzerActiveLow" type="checkbox">Buzzer active-low</label></div>
  <p class="help">D7/GPIO13 is reserved for CS ENABLE. GPIO6–11 are reserved for flash. GPIO0/2/15 have boot restrictions. GPIO14 is reserved for the buzzer. Changing pins on a live station can interrupt equipment; only save when idle.</p></div>
+ <div class="card"><h2>INTERCON · wireless stations</h2>
+ <div class="fields"><label>Operating role<select name="interconRole"><option value="0">Standard · local coin timer</option><option value="1">Master · coin routing (LOCKED)</option><option value="2">Slave · remote credits (LOCKED)</option></select></label>
+ <label>STA Wi-Fi SSID<input name="staSsid" maxlength="32" placeholder="Shop router SSID"></label>
+ <label>STA password (blank = unchanged)<input name="staPassword" type="password" maxlength="63" placeholder="Router password"></label></div>
+ <div class="checks"><label><input name="staEnabled" type="checkbox">Enable STA while retaining local AP</label></div>
+ <p class="help">Each controller keeps its own WPA2 access point and can join the same Wi-Fi router as a station. Its dashboard is accessible at the AP address or the router-assigned STA/LAN IP, not publicly exposed WAN. Nearby ESP8266s are shown as discovery-only peers; no remote money/coin commands are enabled until authenticated, journaled credit handling passes physical tests.</p></div>
  <div class="card"><h2>Wi-Fi and administrator</h2><div class="fields"><label>Wi-Fi AP name<input name="apName" maxlength="32" required></label>
  <label>New AP password (blank = unchanged)<input name="apPassword" type="password" maxlength="63" placeholder="At least 8 characters"></label>
  <label>New admin password (blank = unchanged)<input name="adminPassword" type="password" minlength="10" maxlength="32" placeholder="10–32 characters"></label></div>
@@ -520,12 +530,13 @@ const $=id=>document.getElementById(id);let lastStatus=null;
 function msg(t){let e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),5500)}
 function chooseTab(tab){document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===tab));document.querySelectorAll('.nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'))}
 document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>chooseTab(b.dataset.tab)));
-async function request(path,data){const options={credentials:'same-origin',cache:'no-store'};if(data){options.method='POST';options.body=data}
+async function request(path,data){const options={credentials:'same-origin',cache:'no-store'};if(data){options.method='POST';options.body=data;options.headers={'X-Blaze-Action':'1'}}
  const r=await fetch(path,options);let txt=await r.text();if(!r.ok)throw new Error(txt||('HTTP '+r.status));try{return JSON.parse(txt)}catch(e){return txt}}
 function put(k,v){let e=$(k);if(e)e.textContent=v}
-function populateForm(o){let f=$('settingsForm');for(const k of ['apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness','idleTriggerSeconds','shutdownGraceSeconds','pwrPulseMilliseconds'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
- for(const k of ['coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k]}
-function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Free heap '+o.heap+' bytes · AP '+o.ip);
+function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole','staSsid','apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness','idleTriggerSeconds','shutdownGraceSeconds','pwrPulseMilliseconds'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
+ for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k]}
+function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
+ put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
  for(const [id,key] of [['r1','relay1On'],['r2','relay2On']]){let e=$(id);e.textContent=o[key]?'ON':'OFF';e.className='state '+(o[key]?'on':'off')}
  put('csState',o.csEnabled?'ENABLED':'DISABLED');$('csState').className='state '+(o.csEnabled?'on':'off');
  put('pcState',o.pcExpectedOn?'EXPECTED ON':'EXPECTED OFF');put('pcGrace',o.shutdownPending?o.shutdownSecondsLeft+'s until pulse':'Not pending');
@@ -561,7 +572,7 @@ async function act(name){try{await request('/action',new URLSearchParams({name})
 function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
-$('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Wi-Fi changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+$('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
 $('uploadForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);let result=await request('/upload?patternName='+encodeURIComponent(f.get('patternName')),f);msg(String(result))}catch(err){msg('Upload failed: '+err.message)}});
 poll();setInterval(poll,1500);
 </script></body></html>)BLAZEHTML";
@@ -648,6 +659,7 @@ bool relay2State = false;
 static const uint8_t CS_ENABLE_PIN = 13;
 bool csEnabled = true;
 bool csActiveHigh = true;
+#include "InterconDiscovery.h"
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
 bool pcExpectedOn = false; // Estimated only. No physical state detection.
@@ -815,6 +827,9 @@ void loadAdminPassword() {
   } else { strcpy(adminPassword,authState.pass); }
 }
 bool requireAdmin() {
+  if(server.method()==HTTP_POST && server.header("X-Blaze-Action")!="1") {
+    server.send(403,"text/plain","Missing same-origin action header");return false;
+  }
   if (server.authenticate("admin",adminPassword)) return true;
   server.requestAuthentication();
   return false;
@@ -1125,7 +1140,7 @@ void setRelays(bool on) {
 void writeCsEnable() {
   // Low-cost D7 gate must drive a transistor, optocoupler or EN pin,
   // never the power load of a coin acceptor directly.
-  digitalWrite(CS_ENABLE_PIN, (csEnabled == csActiveHigh) ? HIGH : LOW);
+  digitalWrite(CS_ENABLE_PIN, (interconLocalCoinsAllowed() == csActiveHigh) ? HIGH : LOW);
   pinMode(CS_ENABLE_PIN, OUTPUT);
 }
 
@@ -1145,7 +1160,7 @@ void setCsEnabled(bool enable) {
     noInterrupts();
     coinQueued = 0;
     coinPulseStartUs = 0;
-    coinInputAllowed = true;
+    coinInputAllowed = interconLocalCoinsAllowed();
     interrupts();
   }
 }
@@ -1704,7 +1719,7 @@ void configureCoinInput() {
 void handleCoinInput() {
   uint8_t count=0;
   noInterrupts(); count=coinQueued; coinQueued=0; interrupts();
-  if (!csEnabled) return;
+  if (!interconLocalCoinsAllowed()) return;
   for (uint8_t n=0;n<count;n++) { addCoinTime(); incrementSales(); }
 }
 
@@ -1728,7 +1743,8 @@ void sendStatus() {
   s += F(",\"timerRunning\":");s+=(timerRunning?"true":"false");
   s += F(",\"relay1On\":");s+=(relayState?"true":"false");
   s += F(",\"relay2On\":");s+=(relay2State?"true":"false");
-  s += F(",\"csEnabled\":");s+=(csEnabled?"true":"false");
+  s += F(",\"csEnabled\":");s+=(interconLocalCoinsAllowed()?"true":"false");
+  s += F(",\"csConfiguredEnabled\":");s+=(csEnabled?"true":"false");
   s += F(",\"csActiveHigh\":");s+=(csActiveHigh?"true":"false");
   s += F(",\"pcExpectedOn\":");s+=(pcExpectedOn?"true":"false");
   s += F(",\"shutdownPending\":");s+=(pcShutdownPending?"true":"false");
@@ -1739,6 +1755,13 @@ void sendStatus() {
   } else s += '0';
   s += F(",\"displayMode\":");s+=jsonQuote(displayUnit.mode());
   s += F(",\"ip\":");s+=jsonQuote(WiFi.softAPIP().toString());
+  s += F(",\"staIp\":");s+=jsonQuote(WiFi.status()==WL_CONNECTED?WiFi.localIP().toString():String(""));
+  s += F(",\"staConnected\":");s+=(WiFi.status()==WL_CONNECTED?"true":"false");
+  s += F(",\"staEnabled\":");s+=(interconPref.staEnabled?"true":"false");
+  s += F(",\"staSsid\":");s+=jsonQuote(String(interconPref.staSsid));
+  s += F(",\"interconRole\":");s+=interconPref.role;
+  s += F(",\"interconPeerCount\":");s+=interconPeerCount();
+  s += F(",\"interconMode\":\"DISCOVERY-ONLY: remote credits locked\"");
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
   JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);JNUM("idleTriggerSeconds",idleTriggerSeconds);
@@ -1769,7 +1792,7 @@ uint32_t uploadLength=0;
 const uint32_t MAX_UPLOAD_BYTES=65536UL;
 void handleFileUpload() {
   HTTPUpload& upload = server.upload();
-  if (!server.authenticate("admin",adminPassword)) return;
+  if (!server.authenticate("admin",adminPassword) || server.header("X-Blaze-Action")!="1") return;
   if (upload.status==UPLOAD_FILE_START) {
     uploadSucceeded=false;uploadMessage="Upload rejected";uploadLength=0;uploadDestination="";
     String which=server.arg("patternName");
@@ -1819,6 +1842,7 @@ void setup() {
   randomSeed(micros());
   bool fsReady=LittleFS.begin();
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
+  loadInterconConfig(fsReady);
   loadPersistentState();
   loadIdlePreferences();
   loadPowerAndCoinPrefs();
@@ -1839,7 +1863,7 @@ void setup() {
   setupDisplay();
   displayUnit.setIdleDelaySeconds(idleTriggerSeconds);
   configureCoinInput();
-  coinInputAllowed = csEnabled;
+  coinInputAllowed = interconLocalCoinsAllowed();
   // After any ESP reboot assume PC OFF; retain the last paid balance, PAUSED.
   // Restart countdown and request power-on only when a fresh credit is granted.
   pcExpectedOn = false; pcShutdownPending = false;
@@ -1852,7 +1876,8 @@ void setup() {
   } else {remainingSeconds=0;timerRunning=false;remainingMs100=0;setRelays(false);}
   lastRecoveryCheckpoint=millis();
 
-  WiFi.mode(WIFI_AP);
+  WiFi.persistent(false);
+  WiFi.mode(WIFI_AP_STA); // Local AP stays available with optional STA uplink
   bool apStarted=(strlen(AP_PASSWORD)==0)?WiFi.softAP(AP_NAME):WiFi.softAP(AP_NAME,AP_PASSWORD);
   if (!apStarted) {
     Serial.println(F("[WIFI] Failed to start saved AP; using defaults"));
@@ -1860,6 +1885,15 @@ void setup() {
     WiFi.softAP(AP_NAME,AP_PASSWORD);
   }
   Serial.print(F("[WIFI] AP IP: "));Serial.println(WiFi.softAPIP());
+  // Connect asynchronously; never wait for STA or disable the local AP.
+  if(interconPref.staEnabled && interconPref.staSsid[0]) {
+    WiFi.begin(interconPref.staSsid,interconPref.staPassword);
+    interconLastReconnect=millis();
+  } else {
+    WiFi.disconnect(false);
+  }
+  interconUdp.begin(INTERCON_DISCOVERY_PORT);
+  interconLastAdvertised=millis()-10000UL;
   server.on("/",HTTP_GET,[](){if(!requireAdmin())return;server.send_P(200,PSTR("text/html"),WEB_UI);});
   server.on("/api/status",HTTP_GET,[](){if(!requireAdmin())return;sendStatus();});
   server.on("/display/test",HTTP_POST,[](){
@@ -1918,6 +1952,9 @@ void setup() {
       pcExpectedOn = !pcExpectedOn;
       pcShutdownPending=false;
     } else if(a=="csOn" || a=="csOff") {
+      if(a=="csOn" && interconPref.role!=INTERCON_STANDARD) {
+        reject("CS remains disabled in Master/Slave until signed credit protocol is ready",409);return;
+      }
       // Honor any completed coins before physically disabling the slot.
       if(a=="csOff") handleCoinInput();
       // CS state is saved across ESP resets, regardless of timer state.
@@ -1930,6 +1967,36 @@ void setup() {
     if(!requireAdmin())return;
     if(!server.hasArg("save")) {reject("Save flag missing");return;}
     if(timerRunning) {reject("Do not change settings during paid time",409);return;}
+    // Separate INTERCON config file preserves the legacy 512-byte EEPROM map.
+    if(!server.hasArg("interconRole")) {reject("Missing station role",400);return;}
+    const String roleValue=server.arg("interconRole");
+    if(roleValue!="0" && roleValue!="1" && roleValue!="2") {reject("Invalid station role",400);return;}
+    const uint8_t nextRole=(uint8_t)roleValue.toInt();
+    if(nextRole!=interconPref.role &&
+       (remainingSeconds>0 || pcShutdownPending || powerPulseActive)) {
+      reject("End or reconcile saved paid time and PC power before switching roles",409);return;
+    }
+    const bool nextStaEnabled=server.hasArg("staEnabled");
+    String nextStaSsid=server.arg("staSsid");
+    String nextStaPass=server.arg("staPassword");
+    if(nextStaSsid.length()>32 || nextStaPass.length()>63 ||
+       (nextStaEnabled && nextStaSsid.length()==0) ||
+       (nextStaPass.length()>0 && nextStaPass.length()<8)) {
+      reject("STA requires SSID 1-32 and password 8-63 characters (or blank for unchanged)",400);return;
+    }
+    // Commit network role first; if storage is unusable, reject before
+    // mutating the rest of the controller configuration.
+    InterconPreferences previousIntercon=interconPref;
+    interconPref.role=nextRole;
+    interconPref.staEnabled=nextStaEnabled?1:0;
+    nextStaSsid.toCharArray(interconPref.staSsid,sizeof(interconPref.staSsid));
+    if(nextStaPass.length())nextStaPass.toCharArray(interconPref.staPassword,sizeof(interconPref.staPassword));
+    if(!saveInterconConfig()) {
+      interconPref=previousIntercon;
+      reject("Unable to persist INTERCON role or STA settings",503);return;
+    }
+    coinInputAllowed=interconLocalCoinsAllowed();
+    writeCsEnable();
     String newName=server.arg("apName");newName.trim();
     String newPass=server.arg("apPassword");
     if(newPass.length()==0)newPass=String(AP_PASSWORD);
@@ -2019,6 +2086,8 @@ void setup() {
     server.send(uploadSucceeded?200:400,"text/plain",uploadMessage);
   },handleFileUpload);
   server.onNotFound([](){if(!requireAdmin())return;reject("Not found",404);});
+  static const char* checkedHeaders[] = {"X-Blaze-Action"};
+  server.collectHeaders(checkedHeaders,1);
   server.begin();
   lastNearEndStartedAt=millis();
   playWelcomeChime();
@@ -2030,6 +2099,7 @@ void loop() {
   updateTimerState();
   updatePcPowerControl();
   displayUnit.update(remainingSeconds);
+  interconLoop();
   updateBuzzer();
   updateChimePlayer();
   yield();
