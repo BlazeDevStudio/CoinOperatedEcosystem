@@ -366,6 +366,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             content = f.read()
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
+        self.assertIn(
+            '--timeout-seconds "${PHX_IMAGEBUILDER_TIMEOUT_SECONDS:-3600}"',
+            content,
+            "Generated wrapper must forward the operator's bounded per-invocation timeout",
+        )
 
     def test_generated_wrapper_rejects_replaced_staging_directory_symlink(self):
         profile = load_profile("gl-mt1300")
