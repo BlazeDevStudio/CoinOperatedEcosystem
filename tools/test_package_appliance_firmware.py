@@ -1038,11 +1038,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         redirected_output = os.path.join(builder, "redirected-output")
         os.makedirs(builder)
         recipe = (
-            "image:\\n"
-            "\\t@mkdir -p redirected-output\\n"
-            "\\t@ln -s redirected-output bin\\n"
-            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
-            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/redirected.bin\\n"
+            "image:\n"
+            "\t@mkdir -p redirected-output\n"
+            "\t@ln -s redirected-output bin\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/redirected.bin\n"
         )
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
