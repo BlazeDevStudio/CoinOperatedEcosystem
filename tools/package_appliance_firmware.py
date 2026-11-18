@@ -548,6 +548,11 @@ if [ ! -d "$STAGING_DIR" ]; then
     echo "RELEASE-BLOCKED: staged rootfs not found: $STAGING_DIR" >&2
     exit 1
 fi
+STAGING_DIR_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$STAGING_DIR")"
+if [ "$STAGING_DIR_REAL" != "$STAGING_DIR" ] || [ -L "$STAGING_DIR" ]; then
+    echo "RELEASE-BLOCKED: staged rootfs path contains a symlink: $STAGING_DIR" >&2
+    exit 1
+fi
 
 # A reused ImageBuilder may report success without writing a new binary.
 # Never certify files or a checksum manifest left by an earlier invocation.
