@@ -1005,6 +1005,51 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertFalse(os.path.exists(bwrap_marker), "caller PATH must not choose the sandbox executable")
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
+    def test_generated_wrapper_does_not_accept_forged_sandbox_environment(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging_forged_sandbox")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "forged-sandbox-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "forged-sandbox-imagebuilder")
+        os.makedirs(builder)
+        probe_name = ".phx-bwrap-owner-probe-12345"
+        with open(os.path.join(builder, probe_name), "w", encoding="utf-8") as fp:
+            fp.write("operator-forged-probe\n")
+        external_marker = os.path.join(self.temp_dir, "operator-owned-sentinel")
+        recipe = (
+            "image:\n"
+            "\t@printf 'UNSANDBOXED-WRITE' > ../operator-owned-sentinel\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/forged.bin\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        env = os.environ.copy()
+        env["PATH"] = "/usr/bin:/bin"
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
+        env["PHX_BWRAP_OWNER_PROBE"] = probe_name
+        result = subprocess.run(
+            ["/bin/sh", wrapper],
+            cwd=self.temp_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+
+        self.assertIn("RELEASE-BOUNDARY", result.stderr)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(
+            os.path.exists(external_marker),
+            "caller-forged environment and probe file must not bypass the sandbox runner",
+        )
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
     def test_runner_resolves_bubblewrap_from_trusted_system_path_only(self):
         cwd = os.path.join(self.temp_dir, "runner-path-cwd")
         builder = os.path.join(cwd, "builder")
