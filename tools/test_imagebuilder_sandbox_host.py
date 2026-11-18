@@ -119,12 +119,35 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertFalse(ready)
         self.assertIn("timed out", detail.lower())
 
+    def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
+        helper = self.helper_or_skip()
+        with mock.patch.object(helper.shutil, "which", return_value=None) as which:
+            ready, detail = helper.check_host(timeout_seconds=1)
+        self.assertFalse(ready)
+        self.assertIn("not found", detail.lower())
+        which.assert_called_once_with("bwrap", path="/usr/bin:/bin")
+
+
     def test_probe_blocks_when_bubblewrap_is_missing(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None):
             ready, detail = helper.check_host(timeout_seconds=1)
         self.assertFalse(ready)
         self.assertIn("not found", detail.lower())
+
+
+    def test_workflow_runs_host_unit_tests_before_bwrap_availability_gate(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        tests_position = workflow.find("Run sandbox host preflight unit tests")
+        availability_position = workflow.find("Verify bubblewrap availability (no privileged install)")
+        self.assertGreater(tests_position, -1)
+        self.assertGreater(availability_position, -1)
+        self.assertLess(
+            tests_position,
+            availability_position,
+            "pure host-preflight unit tests must run before the real-host Bubblewrap availability gate",
+        )
 
 
     def test_workflow_triggers_for_release_child_branch(self):
@@ -148,8 +171,8 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
             workflow = fp.read()
         bootstrap_section = workflow.split(
-            "      - name: Checkout exact PR head", 1
-        )[1].split("      - name: Run sandbox host preflight unit tests", 1)[0]
+            "      - name: Verify bubblewrap availability (no privileged install)", 1
+        )[1].split("      - name: Verify unprivileged single-ID runner identity", 1)[0]
         self.assertIn(
             "command -v bwrap",
             bootstrap_section,
