@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import select
 import shutil
 import signal
@@ -18,6 +19,8 @@ USERNS_INFO_TIMEOUT_SECONDS = 30
 PROCESS_TERMINATION_GRACE_SECONDS = 2.0
 DEFAULT_BUILD_TIMEOUT_SECONDS = 3600
 MAX_BUILD_TIMEOUT_SECONDS = 14400
+TRUSTED_BWRAP_PATH = "/usr/bin:/bin"
+SANDBOX_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 def blocked(message: str, detail: str = "") -> int:
@@ -170,11 +173,117 @@ def _communicate_with_timeout(
     return (stdout, stderr), cleanup_failed
 
 
+def _is_within_trusted_system_directories(path: str) -> bool:
+    resolved = os.path.realpath(path)
+    if not os.path.isabs(resolved) or not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+        return False
+    for directory in ("/usr/bin", "/bin"):
+        trusted = os.path.realpath(directory)
+        try:
+            if os.path.commonpath((resolved, trusted)) == trusted:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _has_single_id_mapping(path: str) -> bool:
+    try:
+        with open(path, "r", encoding="ascii") as mapping_file:
+            rows = [line.split() for line in mapping_file if line.strip()]
+    except OSError:
+        return False
+    if len(rows) != 1 or len(rows[0]) != 3:
+        return False
+    try:
+        namespace_id, host_id, length = (int(value, 10) for value in rows[0])
+    except ValueError:
+        return False
+    return namespace_id == 0 and host_id > 0 and length == 1
+
+
+def _decode_mountinfo_path(value: str) -> str:
+    return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
+
+
+def verify_sandbox_context(
+    builder: str,
+    probe_name: str,
+    proc_root: str = "/proc",
+) -> bool:
+    """Verify the wrapper is inside the expected single-ID, read-only-root sandbox."""
+    if os.environ.get("PHX_IMAGEBUILDER_SANDBOX_ACTIVE") != "1":
+        return False
+    if os.environ.get("PHX_BWRAP_OWNER_PROBE") != probe_name:
+        return False
+    if not re.fullmatch(r"\\.phx-bwrap-owner-probe-[0-9]+|\\.phx-test-owner-probe", probe_name or ""):
+        return False
+    if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (0, 0, 0, 0):
+        return False
+
+    builder_path = os.path.abspath(builder)
+    if os.path.realpath(builder_path) != builder_path or not os.path.isdir(builder_path):
+        return False
+
+    probe_path = os.path.join(builder_path, probe_name)
+    try:
+        probe_stat = os.lstat(probe_path)
+    except OSError:
+        return False
+    if not stat.S_ISREG(probe_stat.st_mode):
+        return False
+
+    if not _has_single_id_mapping(os.path.join(proc_root, "self", "uid_map")):
+        return False
+    if not _has_single_id_mapping(os.path.join(proc_root, "self", "gid_map")):
+        return False
+
+    mountinfo_path = os.path.join(proc_root, "self", "mountinfo")
+    try:
+        with open(mountinfo_path, "r", encoding="utf-8") as mountinfo_file:
+            mountinfo_lines = mountinfo_file.readlines()
+    except OSError:
+        return False
+
+    mounts: dict[str, tuple[str, set[str]]] = {}
+    for line in mountinfo_lines:
+        left, separator, right = line.partition(" - ")
+        if not separator:
+            return False
+        left_fields = left.split()
+        right_fields = right.split()
+        if len(left_fields) < 6 or len(right_fields) < 3:
+            return False
+        mountpoint = os.path.normpath(_decode_mountinfo_path(left_fields[4]))
+        if mountpoint in mounts:
+            return False
+        mounts[mountpoint] = (right_fields[0], set(left_fields[5].split(",")))
+
+    root_mount = mounts.get("/")
+    tmp_mount = mounts.get("/tmp")
+    proc_mount = mounts.get("/proc")
+    dev_mount = mounts.get("/dev")
+    builder_mount = mounts.get(builder_path)
+    if not root_mount or "ro" not in root_mount[1] or "rw" in root_mount[1]:
+        return False
+    if not tmp_mount or tmp_mount[0] != "tmpfs" or "rw" not in tmp_mount[1]:
+        return False
+    if not proc_mount or proc_mount[0] != "proc" or "rw" not in proc_mount[1]:
+        return False
+    if not dev_mount or dev_mount[0] != "tmpfs" or "rw" not in dev_mount[1]:
+        return False
+    if not builder_mount or "rw" not in builder_mount[1]:
+        return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cwd", required=True)
+    parser.add_argument("--cwd")
     parser.add_argument("--builder", required=True)
-    parser.add_argument("--wrapper", required=True)
+    parser.add_argument("--wrapper")
+    parser.add_argument("--probe")
+    parser.add_argument("--verify-context", action="store_true")
     parser.add_argument(
         "--timeout-seconds", type=int, default=DEFAULT_BUILD_TIMEOUT_SECONDS,
         help=f"maximum ImageBuilder runtime in seconds (1-{MAX_BUILD_TIMEOUT_SECONDS})",
@@ -183,6 +292,15 @@ def main() -> int:
 
     if not 1 <= args.timeout_seconds <= MAX_BUILD_TIMEOUT_SECONDS:
         return blocked(f"build timeout must be between 1 and {MAX_BUILD_TIMEOUT_SECONDS} seconds")
+
+    if args.verify_context:
+        probe_name = args.probe or os.environ.get("PHX_BWRAP_OWNER_PROBE", "")
+        if verify_sandbox_context(args.builder, probe_name):
+            return 0
+        return blocked("current process does not satisfy the required single-ID read-only-root ImageBuilder sandbox")
+
+    if not args.cwd or not args.wrapper:
+        return blocked("normal sandbox invocation requires --cwd and --wrapper")
 
     try:
         caller_uid, caller_gid = _invoking_unprivileged_identity()
@@ -204,9 +322,12 @@ def main() -> int:
     except ValueError:
         return blocked("sandbox paths are not on one filesystem root")
 
-    bwrap = shutil.which("bwrap")
-    if not bwrap:
-        return blocked("bubblewrap is required")
+    bwrap_candidate = shutil.which("bwrap", path=TRUSTED_BWRAP_PATH)
+    if not bwrap_candidate:
+        return blocked("bubblewrap is required in trusted system directories")
+    bwrap = os.path.realpath(bwrap_candidate)
+    if not _is_within_trusted_system_directories(bwrap):
+        return blocked("bubblewrap resolved outside trusted system directories")
 
     probe_name = f".phx-bwrap-owner-probe-{os.getpid()}"
     probe_path = os.path.join(builder, probe_name)
@@ -234,7 +355,7 @@ def main() -> int:
         "--bind", builder, builder,
         "--chdir", cwd,
         "--clearenv",
-        "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "--setenv", "PATH", SANDBOX_PATH,
         "--setenv", "HOME", "/tmp",
         "--setenv", "TMPDIR", "/tmp",
         "--setenv", "LC_ALL", "C",
@@ -252,7 +373,7 @@ def main() -> int:
         process = subprocess.Popen(
             command,
             cwd=cwd,
-            env={"PATH": "/usr/bin:/bin", "LANG": "C"},
+            env={"PATH": TRUSTED_BWRAP_PATH, "LANG": "C"},
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
