@@ -914,6 +914,7 @@ bool interconJournalSetBalance(uint64_t units);
 void interconSlaveCheckpoint();
 void interconSlaveRestoreFromJournal();
 void interconMasterReceiveCoin(uint8_t count);
+void interconMasterDrainCoin(bool force);
 void interconMasterTick();
 void interconRefreshCoinGate();
 // Declare functions with custom parameter types explicitly so Arduino does not
@@ -1808,12 +1809,12 @@ void configureCoinInput() {
   attachInterrupt(digitalPinToInterrupt(coinPin),onCoinEdge,CHANGE);
 }
 void handleCoinInput() {
-  uint8_t count=0;
-  noInterrupts(); count=coinQueued; coinQueued=0; interrupts();
-  if(interconPref.role==INTERCON_MASTER){
-    if(count)interconMasterReceiveCoin(count); // durable before transmit
+  if(interconPref.role==INTERCON_MASTER) {
+    interconMasterDrainCoin(false); // entire multi-pulse burst, then journal
     return;
   }
+  uint8_t count=0;
+  noInterrupts(); count=coinQueued; coinQueued=0; interrupts();
   if (!interconLocalCoinsAllowed()) return; // Slave rejects local coin pulses
   for (uint8_t n=0;n<count;n++) { addCoinTime(); incrementSales(); }
 }
@@ -1978,6 +1979,9 @@ void setup() {
   Serial.begin(115200);Serial.println();
   Serial.println(F("[BLAZE] Stage 4: journal-backed Slave timer + signed Master credit; D6 PWR_SW / D7 CS"));
   randomSeed(micros());
+  // CRITICAL: stock LittleFSConfig defaults to autoFormat=true. Never erase
+  // paid journal or paired credentials when corruption prevents mounting.
+  LittleFS.setConfig(LittleFSConfig(false));
   bool fsReady=LittleFS.begin();
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
   loadInterconConfig(fsReady);
@@ -2186,7 +2190,10 @@ void setup() {
       // Master can arm CS, but D7 remains OFF until paired/authenticated,
       // its journal is healthy and no financial event awaits an ACK.
       // Honor any completed coins before physically disabling the slot.
-      if(a=="csOff") handleCoinInput();
+      if(a=="csOff"){
+        if(interconPref.role==INTERCON_MASTER)interconMasterDrainCoin(true);
+        else handleCoinInput();
+      }
       // CS state is saved across ESP resets, regardless of timer state.
       setCsEnabled(a=="csOn");
       saveCsPref();
