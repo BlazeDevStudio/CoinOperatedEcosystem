@@ -32,6 +32,7 @@ InterconPreferences interconPref;
 InterconPeer interconPeers[INTERCON_MAX_PEERS]={};
 WiFiUDP interconUdp;
 bool interconFileSystemReady=false;
+bool interconConfigHealthy=true;
 uint32_t interconLastAdvertised=0, interconLastReconnect=0;
 
 void interconDefaults() {
@@ -49,14 +50,25 @@ uint32_t interconConfigChecksum() {
 void loadInterconConfig(bool fsReady) {
   interconFileSystemReady=fsReady;
   interconDefaults();
-  if(!fsReady)return;
+  interconConfigHealthy=fsReady;
+  if(!fsReady) {
+    // If storage is unavailable, do not assume Standard and accept coins.
+    interconPref.role=INTERCON_SLAVE;
+    Serial.println(F("[INTERCON] Storage unavailable; coin input locked"));
+    return;
+  }
   File f=LittleFS.open("/blaze-intercon.cfg","r");
   if(!f)return;
   InterconPreferences candidate={};
   size_t n=f.readBytes(reinterpret_cast<char*>(&candidate),sizeof(candidate));
   const bool complete=(n==sizeof(candidate) && !f.available());
   f.close();
-  if(!complete)return;
+  if(!complete) {
+    interconConfigHealthy=false;
+    interconPref.role=INTERCON_SLAVE;
+    Serial.println(F("[INTERCON] Corrupt config length; coin input locked"));
+    return;
+  }
   interconPref=candidate;
   interconPref.staSsid[32]=0;
   interconPref.staPassword[64]=0;
@@ -64,7 +76,9 @@ void loadInterconConfig(bool fsReady) {
      interconPref.staEnabled>1 || interconPref.checksum!=interconConfigChecksum() ||
      strlen(interconPref.staSsid)>32 || strlen(interconPref.staPassword)>63) {
     interconDefaults();
-    Serial.println(F("[INTERCON] Invalid settings; safe Standard/AP defaults"));
+    interconConfigHealthy=false;
+    interconPref.role=INTERCON_SLAVE;
+    Serial.println(F("[INTERCON] Invalid settings; coin input locked"));
   }
 }
 bool saveInterconConfig() {
@@ -82,12 +96,13 @@ bool saveInterconConfig() {
   }
   // Do not delete the old settings if rename fails.
   if(!LittleFS.rename("/blaze-intercon.tmp","/blaze-intercon.cfg"))return false;
+  interconConfigHealthy=true;
   return true;
 }
 bool interconLocalCoinsAllowed() {
   // Master/Slave hardware coin routing is intentionally locked while the
   // signed credit protocol is unfinished. Standard remains fully standalone.
-  return csEnabled && interconPref.role==INTERCON_STANDARD;
+  return interconConfigHealthy && csEnabled && interconPref.role==INTERCON_STANDARD;
 }
 uint8_t interconPeerCount() {
   const uint32_t now=millis();
