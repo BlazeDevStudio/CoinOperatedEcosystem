@@ -2102,6 +2102,12 @@ void setup() {
     if(timerRunning||remainingSeconds>0||pcShutdownPending||powerPulseActive){
       reject("Finish and reconcile paid time before pairing",409);return;
     }
+    // Once an issuer is committed in either slot, re-pairing would invalidate
+    // the historic event identity. Require a reviewed migration procedure.
+    if(masterJournal.status()!=blaze_journal::Status::Empty ||
+       slaveJournal.status()!=blaze_journal::Status::Empty){
+      reject("Cannot re-pair with an existing or uncertain journal; reconcile and migrate it first",409);return;
+    }
     if(strcmp(adminPassword,"blaze-admin")==0 || strcmp(AP_PASSWORD,"12345678")==0){
       reject("Change both default AP and administrator passwords before storing a peer secret",409);return;
     }
@@ -2198,6 +2204,11 @@ void setup() {
     if(nextRole!=interconPref.role &&
        (remainingSeconds>0 || pcShutdownPending || powerPulseActive)) {
       reject("End or reconcile saved paid time and PC power before switching roles",409);return;
+    }
+    if(nextRole!=interconPref.role &&
+       (masterJournal.status()!=blaze_journal::Status::Empty ||
+        slaveJournal.status()!=blaze_journal::Status::Empty)){
+      reject("Role change requires migration of any existing or uncertain credit journal",409);return;
     }
     const bool nextStaEnabled=server.hasArg("staEnabled");
     String nextStaSsid=server.arg("staSsid");
