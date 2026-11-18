@@ -96,40 +96,51 @@ void interconMasterTick(){
 }
 void interconMasterReceiveCoin(uint8_t count){
   if(!count || interconPref.role!=INTERCON_MASTER)return;
-  // Immediately close CS/ISR before expensive LittleFS commits.
-  // One coin event per durable pending slot; multiple pulses require
-  // operator reconciliation rather than silently losing revenue.
+  // Freeze the physical CS before committing an entire bounded pulse burst.
+  // A multi-pulse denomination is ONE durable event for count * secondsPerPulse.
   interconMasterFlowHalted=true;
   interconRefreshCoinGate();
-  if(count>1){
-    interconUnresolvedPulseCount+=(uint32_t)count-1;
-    Serial.printf("[INTERCON] CRITICAL: %u additional pulses need reconciliation\n",
-                  (unsigned)(count-1));
-  }
   if(!interconConfigHealthy || !interconJournalHealthy() ||
      !peerPairReady || !interconPref.staEnabled ||
      interconRecovered.snapshot.master.pendingSequence){
-    interconUnresolvedPulseCount++;
-    Serial.println(F("[INTERCON] CRITICAL: paid pulse without free journal slot"));
+    interconUnresolvedPulseCount+=count;
+    Serial.println(F("[INTERCON] CRITICAL: paid burst without free journal slot"));
     return;
   }
-  const uint32_t seconds=(uint32_t)addMinutes*60UL+addSeconds;
-  if(!seconds || seconds>65535UL){
-    interconUnresolvedPulseCount++;
+  const uint32_t secondsPerPulse=(uint32_t)addMinutes*60UL+addSeconds;
+  const uint32_t grant=secondsPerPulse*(uint32_t)count;
+  if(!secondsPerPulse || count>20 || !grant || grant>65535UL){
+    interconUnresolvedPulseCount+=count;
+    Serial.println(F("[INTERCON] CRITICAL: burst rejected; operator reconciliation required"));
     return;
   }
   blaze_credit::MasterPending current=interconRecovered.snapshot.master;
-  if(!blaze_credit::stage(current,(uint16_t)seconds,
+  if(!blaze_credit::stage(current,(uint16_t)grant,
                           interconMasterCommit,nullptr)){
-    interconUnresolvedPulseCount++;
+    interconUnresolvedPulseCount+=count;
     Serial.println(F("[INTERCON] CRITICAL: journal commit failed; payment quarantined"));
     return;
   }
-  // The first received pulse is now durably journaled; other pulses, if any,
-  // are never silently credited or forgotten from the operator alarm.
-  if(count==1)interconMasterFlowHalted=false;
-  interconMasterSendPending(); // pending state is already durable
-  interconRefreshCoinGate(); // still OFF until valid journaled ACK
+  interconMasterFlowHalted=false; // pending event itself keeps physical CS OFF
+  interconMasterSendPending(); // EXACTLY the committed burst, not RAM coins
+  interconRefreshCoinGate(); // OFF until durable, authenticated ACK
+}
+// Coin acceptors can emit several pulses for one denomination. Wait for a
+// quiet interval so the whole electrical burst becomes one durable event.
+// Actual pulse widths and spacing require bench calibration before payment GO.
+void interconMasterDrainCoin(bool force){
+  if(interconPref.role!=INTERCON_MASTER)return;
+  uint8_t count=0;
+  noInterrupts();
+  const uint32_t lastEdge=lastAcceptedPulseUs;
+  const uint8_t queued=coinQueued;
+  interrupts();
+  if(!queued)return;
+  if(!force && (uint32_t)(micros()-lastEdge)<650000UL)return;
+  noInterrupts();
+  count=coinQueued;coinQueued=0;
+  interrupts();
+  if(count)interconMasterReceiveCoin(count);
 }
 void interconSlaveSendAck(uint64_t sequence){
   if(!peerPairReady || !peerOnline())return;
