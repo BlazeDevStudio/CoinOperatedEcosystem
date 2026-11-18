@@ -27,7 +27,7 @@ check('loadInterconConfig(fsReady);' in source and 'saveInterconConfig()' in sou
       "role/STA settings saved outside legacy EEPROM")
 check('INTERCON_STANDARD=0' in peer and 'INTERCON_MASTER=1' in peer and 'INTERCON_SLAVE=2' in peer,
       "Standard is default with explicit Master and Slave roles")
-check('return csEnabled && interconPref.role==INTERCON_STANDARD;' in peer,
+check('return interconConfigHealthy && csEnabled && interconPref.role==INTERCON_STANDARD;' in peer,
       "physical coin route fails closed for Master/Slave stage 1")
 check('if (!interconLocalCoinsAllowed()) return;' in source,
       "coin pulse processing rejects non-Standard physical input")
@@ -35,6 +35,8 @@ check('coinInputAllowed = interconLocalCoinsAllowed();' in source,
       "boot and manual CS gate respect current role")
 check('digitalWrite(CS_ENABLE_PIN, (interconLocalCoinsAllowed() == csActiveHigh)' in source,
       "hardware coin acceptor output follows safe role gate")
+check('interconConfigHealthy=false;' in peer and 'interconPref.role=INTERCON_SLAVE;' in peer,
+      "corrupt settings cannot silently enable local coin intake")
 check('void interconReceiveDiscovery()' in peer and 'void interconAdvertise()' in peer,
       "bounded UDP discovery is implemented")
 check('INTERCON_MAX_PEERS=12' in peer and 'if(slot<0)return;' in peer,
