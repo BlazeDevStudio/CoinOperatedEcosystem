@@ -40,9 +40,10 @@ check('if(interconPref.role==INTERCON_STANDARD)return true;' in peer and
       'return false;' in peer,
       "Standard local coins, Master journal/paired coin gate, Slave closed")
 check('if(interconPref.role==INTERCON_MASTER)' in source and
-      'interconMasterReceiveCoin(count);' in source and
+      'interconMasterDrainCoin(false);' in source and
+      'interconMasterReceiveCoin(count);' in runtime and
       'if (!interconLocalCoinsAllowed()) return;' in source,
-      "Master pulses journaled, Slave cannot credit local coin pulses")
+      "Master electrical pulse burst journaled, Slave cannot credit local input")
 check('coinInputAllowed = interconLocalCoinsAllowed();' in source,
       "boot and manual CS gate respect current role")
 check('digitalWrite(CS_ENABLE_PIN, (interconLocalCoinsAllowed() == csActiveHigh)' in source,
@@ -125,4 +126,12 @@ check('interconPref.role==INTERCON_SLAVE &&' in source and
 check('INTERCON_STANDARD' in peer and 'INTERCON_MASTER' in peer and
       'INTERCON_SLAVE' in peer,
       "all three operator modes remain independently available")
+check('LittleFS.setConfig(LittleFSConfig(false));' in source,
+      "corrupt LittleFS cannot silently autoformat the payment ledger")
+check('if(!force && (uint32_t)(micros()-lastEdge)<650000UL)return;' in runtime and
+      'const uint32_t grant=secondsPerPulse*(uint32_t)count;' in runtime and
+      'if(!secondsPerPulse || count>20' in runtime,
+      "bounded multi-pulse denomination captured as one durable transaction")
+check('if(interconPref.role==INTERCON_MASTER)interconMasterDrainCoin(true);' in source,
+      "manual CS off flushes captured coin bursts before disabling")
 print("PASS: Stage 4 source integration safety checks (hardware validation still required)")
