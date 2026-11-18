@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Fail-fast capability probe for the release-owned ImageBuilder sandbox host."""
+import os
 import shutil
 import subprocess
 import sys
@@ -12,7 +13,25 @@ PROBE_SCRIPT = (
     'test -s /tmp/.phx-userns-preflight && '
     'rm -f /tmp/.phx-userns-preflight'
 )
-SANDBOX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+TRUSTED_BWRAP_PATH = "/usr/bin:/bin"
+SANDBOX_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def _find_trusted_bwrap() -> str | None:
+    candidate = shutil.which("bwrap", path=TRUSTED_BWRAP_PATH)
+    if not candidate:
+        return None
+    resolved = os.path.realpath(candidate)
+    if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+        return None
+    for directory in ("/usr/bin", "/bin"):
+        trusted = os.path.realpath(directory)
+        try:
+            if os.path.commonpath((resolved, trusted)) == trusted:
+                return resolved
+        except ValueError:
+            continue
+    return None
 
 
 def build_probe_command(bwrap_path: str) -> list[str]:
@@ -49,7 +68,7 @@ def _as_text(value) -> str:
 
 def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIMEOUT_SECONDS) -> tuple[bool, str]:
     """Return readiness and an actionable reason without any privileged fallback."""
-    executable = bwrap_path or shutil.which("bwrap")
+    executable = bwrap_path if bwrap_path is not None else _find_trusted_bwrap()
     if not executable:
         return False, "bubblewrap executable not found"
     if timeout_seconds <= 0:
