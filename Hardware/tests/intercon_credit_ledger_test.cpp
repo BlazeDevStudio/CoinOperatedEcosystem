@@ -5,12 +5,18 @@ using namespace blaze_credit;
 struct DurableSlave { Snapshot saved;bool fail=false;uint32_t commits=0;};
 bool commitSlave(const Snapshot& proposed,void* opaque){
   DurableSlave& d=*static_cast<DurableSlave*>(opaque);
-  if(d.fail)return false;d.saved=proposed;d.commits++;return true;
+  if(d.fail)return false;
+  d.saved=proposed;
+  d.commits++;
+  return true;
 }
 struct DurableMaster { MasterPending saved;bool fail=false;uint32_t commits=0;};
 bool commitMaster(const MasterPending& proposed,void* opaque){
   DurableMaster& d=*static_cast<DurableMaster*>(opaque);
-  if(d.fail)return false;d.saved=proposed;d.commits++;return true;
+  if(d.fail)return false;
+  d.saved=proposed;
+  d.commits++;
+  return true;
 }
 int main(){
   DurableMaster md={};
