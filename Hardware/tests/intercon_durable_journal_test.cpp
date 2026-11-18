@@ -72,6 +72,23 @@ int main(){
   assert(corrupt.load(Role::Slave,SLAVE,MASTER)==Load::Corrupt);
   assert(!corrupt.ready());
   assert(!corrupt.initialize(Role::Slave,SLAVE,MASTER));
+  // Losing either post-genesis slot must not roll balance back a credit.
+  FakeSlots vanished=base;
+  vanished.exists[0]=false;
+  Journal noOldSlot(vanished);
+  assert(noOldSlot.load(Role::Slave,SLAVE,MASTER)==Load::Corrupt);
+  vanished=base;vanished.exists[1]=false;
+  Journal noNewSlot(vanished);
+  assert(noNewSlot.load(Role::Slave,SLAVE,MASTER)==Load::Corrupt);
+  // Even a correctly checksummed old snapshot cannot silently overwrite
+  // a later acknowledged credit when generation continuity is broken.
+  FakeSlots gap=base;
+  Record oldRecord={};
+  assert(deserialize(gap.bytes[0].data(),RECORD_BYTES,oldRecord));
+  oldRecord.generation=1;
+  assert(serialize(oldRecord,gap.bytes[0].data()));
+  Journal generationGap(gap);
+  assert(generationGap.load(Role::Slave,SLAVE,MASTER)==Load::Corrupt);
 
   // Work from both valid slots. On every partial write of the inactive slot,
   // remote credit acceptance becomes uncertain and the reboot must LOCK.
