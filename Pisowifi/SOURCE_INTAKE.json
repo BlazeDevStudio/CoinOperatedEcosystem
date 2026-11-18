@@ -543,9 +543,9 @@
     },
     {
       "path": "tests/run_focus.sh",
-      "git_blob": "297ab832b55333f5d63a234915ac433c8b55afe6",
+      "git_blob": "056dfe37323004ded5c92ca2410ed95ce1e150c7",
       "mode": "100755",
-      "github_actions_status": "NOT_RUN",
+      "github_actions_status": "PENDING_EXACT_HEAD_CI_COIN_RECEIPT_V1",
       "hardware_evidence": false
     },
     {
@@ -638,6 +638,13 @@
       "mode": "100755",
       "github_actions_status": "CI_VERIFIED_GREEN_43653446329_ATTEMPT2_AFTER_ATTEMPT1_BUSYBOX_FAILURE",
       "hardware_evidence": false
+    },
+    {
+      "path": "tests/coin_receipt_contract_v1.py",
+      "git_blob": "20458f793b00b563b526fbabbcf86a80f4d78770",
+      "mode": "100644",
+      "github_actions_status": "PENDING_EXACT_HEAD_CI_COIN_RECEIPT_V1",
+      "hardware_evidence": false
     }
   ],
   "notes_20261108": "Exact branch tests for new membership/API changes have NOT run through GitHub Actions. Local 10-case nft and 6-case binding synthetic suites exercised source-equivalent extracted helper logic; repo-linked scripts themselves are committed unchanged and need exact-head run. The original financial/integration suites remain unexecuted. Pass04: actual byte-identical original config.sh recovered and transformed; 9 fault-injection cases PASS in local dash and BusyBox ash against exact fixed config.sh Git blob 10aff0703073dba8f02ed0eb036b9acf16e1f0c6. Source-linked shell dispatcher staged, but no CI/real router.",
@@ -665,5 +672,6 @@
   "note_pass21": "2026-11-15 exact-source commit 4c4565a2f6712e08318572325e96ee7e36856da4 GitHub Actions PisoWiFi #43643397472 COMPLETED SUCCESS. controller_registry_symlink.sh logs CONTROLLER_REGISTRY_SYMLINK_GREEN (link rejected, external sentinel unmodified); previous controller regression tests and full mocked member/rental/voucher journal + BusyBox suites also passed; case-collision #43643397491 SUCCESS. Source-linked RED #43643240752 retained. Mocked POSIX/ash CI only; commercial signer/witness, actual financial admission, real routers/power cuts not accepted. Metadata-head CI should be separately classified.",
   "note_pass22": "2026-11-15 test-first real staged Vendo CGI regression: symlinked controller registry, healthy/default-disabled registration, late sourced controller JSON read EIO, and heartbeat metadata rename fault must never return signed OK; synthetic UCI and disposable state only. Expected source RED, CI pending; no paid acceptance.",
   "note_pass23": "2026-11-15: real staged Vendo CGI source-linked RED on commit 5de696db (#43653301906): symlinked controller state yielded VENDO_CONTROLLER_FAILCLOSED_RED on authenticated register. Candidate source now gates startup controller_init, serialized heartbeat ensure+atomic volatile metadata publication and controller_json response in register/ping/poll. Source CI pending; no signed-controller admission, hardware/money evidence or rollback witness.",
-  "note_pass24": "2026-11-15 source SHA e563d0c43a61b18c3c742c754a299d95c8d70cd8: GitHub Actions #43653446329 attempt 1 FAILURE specifically unchanged BusyBox ash bootstrap_and_cli_auth_guard.sh after entire POSIX focused mock suite (including VENDO_CONTROLLER_FAILCLOSED_GREEN) succeeded; repeat attempt 2 at SAME SOURCE SHA COMPLETED SUCCESS with provenance, POSIX/BusyBox syntax, full mocked suite, BusyBox and synthetic member/rental/voucher journal tests. Exact error reason for intermittent bootstrap fixture failure unproven; do not erase initial failure or claim production hardware/finance authority. No code changes in this metadata-only checkpoint; check its own CI."
+  "note_pass24": "2026-11-15 source SHA e563d0c43a61b18c3c742c754a299d95c8d70cd8: GitHub Actions #43653446329 attempt 1 FAILURE specifically unchanged BusyBox ash bootstrap_and_cli_auth_guard.sh after entire POSIX focused mock suite (including VENDO_CONTROLLER_FAILCLOSED_GREEN) succeeded; repeat attempt 2 at SAME SOURCE SHA COMPLETED SUCCESS with provenance, POSIX/BusyBox syntax, full mocked suite, BusyBox and synthetic member/rental/voucher journal tests. Exact error reason for intermittent bootstrap fixture failure unproven; do not erase initial failure or claim production hardware/finance authority. No code changes in this metadata-only checkpoint; check its own CI.",
+  "note_pass25": "2026-11-18 PHX-CORE contract-only candidate: coin_receipt_contract_v1.py verifies deterministic synthetic-key HMAC-SHA256 vectors, all prescribed event/replay binding fields, and byte-identical committed retry receipts. The Vendo CGI remains unmodified and default-deny because this migration branch lacks durable ledger epoch/sequence authority. Exact-head GitHub Actions CI and independent QA remain pending; no key provisioning, hardware acceptance, credit activation, flash, merge, or release is authorized."
 }

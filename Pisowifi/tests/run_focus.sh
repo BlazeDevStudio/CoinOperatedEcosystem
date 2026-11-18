@@ -31,4 +31,6 @@ do
   printf 'RUN %s\n' "$test_file"
   sh "$ROOT/tests/$test_file"
 done
+printf 'RUN coin_receipt_contract_v1.py\n'
+python3 "$ROOT/tests/coin_receipt_contract_v1.py"
 printf 'ALL FOCUSED SHELL TESTS PASS (MOCKS ONLY)\n'
