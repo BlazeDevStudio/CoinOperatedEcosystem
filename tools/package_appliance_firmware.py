@@ -622,7 +622,7 @@ PY
     echo "RELEASE-BOUNDARY: entering unprivileged bubblewrap; only the ImageBuilder directory is writable; network isolation is not claimed." >&2
     # Operators may bound this invocation without editing the generated wrapper.
     # The runner validates the value against its 1..14400 second limit.
-    exec python3 "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH" --timeout-seconds "${{PHX_IMAGEBUILDER_TIMEOUT_SECONDS:-{DEFAULT_BUILD_TIMEOUT_SECONDS}}}"
+    exec python3 "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH" --timeout-seconds "${{PHX_IMAGEBUILDER_TIMEOUT_SECONDS:-3600}}"
 fi
 
 # Refuse shell redirections to paths created after the preflight checks.
