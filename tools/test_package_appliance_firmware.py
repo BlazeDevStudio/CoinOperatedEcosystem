@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Automated tests for Appliance Firmware Packager and ImageBuilder Configurator."""
+import hashlib
 import json
 import os
 import shlex
@@ -673,7 +674,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
 
     def _run_generated_wrapper(self, wrapper, cwd, env, timeout_seconds=60):
-        """Run the generated wrapper inside the release-owned filesystem sandbox in CI."""
+        """Run a generated wrapper with a test-only runner stub unless real bwrap is mandatory."""
         cwd_path = os.path.realpath(os.path.abspath(cwd))
         wrapper_path = os.path.abspath(
             wrapper if os.path.isabs(wrapper) else os.path.join(cwd_path, wrapper)
@@ -682,13 +683,14 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             raise RuntimeError("Generated wrapper must be a regular file inside the test workspace")
         try:
             if os.path.commonpath((cwd_path, wrapper_path)) != cwd_path:
-                raise RuntimeError("Generated wrapper must remain inside the test workspace")
+                raise RuntimeError("Generated wrapper is outside the test workspace")
         except ValueError as exc:
             raise RuntimeError("Generated wrapper is outside the test workspace") from exc
 
         if os.environ.get("PHX_REQUIRE_BWRAP") != "1":
-            # Unit tests emulate the runner's short-lived ownership probe. The
-            # dedicated PHX_REQUIRE_BWRAP workflow exercises the real helper.
+            # Shared CI emulates only the verified-context branch with a
+            # test-owned runner stub. The dedicated NO-GO workflow uses the
+            # real runner and must pass the actual namespace/mount checks.
             raw_builder = env.get("OPENWRT_IMAGEBUILDER_DIR")
             if not raw_builder:
                 raise RuntimeError("ImageBuilder workspace is required for wrapper tests")
@@ -701,10 +703,39 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 raise RuntimeError("Refusing to overwrite the test ownership probe")
             with open(probe_path, "w", encoding="utf-8") as fp:
                 fp.write("test-only probe\n")
+
+            fake_runner_path = os.path.join(cwd_path, ".phx-test-imagebuilder-runner.py")
+            fake_runner_content = (
+                "import sys\n"
+                "if '--verify-context' in sys.argv:\n"
+                "    raise SystemExit(0)\n"
+                "raise SystemExit(125)\n"
+            )
+            with open(fake_runner_path, "w", encoding="utf-8") as fp:
+                fp.write(fake_runner_content)
+            with open(fake_runner_path, "rb") as fp:
+                fake_runner_sha256 = hashlib.sha256(fp.read()).hexdigest()
+
+            with open(wrapper_path, "r", encoding="utf-8") as fp:
+                wrapper_lines = fp.read().splitlines()
+            replaced_path = False
+            replaced_digest = False
+            for index, line in enumerate(wrapper_lines):
+                if line.startswith("RUNNER_PATH="):
+                    wrapper_lines[index] = f"RUNNER_PATH={shlex.quote(fake_runner_path)}"
+                    replaced_path = True
+                elif line.startswith("RUNNER_SHA256="):
+                    wrapper_lines[index] = f"RUNNER_SHA256={fake_runner_sha256}"
+                    replaced_digest = True
+            if not replaced_path or not replaced_digest:
+                raise RuntimeError("Generated wrapper did not expose the pinned runner fields")
+            with open(wrapper_path, "w", encoding="utf-8") as fp:
+                fp.write("\n".join(wrapper_lines) + "\n")
+
             test_env = env.copy()
             test_env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
             test_env["PHX_BWRAP_OWNER_PROBE"] = probe_name
-            command = ["sh", wrapper_path]
+            command = ["/bin/sh", wrapper_path]
             try:
                 process = subprocess.Popen(
                     command,
@@ -1049,6 +1080,55 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "caller-forged environment and probe file must not bypass the sandbox runner",
         )
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_runner_verify_context_requires_single_id_maps_and_mount_boundaries(self):
+        proc_root = os.path.join(self.temp_dir, "fake-proc")
+        proc_self = os.path.join(proc_root, "self")
+        os.makedirs(proc_self)
+        builder = os.path.join(self.temp_dir, "verified-builder")
+        os.makedirs(builder)
+        probe_name = ".phx-bwrap-owner-probe-123"
+        with open(os.path.join(builder, probe_name), "w", encoding="utf-8") as fp:
+            fp.write("owner-probe\n")
+
+        with open(os.path.join(proc_self, "uid_map"), "w", encoding="ascii") as fp:
+            fp.write("0 1000 1\n")
+        with open(os.path.join(proc_self, "gid_map"), "w", encoding="ascii") as fp:
+            fp.write("0 1000 1\n")
+
+        def write_mountinfo(root_mode):
+            rows = [
+                f"1 0 8:1 / / {root_mode},relatime - ext4 /dev/root {root_mode},relatime",
+                "2 1 0:2 / /tmp rw,nosuid,nodev - tmpfs tmpfs rw",
+                "3 1 0:3 / /proc rw,nosuid,nodev,noexec - proc proc rw",
+                "4 1 0:4 / /dev rw,nosuid,strictatime - tmpfs tmpfs rw",
+                f"5 1 0:5 / {builder} rw,relatime - ext4 /dev/root rw,relatime",
+            ]
+            with open(os.path.join(proc_self, "mountinfo"), "w", encoding="ascii") as fp:
+                fp.write("\n".join(rows) + "\n")
+
+        write_mountinfo("ro")
+        env = {
+            "PHX_IMAGEBUILDER_SANDBOX_ACTIVE": "1",
+            "PHX_BWRAP_OWNER_PROBE": probe_name,
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=0):
+                with mock.patch.object(run_imagebuilder_sandbox.os, "geteuid", return_value=0):
+                    with mock.patch.object(run_imagebuilder_sandbox.os, "getgid", return_value=0):
+                        with mock.patch.object(run_imagebuilder_sandbox.os, "getegid", return_value=0):
+                            self.assertTrue(
+                                run_imagebuilder_sandbox.verify_sandbox_context(
+                                    builder, probe_name, proc_root=proc_root
+                                )
+                            )
+                            write_mountinfo("rw")
+                            self.assertFalse(
+                                run_imagebuilder_sandbox.verify_sandbox_context(
+                                    builder, probe_name, proc_root=proc_root
+                                ),
+                                "a forged marker in a read-write host root must not be trusted",
+                            )
 
     def test_runner_resolves_bubblewrap_from_trusted_system_path_only(self):
         cwd = os.path.join(self.temp_dir, "runner-path-cwd")
