@@ -1689,6 +1689,8 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
                 (41002, run_imagebuilder_sandbox.signal.SIGTERM),
                 (41001, run_imagebuilder_sandbox.signal.SIGKILL),
                 (41002, run_imagebuilder_sandbox.signal.SIGKILL),
+                (41001, 0),
+                (41002, 0),
             ],
         )
 
