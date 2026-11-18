@@ -23,6 +23,7 @@ from run_imagebuilder_sandbox import DEFAULT_BUILD_TIMEOUT_SECONDS
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHARED_PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-profile", "profiles")
+TRUSTED_SYSTEM_PATH = "/usr/bin:/bin"
 DEFAULT_ROOTFS = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 DEFAULT_RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
 
@@ -613,9 +614,38 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
 
     runner_path = runner_candidate
 
+    # Pin the interpreter that generated this host-specific wrapper. Never
+    # resolve python3 from an operator-controlled PATH at execution time.
+    python_path = os.path.realpath(sys.executable)
+    if (
+        not os.path.isabs(python_path)
+        or os.path.islink(python_path)
+        or not os.path.isfile(python_path)
+        or not os.access(python_path, os.X_OK)
+        or not stat.S_ISREG(os.stat(python_path).st_mode)
+    ):
+        raise OSError("Safe ImageBuilder wrapper requires a stable executable Python interpreter")
+    with open(python_path, "rb") as python_file:
+        python_sha256 = hashlib.sha256(python_file.read()).hexdigest()
+
+    sha256sum_candidate = shutil.which("sha256sum", path=TRUSTED_SYSTEM_PATH)
+    if not sha256sum_candidate:
+        raise OSError("Safe ImageBuilder wrapper requires sha256sum in trusted system directories")
+    sha256sum_path = os.path.realpath(sha256sum_candidate)
+    if (
+        os.path.dirname(sha256sum_path) not in ("/usr/bin", "/bin")
+        or os.path.islink(sha256sum_path)
+        or not os.path.isfile(sha256sum_path)
+        or not os.access(sha256sum_path, os.X_OK)
+        or not stat.S_ISREG(os.stat(sha256sum_path).st_mode)
+    ):
+        raise OSError("Safe ImageBuilder wrapper requires a regular trusted-system sha256sum executable")
+
     # This absolute path remains valid after the wrapper changes into ImageBuilder.
     stage_arg = shlex.quote(staging_dir)
     runner_arg = shlex.quote(runner_path)
+    python_arg = shlex.quote(python_path)
+    sha256sum_arg = shlex.quote(sha256sum_path)
 
     content = f"""#!/bin/sh
 # Auto-generated nonproduction ImageBuilder wrapper for {profile_id} ({target_arch})
@@ -623,13 +653,33 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
 # Host root is read-only and only ImageBuilder is writable; network is shared, not isolated.
 set -eu
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "RELEASE-BLOCKED: python3 is required to verify and enter the ImageBuilder boundary" >&2
+PYTHON_PATH={python_arg}
+PYTHON_SHA256={python_sha256}
+SHA256SUM_PATH={sha256sum_arg}
+RUNNER_PATH={runner_arg}
+RUNNER_SHA256={runner_sha256}
+
+if [ ! -f "$SHA256SUM_PATH" ] || [ -L "$SHA256SUM_PATH" ] || [ ! -x "$SHA256SUM_PATH" ]; then
+    echo "RELEASE-BLOCKED: pinned sha256sum executable is missing or unsafe" >&2
+    exit 1
+fi
+if [ ! -f "$PYTHON_PATH" ] || [ -L "$PYTHON_PATH" ] || [ ! -x "$PYTHON_PATH" ]; then
+    echo "RELEASE-BLOCKED: pinned Python interpreter is missing or unsafe" >&2
+    exit 1
+fi
+PYTHON_DIGEST_LINE="$("$SHA256SUM_PATH" "$PYTHON_PATH")"
+ACTUAL_PYTHON_SHA256="${{PYTHON_DIGEST_LINE%% *}}"
+if [ "$ACTUAL_PYTHON_SHA256" != "$PYTHON_SHA256" ]; then
+    echo "RELEASE-BLOCKED: pinned Python interpreter SHA-256 differs from the generated wrapper" >&2
     exit 1
 fi
 
+# Resolve remaining shell utilities and ImageBuilder tools only from trusted system paths.
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
 BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
-BUILD_DIR="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$BUILD_DIR")"
+BUILD_DIR="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$BUILD_DIR")"
 if [ ! -d "$BUILD_DIR" ]; then
     echo "RELEASE-BLOCKED: ImageBuilder directory not found: $BUILD_DIR" >&2
     exit 1
@@ -640,43 +690,34 @@ if [ "$BUILD_DIR_REAL" != "$BUILD_DIR" ]; then
     exit 1
 fi
 
-SCRIPT_PATH="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$0")"
-SCRIPT_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SCRIPT_PATH")"
+SCRIPT_PATH="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$0")"
+SCRIPT_REAL="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SCRIPT_PATH")"
 if [ "$SCRIPT_REAL" != "$SCRIPT_PATH" ]; then
     echo "RELEASE-BLOCKED: generated build script path contains a symlink: $SCRIPT_PATH" >&2
     exit 1
 fi
 
-RUNNER_PATH={runner_arg}
-RUNNER_SHA256={runner_sha256}
-RUNNER_REALPATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_PATH")"
+RUNNER_REALPATH="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_PATH")"
 if [ "$RUNNER_REALPATH" != "$RUNNER_PATH" ] || [ ! -f "$RUNNER_PATH" ] || [ -L "$RUNNER_PATH" ]; then
     echo "RELEASE-BLOCKED: sandbox runner path contains a symlink or changed target: $RUNNER_PATH" >&2
     exit 1
 fi
-command -v sha256sum >/dev/null 2>&1 || {{
-    echo "RELEASE-BLOCKED: sha256sum is required to verify the sandbox runner" >&2
-    exit 1
-}}
-RUNNER_DIGEST_LINE="$(sha256sum "$RUNNER_PATH")"
+RUNNER_DIGEST_LINE="$("$SHA256SUM_PATH" "$RUNNER_PATH")"
 ACTUAL_RUNNER_SHA256="${{RUNNER_DIGEST_LINE%% *}}"
 if [ "$ACTUAL_RUNNER_SHA256" != "$RUNNER_SHA256" ]; then
     echo "RELEASE-BLOCKED: sandbox runner SHA-256 differs from the generated wrapper" >&2
     exit 1
 fi
 
-# The runner creates a per-invocation ownership probe inside the writable
-# ImageBuilder bind. Direct operator invocation re-enters as the same
-# unprivileged host user; it never elevates through sudo.
-PHX_PROBE_VALID=0
-case "${{PHX_BWRAP_OWNER_PROBE:-}}" in
-    .phx-bwrap-owner-probe-[0-9]*|.phx-test-owner-probe) PHX_PROBE_VALID=1 ;;
-esac
-if [ "${{PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}}" != "1" ] ||
-   [ "$PHX_PROBE_VALID" != "1" ] ||
-   [ ! -f "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ] ||
-   [ -L "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ]; then
-    SANDBOX_ROOT="$(python3 - "$BUILD_DIR" "$SCRIPT_PATH" <<'PY'
+# Environment markers and a writable probe are not proof of a namespace.
+# Ask the pinned runner to verify the single-ID maps and mount boundaries before
+# allowing Makefile execution. A direct operator invocation always enters bwrap.
+if [ "${{PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}}" = "1" ] &&
+   [ -n "${{PHX_BWRAP_OWNER_PROBE:-}}" ]; then
+    echo "RELEASE-BOUNDARY: verifying active ImageBuilder sandbox context." >&2
+    "$PYTHON_PATH" "$RUNNER_PATH" --verify-context --builder "$BUILD_DIR" --probe "$PHX_BWRAP_OWNER_PROBE"
+else
+    SANDBOX_ROOT="$("$PYTHON_PATH" - "$BUILD_DIR" "$SCRIPT_PATH" <<'PY'
 import os, sys
 try:
     print(os.path.commonpath((os.path.dirname(sys.argv[1]), sys.argv[2])))
@@ -691,9 +732,8 @@ PY
     echo "RELEASE-BOUNDARY: entering unprivileged bubblewrap; only the ImageBuilder directory is writable; network isolation is not claimed." >&2
     # Operators may bound this invocation without editing the generated wrapper.
     # The runner validates the value against its 1..14400 second limit.
-    exec python3 "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH" --timeout-seconds "${{PHX_IMAGEBUILDER_TIMEOUT_SECONDS:-{DEFAULT_BUILD_TIMEOUT_SECONDS}}}"
+    exec "$PYTHON_PATH" "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH" --timeout-seconds "${{PHX_IMAGEBUILDER_TIMEOUT_SECONDS:-{DEFAULT_BUILD_TIMEOUT_SECONDS}}}"
 fi
-
 # Refuse shell redirections to paths created after the preflight checks.
 # This protects both checksum-manifest paths from symlink substitution by the builder.
 set -C
@@ -707,7 +747,7 @@ if [ ! -d "$STAGING_DIR" ]; then
     echo "RELEASE-BLOCKED: staged rootfs not found: $STAGING_DIR" >&2
     exit 1
 fi
-STAGING_DIR_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$STAGING_DIR")"
+STAGING_DIR_REAL="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$STAGING_DIR")"
 if [ "$STAGING_DIR_REAL" != "$STAGING_DIR" ] || [ -L "$STAGING_DIR" ]; then
     echo "RELEASE-BLOCKED: staged rootfs path contains a symlink: $STAGING_DIR" >&2
     exit 1
@@ -796,7 +836,7 @@ if [ -n "$EMPTY_IMAGE" ]; then
     echo "RELEASE-BLOCKED: empty firmware image: $EMPTY_IMAGE" >&2
     exit 1
 fi
-find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
+find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec "$SHA256SUM_PATH" {{}} + > "$TMP_MANIFEST"
 if [ ! -s "$TMP_MANIFEST" ]; then
     rm -f "$TMP_MANIFEST"
     echo "RELEASE-BLOCKED: no firmware images found for {target_arch}" >&2
