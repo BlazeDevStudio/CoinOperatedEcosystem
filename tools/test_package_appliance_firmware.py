@@ -1677,6 +1677,60 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(os.path.join(source_rootfs, "source-marker.txt"), encoding="utf-8") as fp:
             self.assertEqual(fp.read(), "SOURCE-PRESERVED")
 
+    def test_stage_overlay_rejects_parent_swapped_to_symlink_during_copy(self):
+        source_rootfs = os.path.join(self.temp_dir, "race-source")
+        os.makedirs(source_rootfs)
+        with open(os.path.join(source_rootfs, "source-marker.txt"), "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        requested_parent = os.path.join(self.temp_dir, "race-staging-parent")
+        detached_parent = os.path.join(self.temp_dir, "race-staging-parent-original")
+        external_parent = os.path.join(self.temp_dir, "race-operator-parent")
+        os.makedirs(requested_parent)
+        os.makedirs(external_parent)
+        sentinel = os.path.join(external_parent, "operator-data.txt")
+        with open(sentinel, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-DATA")
+
+        requested_staging = os.path.join(requested_parent, "generated-overlay")
+        original_copytree = shutil.copytree
+        swapped = {"value": False}
+
+        def swap_parent_before_copy(src, dst, *args, **kwargs):
+            if not swapped["value"]:
+                os.rename(requested_parent, detached_parent)
+                os.symlink(external_parent, requested_parent, target_is_directory=True)
+                swapped["value"] = True
+            return original_copytree(src, dst, *args, **kwargs)
+
+        with mock.patch.object(
+            packager.shutil, "copytree", side_effect=swap_parent_before_copy
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "Staging destination parent path changed"
+            ):
+                stage_overlay(
+                    load_profile("ew1200g-pro"),
+                    source_rootfs,
+                    requested_staging,
+                )
+
+        self.assertTrue(swapped["value"])
+        self.assertTrue(os.path.islink(requested_parent))
+        self.assertFalse(
+            os.path.lexists(os.path.join(external_parent, "generated-overlay")),
+            "a parent replaced after preflight must not redirect the initial rootfs copy",
+        )
+        self.assertFalse(
+            os.path.lexists(os.path.join(detached_parent, "generated-overlay")),
+            "failed staging must clean up its pinned partial destination",
+        )
+        with open(sentinel, encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
+        with open(os.path.join(source_rootfs, "source-marker.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "SOURCE-PRESERVED")
+
+
     def test_stage_overlay_does_not_chmod_external_directory_symlink_target(self):
         # copytree preserves directory symlinks. Permission normalization must
         # not follow one and mutate an operator-owned directory outside staging.
