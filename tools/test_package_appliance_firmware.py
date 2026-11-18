@@ -1781,6 +1781,104 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(os.path.join(external_target, "operator-data.txt"), encoding="utf-8") as fp:
             self.assertEqual(fp.read(), "KEEP-EXTERNAL-DATA")
 
+    def test_stage_overlay_permission_normalization_does_not_follow_file_symlink_race(self):
+        source_rootfs = os.path.join(self.temp_dir, "chmod-file-race-source")
+        os.makedirs(source_rootfs)
+        external_target = os.path.join(self.temp_dir, "operator-owned-file")
+        with open(external_target, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-EXTERNAL-FILE")
+        os.chmod(external_target, 0o600)
+
+        staging_dest = os.path.join(self.temp_dir, "chmod-file-race-staging")
+        staged_target = os.path.join(staging_dest, "etc", "config", "network")
+        normalization = {"started": False}
+        swapped = {"value": False}
+        original_calculate = packager.calculate_overlay_size
+        original_chmod = packager.os.chmod
+
+        def calculate_then_enable_normalization(path):
+            result = original_calculate(path)
+            normalization["started"] = True
+            return result
+
+        def chmod_then_swap_file(path, mode, *args, **kwargs):
+            if (
+                normalization["started"]
+                and os.path.abspath(os.fspath(path)) == staged_target
+                and not swapped["value"]
+            ):
+                os.unlink(staged_target)
+                os.symlink(external_target, staged_target)
+                swapped["value"] = True
+            return original_chmod(path, mode, *args, **kwargs)
+
+        with mock.patch.object(
+            packager, "calculate_overlay_size",
+            side_effect=calculate_then_enable_normalization,
+        ), mock.patch.object(
+            packager.os, "chmod", side_effect=chmod_then_swap_file
+        ):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        self.assertFalse(
+            swapped["value"],
+            "permission normalization must not use path-based chmod after a symlink check",
+        )
+        self.assertEqual(
+            os.stat(external_target).st_mode & 0o777,
+            0o600,
+            "a staged-file symlink race must not change an external file's mode",
+        )
+
+    def test_stage_overlay_permission_normalization_does_not_follow_directory_symlink_race(self):
+        source_rootfs = os.path.join(self.temp_dir, "chmod-directory-race-source")
+        os.makedirs(source_rootfs)
+        external_target = os.path.join(self.temp_dir, "operator-owned-directory")
+        os.makedirs(external_target)
+        os.chmod(external_target, 0o700)
+
+        staging_dest = os.path.join(self.temp_dir, "chmod-directory-race-staging")
+        staged_target = os.path.join(staging_dest, "etc", "config")
+        moved_target = staged_target + ".detached"
+        normalization = {"started": False}
+        swapped = {"value": False}
+        original_calculate = packager.calculate_overlay_size
+        original_chmod = packager.os.chmod
+
+        def calculate_then_enable_normalization(path):
+            result = original_calculate(path)
+            normalization["started"] = True
+            return result
+
+        def chmod_then_swap_directory(path, mode, *args, **kwargs):
+            if (
+                normalization["started"]
+                and os.path.abspath(os.fspath(path)) == staged_target
+                and not swapped["value"]
+            ):
+                os.rename(staged_target, moved_target)
+                os.symlink(external_target, staged_target, target_is_directory=True)
+                swapped["value"] = True
+            return original_chmod(path, mode, *args, **kwargs)
+
+        with mock.patch.object(
+            packager, "calculate_overlay_size",
+            side_effect=calculate_then_enable_normalization,
+        ), mock.patch.object(
+            packager.os, "chmod", side_effect=chmod_then_swap_directory
+        ):
+            stage_overlay(load_profile("ew1200g-pro"), source_rootfs, staging_dest)
+
+        self.assertFalse(
+            swapped["value"],
+            "permission normalization must not use path-based chmod after a symlink check",
+        )
+        self.assertEqual(
+            os.stat(external_target).st_mode & 0o777,
+            0o700,
+            "a staged-directory symlink race must not change an external directory's mode",
+        )
+
     def test_generated_wrapper_manifest_is_independent_of_build_workspace(self):
         # The same synthetic image bytes must produce the same checksum
         # manifest regardless of the absolute workspace path.
