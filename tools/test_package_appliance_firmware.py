@@ -250,10 +250,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                     swap_directory_entry()
             return fd
 
+        patched_open = mock.Mock(side_effect=open_then_swap)
+        supported_dir_fd = set(os.supports_dir_fd)
+        supported_dir_fd.add(patched_open)
         with mock.patch.object(
             packager.os, "lstat", side_effect=lstat_then_swap
         ), mock.patch.object(
-            packager.os, "open", side_effect=open_then_swap
+            packager.os, "open", new=patched_open
+        ), mock.patch.object(
+            packager.os, "supports_dir_fd", supported_dir_fd
         ):
             with self.assertRaisesRegex(
                 ValueError, "Staging directory path changed while opening"
