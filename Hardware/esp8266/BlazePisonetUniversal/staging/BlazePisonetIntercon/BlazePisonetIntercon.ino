@@ -4,6 +4,7 @@
 #include <TM1637Display.h>
 #include <LittleFS.h>
 #include <vector>
+#include "SketchTypes.h"
 
 
 // ------ AudioPatterns.h (bundled) ------
@@ -702,8 +703,7 @@ bool uploadSucceeded = false;
 String uploadMessage = "No upload received";
 
 // Non-blocking chime scheduler
-enum class ChimeKind : uint8_t { None, Welcome, Coin, NearEnd, Timeout, Manual };
-enum class ChimeSource : uint8_t { None, Ram, Progmem };
+// Chime enums declared in SketchTypes.h before Arduino auto-prototypes.
 
 std::vector<int> chimeFreqs;
 std::vector<int> chimeDurs;
@@ -2113,8 +2113,7 @@ void setup() {
     server.send(uploadSucceeded?200:400,"text/plain",uploadMessage);
   },handleFileUpload);
   server.onNotFound([](){if(!requireAdmin())return;reject("Not found",404);});
-  static const char* checkedHeaders[] = {"X-Blaze-Action"};
-  server.collectHeaders(checkedHeaders,1);
+  server.collectHeaders("X-Blaze-Action");
   server.begin();
   lastNearEndStartedAt=millis();
   playWelcomeChime();
