@@ -1325,3 +1325,47 @@ The synthetic tests prove that PATH-shadowed bootstrap tools are not selected, f
 PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA and PHX-MASTER independent review remains required. Rollback is limited to reverting this release-owned source/test/workflow change set together; no external state, generated firmware, release tag, signer, payment or customer device was changed.
 
 No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. CI board outputs are synthetic compile artifacts, not approved production binaries. **PRODUCTION NO-GO.**
+
+
+
+## UTC15 — mask common host-data paths in the ImageBuilder sandbox — 2026-11-18
+
+**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / EXACT SOURCE-HEAD SHARED CI PASS / CASE-COLLISION PASS / HOSTED BUBBLEWRAP ABSENT / DRAFT / PRODUCTION NO-GO.
+
+### Finding and bounded correction
+
+The runner previously used `--ro-bind / /`. Read-only mounting prevents writes to the host root, but it does not prevent Makefile code from reading files that the invoking host user can read. In particular, host home directories, runtime paths and external mount points may contain credentials or operator data. The sandbox continues to use `--share-net`; network isolation is **not** claimed.
+
+The release-owned runner and host preflight now request writable tmpfs overlays over these common host-data paths after the read-only root bind:
+
+- `/home`
+- `/root`
+- `/run`
+- `/mnt`
+- `/media`
+- `/srv`
+
+The runner's context verifier requires every listed path to appear in `/proc/self/mountinfo` as a writable `tmpfs` mount before accepting the active sandbox. The host preflight mirrors the same mount arguments. This is a bounded exposure reduction, **not complete host confidentiality**: other host-readable paths remain visible under the read-only root, and networking remains shared. Continue to use only an authorized disposable, ephemeral, no-secret runner.
+
+### Test-first evidence
+
+- Test-only commits: [`1e7eabbd`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1e7eabbda188a1ba02630edcda99a1104ea0e84f) and [`e9737273`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e973727325dfb54beee01e8180790d6154a161f7).
+- Expected RED at test head `e973727325dfb54beee01e8180790d6154a161f7`: PR [#44333542656](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333542656) and push [#44333530778](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333530778) failed in the packaging/tool suite as intended. PR log: 99 tests, two intentional sandbox-only skips; the new assertions exposed (1) missing runner mount-argument helper, (2) absent host-preflight tmpfs mounts, and (3) context verifier accepting an exposed `/home` mount.
+- Source corrections: [`10cfeaee`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/10cfeaeee64d9af9bc93ea489ade69831bf04964) adds the runner mount list, actual bwrap arguments and mountinfo enforcement; [`4bead9ce`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4bead9ce0590580b316ea1aac960e29d5ce42e02) mirrors the mount list in host preflight.
+
+### Exact source/test-head CI
+
+Source/test HEAD: `4bead9ce0590580b316ea1aac960e29d5ce42e02`.
+
+- PR shared/firmware [#44333732485](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333732485): **SUCCESS** — 99 packaging/tool tests with two intentional sandbox-only skips; firmware/shared-contract checks **18 PASS**; appliance profiles **10/10 PASS**; ESP32 and ESP8266 compile plus artifact-upload jobs **SUCCESS**.
+- Push shared/firmware [#44333720922](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333720922): **SUCCESS** — same validation and both board compile/artifact-upload jobs **SUCCESS**.
+- Case-collision [#44333732378](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333732378): **SUCCESS**.
+- Mandatory sandbox PR [#44333732558](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333732558) and push [#44333720962](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44333720962): **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Host-preflight unit tests **13 PASS**; unprivileged identity, namespace probe and mandatory real-bubblewrap packaging regressions were **SKIPPED**, not passed.
+
+### Limits, rollback and next owner action
+
+These tests establish the requested command arguments and the source-level mountinfo rejection behavior. They do **not** establish that Bubblewrap actually mounted these paths on a real runner, that every host-readable file is hidden, that network egress is isolated, or that hardware/production acceptance occurred.
+
+Rollback is limited to reverting the two source corrections and their two regression commits together. No profile, firmware, shared API, hardware, financial state, release tag, signer, external operator file or customer device was changed.
+
+PHX-INFRA must provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces. PHX-QA and PHX-MASTER independent review remains required. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
