@@ -497,7 +497,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                                image_symlink_subpath=None,
                                image_symlink_dir_subpath=None,
                                preexisting_image_symlink=False,
-                               symlinked_output_dir=False):
+                               symlinked_output_dir=False,
+                               timeout_seconds=60,
+                               sleep_seconds=None,
+                               timeout_marker=None):
         """Execute a generated wrapper against a disposable local Makefile."""
         profile = load_profile("gl-mt1300")
         stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
@@ -571,9 +574,20 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 fp.write("DO-NOT-OVERWRITE-TEMP\n")
             os.symlink(outside, os.path.join(fake_builder, "RELEASE_MANIFEST.sha256.tmp"))
 
+        if sleep_seconds is not None:
+            if isinstance(sleep_seconds, bool) or not isinstance(sleep_seconds, int) or sleep_seconds < 1:
+                raise ValueError("sleep_seconds must be a positive integer")
+            if not timeout_marker:
+                raise ValueError("timeout_marker is required for the timeout fixture")
+            recipe += (
+                f'\t@sleep {sleep_seconds}; printf "late" > {shlex.quote(timeout_marker)}\n'
+            )
+
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
-        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+        result = self._run_generated_wrapper(
+            wrapper, self.temp_dir, env, timeout_seconds=timeout_seconds
+        )
         return result, fake_builder, wrapper, stage_absolute
 
     def test_generated_wrapper_routes_operator_invocation_through_unprivileged_runner(self):
@@ -645,6 +659,29 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(runner_args[runner_args.index("--wrapper") + 1], wrapper)
         self.assertFalse(os.path.exists(sudo_called_path), "operator entrypoint must never invoke sudo")
         self.assertFalse(os.path.exists(image_path), "operator Makefile must not run outside the sandbox")
+        self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
+
+    def test_generated_wrapper_mock_execution_enforces_timeout_and_kills_child_group(self):
+        marker_path = os.path.join(self.temp_dir, "late-make-completion")
+        result, builder, _, _ = self._run_mock_imagebuilder(
+            timeout_seconds=1,
+            sleep_seconds=3,
+            timeout_marker=marker_path,
+        )
+
+        self.assertEqual(result.returncode, 124, result.stderr + result.stdout)
+        self.assertIn(
+            "RELEASE-BLOCKED: generated wrapper exceeded its 1s test timeout",
+            result.stderr,
+        )
+        self.assertFalse(
+            os.path.exists(marker_path),
+            "A timed-out Makefile child must not continue after the test returns",
+        )
+        self.assertFalse(
+            os.path.lexists(os.path.join(builder, ".phx-test-owner-probe")),
+            "The test ownership probe must be removed after timeout",
+        )
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
     def test_generated_wrapper_denies_missing_target_images(self):
