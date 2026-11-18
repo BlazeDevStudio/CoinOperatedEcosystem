@@ -1180,3 +1180,33 @@ Source/test HEAD: e412066c2439e1acb96668fa12b2a5a1bcd9e81d.
 - PR #35 remains draft and unmerged. CI builds remain synthetic compile outputs; they are not approved target binaries or physical acceptance.
 
 No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+## UTC11 follow-up — standard RELEASE-BLOCKED exit code for missing bubblewrap — 2026-11-18
+
+**Disposition:** TEST-FIRST RED REPRODUCED / WORKFLOW CORRECTION COMMITTED / 89 PACKAGING TESTS PASS / 10-OF-10 PROFILES PASS / ESP32 + ESP8266 CI PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP SANDBOX STILL HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Defect and correction
+
+The release-owned sandbox workflow correctly stopped when Bubblewrap was absent, but it returned shell exit code 1 rather than the runner's documented fail-closed code 125. The existing test-first regression now requires the standard RELEASE-BLOCKED exit code.
+
+- Test-only regression commit 6d9e1d7: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6d9e1d7abab6fce29ebcf0f195290bd9c9f8cc7d adds the exit-125 assertion.
+- Expected RED: PR shared/firmware run #44294942295: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44294942295 failed exactly in test_workflow_requires_existing_bubblewrap_without_privileged_install: 'exit 125' not found. The packaging suite ran 89 tests, with one expected failure and two intentional sandbox-only skips. Case-collision #44294942334: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44294942334 passed.
+- Source correction 797ebdc6: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/797ebdc6d70f24aa7c57bbada410695ab854966e changes only the missing-Bubblewrap branch from exit 1 to exit 125, matching run_imagebuilder_sandbox.py:blocked(). The workflow still requires preinstalled Bubblewrap and does not install packages, use sudo, or fall back to unsandboxed execution.
+
+### Exact source/test-head CI
+
+Source/test HEAD: 797ebdc6d70f24aa7c57bbada410695ab854966e.
+
+- PR shared/firmware #44298647518: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44298647518 — SUCCESS: 89 packaging/tool tests, two intentional sandbox-only skips; firmware hardening/shared contracts PASS; 10/10 appliance profiles PASS; ESP8266 and ESP32 compile plus artifact-upload jobs both SUCCESS.
+- PR case-collision #44298647593: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44298647593 — SUCCESS.
+- PR mandatory sandbox #44298647511: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44298647511 and push sandbox #44298636991: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44298636991 — FAILED CLOSED at the explicit Bubblewrap availability check because the hosted runner does not provide bwrap. The workflow emitted RELEASE-BLOCKED and exit 125 as intended. Host-preflight, namespace and mandatory sandbox packaging regressions were SKIPPED, not passed. No actual bubblewrap boundary validation is claimed.
+
+### Current stack and next owner action
+
+- Child PR #35: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35 remains OPEN / DRAFT / UNMERGED, stacked on parent #31 at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- Source/test HEAD: 797ebdc6d70f24aa7c57bbada410695ab854966e; this handover is documentation-only.
+- Scope remains six release-owned paths: sandbox workflow, packager, sandbox runner, host-preflight test, packager test, and narrow release handover. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation changed.
+- Next: PHX-INFRA provides an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and unprivileged user namespaces; PHX-QA independently reviews the process-group and fail-closed runner behavior; PHX-MASTER confirms the child stack and ownership boundary.
+
+No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. CI board builds are synthetic compile/artifact outputs, not approved OpenWrt images, production binaries or physical acceptance. PRODUCTION NO-GO.
