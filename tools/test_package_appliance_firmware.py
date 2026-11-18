@@ -549,6 +549,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             with open(external_image, "wb") as fp:
                 fp.write(b"EXTERNAL-SYNTHETIC-NOT-FIRMWARE")
             recipe += '\t@ln -s ' + shlex.quote(external_dir) + ' ' + image_symlink_dir_subpath + '\n'
+        if sleep_seconds is not None:
+            if isinstance(sleep_seconds, bool) or not isinstance(sleep_seconds, int) or sleep_seconds < 1:
+                raise ValueError("sleep_seconds must be a positive integer")
+            if not timeout_marker:
+                raise ValueError("timeout_marker is required for the timeout fixture")
+            recipe += (
+                f'\t@sleep {sleep_seconds}; printf "late" > {shlex.quote(timeout_marker)}\n'
+            )
+
         with open(os.path.join(fake_builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
 
@@ -573,15 +582,6 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             with open(outside, "w", encoding="utf-8") as fp:
                 fp.write("DO-NOT-OVERWRITE-TEMP\n")
             os.symlink(outside, os.path.join(fake_builder, "RELEASE_MANIFEST.sha256.tmp"))
-
-        if sleep_seconds is not None:
-            if isinstance(sleep_seconds, bool) or not isinstance(sleep_seconds, int) or sleep_seconds < 1:
-                raise ValueError("sleep_seconds must be a positive integer")
-            if not timeout_marker:
-                raise ValueError("timeout_marker is required for the timeout fixture")
-            recipe += (
-                f'\t@sleep {sleep_seconds}; printf "late" > {shlex.quote(timeout_marker)}\n'
-            )
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = fake_builder
