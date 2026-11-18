@@ -1776,7 +1776,13 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
             with mock.patch.object(
                 run_imagebuilder_sandbox, "PROCESS_TERMINATION_GRACE_SECONDS", 0.01
             ):
-                with mock.patch("time.monotonic", side_effect=[0.0, 1.0]):
+                clock = [0.0]
+
+                def advance_clock():
+                    clock[0] += 1.0
+                    return clock[0]
+
+                with mock.patch("time.monotonic", side_effect=advance_clock):
                     with mock.patch("time.sleep"):
                         (stdout, stderr), blocked = run_imagebuilder_sandbox._communicate_with_timeout(
                             process, timeout_seconds=10, child_pgid=41022
