@@ -26,10 +26,11 @@ bool interconJournalBinding(blaze_journal::Binding& out) {
     return false;
   out.owner=ESP.getChipId();
   out.peer=peerPair.peerChip;
-  out.keyTag=((uint32_t)digest[0]<<24) | ((uint32_t)digest[1]<<16) |
-             ((uint32_t)digest[2]<<8) | digest[3];
+  memcpy(out.keyTag,digest,sizeof(out.keyTag)); // 128-bit key-binding tag
   out.role=interconPref.role;
-  return out.owner && out.peer && out.keyTag && out.owner!=out.peer;
+  uint8_t nonzero=0;
+  for(uint8_t n=0;n<sizeof(out.keyTag);n++)nonzero|=out.keyTag[n];
+  return out.owner && out.peer && nonzero && out.owner!=out.peer;
 }
 const char* interconJournalStatusName(){
   if(!interconJournalFsReady)return "unavailable";
