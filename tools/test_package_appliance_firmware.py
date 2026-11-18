@@ -440,15 +440,28 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             test_env = env.copy()
             test_env["PHX_IMAGEBUILDER_SANDBOX_ACTIVE"] = "1"
             test_env["PHX_BWRAP_OWNER_PROBE"] = probe_name
+            command = ["sh", wrapper_path]
             try:
-                return subprocess.run(
-                    ["sh", wrapper_path],
+                process = subprocess.Popen(
+                    command,
                     cwd=cwd_path,
                     env=test_env,
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    check=False,
+                    start_new_session=True,
                 )
+                (stdout, stderr), timed_out = run_imagebuilder_sandbox._communicate_with_timeout(
+                    process, timeout_seconds
+                )
+                if timed_out:
+                    timeout_message = (
+                        f"RELEASE-BLOCKED: generated wrapper exceeded its "
+                        f"{timeout_seconds}s test timeout"
+                    )
+                    stderr = "\n".join(part for part in (stderr, timeout_message) if part)
+                    return subprocess.CompletedProcess(command, 124, stdout, stderr)
+                return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
             finally:
                 if os.path.lexists(probe_path):
                     os.unlink(probe_path)
