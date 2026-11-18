@@ -225,6 +225,33 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(external_path, "rb") as fp:
             self.assertEqual(fp.read(), b"operator-owned sentinel")
 
+    def test_copy_staging_file_rejects_symlinked_source_parent(self):
+        external_source_dir = os.path.join(self.temp_dir, "operator-owned-rental")
+        source_alias_dir = os.path.join(self.temp_dir, "rental-source-alias")
+        destination_dir = os.path.join(self.temp_dir, "rental-destination-parent")
+        os.makedirs(external_source_dir)
+        os.makedirs(destination_dir)
+
+        external_source = os.path.join(external_source_dir, "core.sh")
+        destination_path = os.path.join(destination_dir, "core.sh")
+        with open(external_source, "wb") as fp:
+            fp.write(b"operator-owned source sentinel")
+        os.symlink(external_source_dir, source_alias_dir, target_is_directory=True)
+        source_path = os.path.join(source_alias_dir, "core.sh")
+
+        # O_NOFOLLOW on the final filename is insufficient if an ancestor
+        # directory is a symlink. Every parent component must be opened by
+        # descriptor with O_DIRECTORY | O_NOFOLLOW.
+        with self.assertRaisesRegex(
+            ValueError, "Rental source file parent path contains a symlink"
+        ):
+            packager._copy_staging_file(source_path, destination_dir, "core.sh")
+
+        self.assertTrue(os.path.islink(source_alias_dir))
+        self.assertFalse(os.path.lexists(destination_path))
+        with open(external_source, "rb") as fp:
+            self.assertEqual(fp.read(), b"operator-owned source sentinel")
+
     def test_stage_overlay_file_modes_are_relative_to_staging_root(self):
         # The selected staging parent deliberately contains an executable-path
         # marker. Permission policy must classify paths relative to the overlay,
