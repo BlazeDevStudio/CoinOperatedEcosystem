@@ -187,6 +187,44 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
+    def test_copy_staging_file_rejects_source_replaced_with_symlink_after_lstat(self):
+        source_dir = os.path.join(self.temp_dir, "rental-source-race")
+        destination_dir = os.path.join(self.temp_dir, "rental-destination-race")
+        os.makedirs(source_dir)
+        os.makedirs(destination_dir)
+
+        source_path = os.path.join(source_dir, "core.sh")
+        external_path = os.path.join(self.temp_dir, "operator-owned-core.sh")
+        destination_path = os.path.join(destination_dir, "core.sh")
+        with open(source_path, "wb") as fp:
+            fp.write(b"trusted rental source")
+        with open(external_path, "wb") as fp:
+            fp.write(b"operator-owned sentinel")
+
+        swapped = {"value": False}
+        original_lstat = os.lstat
+
+        def lstat_then_swap_source(path, *args, **kwargs):
+            result = original_lstat(path, *args, **kwargs)
+            if os.fspath(path) == source_path and not swapped["value"]:
+                os.unlink(source_path)
+                os.symlink(external_path, source_path)
+                swapped["value"] = True
+            return result
+
+        # Simulate replacement in the gap between the regular-file lstat and open.
+        with mock.patch.object(
+            packager.os, "lstat", side_effect=lstat_then_swap_source
+        ):
+            with self.assertRaises(ValueError):
+                packager._copy_staging_file(source_path, destination_dir, "core.sh")
+
+        self.assertTrue(swapped["value"])
+        self.assertTrue(os.path.islink(source_path))
+        self.assertFalse(os.path.lexists(destination_path))
+        with open(external_path, "rb") as fp:
+            self.assertEqual(fp.read(), b"operator-owned sentinel")
+
     def test_stage_overlay_file_modes_are_relative_to_staging_root(self):
         # The selected staging parent deliberately contains an executable-path
         # marker. Permission policy must classify paths relative to the overlay,
