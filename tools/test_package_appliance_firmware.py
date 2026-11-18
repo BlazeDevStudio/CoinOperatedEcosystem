@@ -331,6 +331,117 @@ raise SystemExit(2)
         self.assertNotIn("pending_prefix", final_state)
         self.assertNotIn("pending_globals_type", final_state)
 
+
+    def test_ula_firstboot_rejects_wrong_globals_section_type_before_accepting_prefix(self):
+        staging_dest = os.path.join(self.temp_dir, "staging_ula_wrong_section")
+        stage_overlay(load_profile("ew1200g-pro"), DEFAULT_ROOTFS, staging_dest)
+        firstboot_path = os.path.join(
+            staging_dest, "etc", "uci-defaults", "99-blazepwifi-ula-prefix"
+        )
+
+        bin_dir = os.path.join(self.temp_dir, "ula-wrong-section-bin")
+        os.makedirs(bin_dir)
+        state_path = os.path.join(self.temp_dir, "ula-wrong-section-state.json")
+        uci_path = os.path.join(bin_dir, "uci")
+        uci_script = r"""#!/usr/bin/env python3
+import json
+import os
+import sys
+
+state_path = os.environ["ULA_TEST_STATE"]
+with open(state_path, "r", encoding="utf-8") as fp:
+    state = json.load(fp)
+
+args = sys.argv[1:]
+if args and args[0] == "-q":
+    args = args[1:]
+if not args:
+    raise SystemExit(2)
+
+command = args[0]
+state.setdefault("commands", []).append(" ".join(args))
+
+def save_state():
+    with open(state_path, "w", encoding="utf-8") as fp:
+        json.dump(state, fp)
+
+if command == "get":
+    key = args[1]
+    if key == "network.globals":
+        value = state.get("globals_type")
+    elif key == "network.globals.ula_prefix":
+        value = state.get("persisted_prefix")
+    else:
+        value = None
+    save_state()
+    if value is None:
+        raise SystemExit(1)
+    print(value)
+    raise SystemExit(0)
+
+if command in ("set", "commit", "revert"):
+    if command == "commit":
+        state["commit_attempted"] = True
+    save_state()
+    raise SystemExit(0)
+
+raise SystemExit(2)
+"""
+        with open(uci_path, "w", encoding="utf-8") as fp:
+            fp.write(uci_script)
+        os.chmod(uci_path, 0o755)
+
+        env = os.environ.copy()
+        env["ULA_TEST_STATE"] = state_path
+        env["PATH"] = bin_dir + os.pathsep + env.get("PATH", os.defpath)
+
+        def run_with_state(initial_state):
+            with open(state_path, "w", encoding="utf-8") as fp:
+                json.dump(initial_state, fp)
+            result = subprocess.run(
+                ["sh", firstboot_path],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            with open(state_path, "r", encoding="utf-8") as fp:
+                final_state = json.load(fp)
+            return result, final_state
+
+        wrong_type_result, wrong_type_state = run_with_state({
+            "globals_type": "interface",
+            "persisted_prefix": "fd12:3456:789a::/48",
+            "commands": [],
+        })
+        self.assertNotEqual(
+            wrong_type_result.returncode,
+            0,
+            "A valid-looking ULA option inside a non-globals section must not be accepted",
+        )
+        self.assertEqual(
+            wrong_type_state["commands"],
+            ["get network.globals"],
+            "The provisioner must reject the incompatible section before reading or changing its option",
+        )
+        self.assertFalse(
+            wrong_type_state.get("commit_attempted", False),
+            "An incompatible network.globals section must never reach UCI commit",
+        )
+
+        valid_result, valid_state = run_with_state({
+            "globals_type": "globals",
+            "persisted_prefix": "fd12:3456:789a::/48",
+            "commands": [],
+        })
+        self.assertEqual(valid_result.returncode, 0, valid_result.stderr + valid_result.stdout)
+        self.assertEqual(
+            valid_state["commands"],
+            ["get network.globals", "get network.globals.ula_prefix"],
+            "An existing valid globals section and prefix must remain idempotent",
+        )
+        self.assertFalse(valid_state.get("commit_attempted", False))
+
     def test_stage_overlay_with_rental(self):
         staging_dest = os.path.join(self.temp_dir, "staging_rental")
         p = load_profile("orangepi-zero3")
