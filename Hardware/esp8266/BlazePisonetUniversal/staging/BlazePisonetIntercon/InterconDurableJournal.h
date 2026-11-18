@@ -190,6 +190,10 @@ public:
       present[i]=true;
     }
     if(!present[0]&&!present[1])return last_=Load::Missing;
+    // Only a fresh generation-1 journal may legitimately have one slot.
+    // A missing slot after an acknowledged later commit can mean rollback.
+    if(present[0]!=present[1] &&
+       found[present[0]?0:1].generation!=1)return last_=Load::Corrupt;
     if(present[0]&&present[1]){
       const uint64_t a=found[0].generation,b=found[1].generation;
       if(a==b || (a>b && a-b!=1) || (b>a && b-a!=1))
