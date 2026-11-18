@@ -828,3 +828,47 @@ The ESP32/ESP8266 compile outputs are synthetic CI artifacts for the existing Ha
 - The canonical private Drive registry v11 remains unavailable through the exposed Library/connector surface; no older snapshot was substituted and no private identifiers or contents were published.
 
 **Next:** PHX-QA independently reviews the timeout test at \`46e0d55e\`; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for the mandatory sandbox suite; MASTER/CORE resolve durable site-scoped ULA provisioning. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE 2026-11-18 UTC01 — reject symlinked staging-output parents
+
+**Disposition: TEST-FIRST RED REPRODUCED / PACKAGER FIX COMMITTED / SOURCE-HEAD SHARED VALIDATION PASS / CASE-COLLISION PASS / BOARD COMPILES IN PROGRESS AT HANDOVER / MANDATORY BUBBLEWRAP PREFLIGHT HOST-BLOCKED / PRODUCTION NO-GO.**
+
+COE [draft PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT / UNMERGED on `phoenix/release-imagebuilder-failclosed-20261115`, based on integration #26 at `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+### Defect and bounded correction
+
+`stage_overlay()` rejected an existing requested destination, but then called `os.path.realpath()` on a not-yet-existing destination. If an operator-selected parent component was a symlink, the resolved path pointed into the symlink target and `copytree()` created the new staging tree there instead of refusing the ambiguous path.
+
+The correction checks that the requested absolute parent path equals its resolved real path before any copy, rejects a symlinked parent with `ValueError`, and retains the already-validated requested destination path rather than replacing it with a resolved target. Existing output, source/output overlap and staged-content symlink protections are unchanged. No external path is created or deleted on rejection.
+
+Only these release-owned files changed in the source/test stack:
+- `tools/test_package_appliance_firmware.py`
+- `tools/package_appliance_firmware.py`
+
+### Test-first progression
+
+- Test-first regression [`b241e868`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b241e8686ec60b39ed7cbf5bcb2c1f040b5b4a6f) creates an external operator-owned parent with a sentinel, symlinks the requested staging parent to it, and requires rejection before staging creation. It also asserts the symlink, sentinel and source marker remain unchanged.
+- Exact RED: PR shared validation [#44213469913](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213469913) and push shared validation [#44213465845](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213465845) both **FAILED at the new assertion**: `AssertionError: ValueError not raised`. Each run executed 78 packaging/tool tests with one expected failure and two intentional sandbox-only skips. ESP8266/ESP32 compile jobs were **SKIPPED** after the validation failure. Case-collision [#44213469942](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213469942) **PASS**.
+- Source correction [`2d6d80fe`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2d6d80feb3208d03d0dda8be3d13ba31e0d10371) adds the parent-path rejection before `copytree()`; no other subsystem or shared interface changed.
+
+### Exact source/test-head CI at `2d6d80fe`
+
+- PR shared/hardware [#44213536857](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213536857): validation job **SUCCESS**. The packaging/tool suite ran **78 tests, 2 intentional sandbox-only skips**, including the new symlink-parent regression; firmware-hardening and shared-contract test groups passed; all **10/10** appliance profile staging validations passed. ESP8266 and ESP32 compile jobs were **IN PROGRESS** at handover preparation and are not credited as passed.
+- Push shared/hardware [#44213529806](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213529806): validation job **SUCCESS** with the same 78-test / 2-skip result and 10/10 profile staging. ESP8266 and ESP32 compile jobs were **IN PROGRESS** at handover preparation.
+- Case-collision [#44213536850](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213536850): **COMPLETED SUCCESS**.
+- Mandatory sandbox [#44213536824](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44213536824): **FAILED CLOSED AT HOST PREFLIGHT**. Seven host-preflight tests passed; the actual unprivileged bubblewrap probe returned `bwrap: setting up uid map: Permission denied`, exit 125. Sandbox-dependent packaging regressions were not run. This is not sandbox acceptance.
+
+Board compile jobs are firmware source compilation only, not approved OpenWrt ImageBuilder appliance images or physical hardware acceptance. No real ImageBuilder binary, signed package, hardware flash, power-cut test or device soak was performed.
+
+### Current coordination / remaining gates
+
+- MASTER #288: `phoenix/master-coordination@583a2053cc29825b63ead1b614192331d78fd730`, OPEN/DRAFT. Its routing manifest remains `DRAFT_REVIEW_ONLY`; the release workflow route is reimplementation-review, not copy/move authorization.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) handover/build SUCCESS.
+- Experiments #291: `a74b8b940fba3aa8651f1a9ee8bbf23cf112726e`; Windows run [#44199987756](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44199987756) handover/build SUCCESS; write-privileged publisher SKIPPED. No independent submitted QA review was returned.
+- COE integration #26 remains OPEN/DRAFT at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR-triggered workflows remain QUEUED with no jobs returned. No combined integration acceptance.
+- No independent PHX-QA review was returned for COE #31.
+- The invalid `fd00:db8:blaze::/48` remains a MASTER/CORE P0; PHX-RELEASE did not change network configuration or invent a replacement.
+- Canonical private Drive registry v11 remains unavailable through the exposed Library/connector surface. No older snapshot was substituted and no private identifiers or contents were published.
+
+**Next:** obtain independent PHX-QA review of the staging-parent regression and source fix; finish/inspect terminal board compile jobs; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for the mandatory sandbox suite; MASTER/CORE resolve durable site-scoped ULA provisioning. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
