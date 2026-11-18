@@ -1,0 +1,74 @@
+name: Blaze Pisonet INTERCON V1.6 (DRAFT / NO-GO)
+
+on:
+  push:
+    paths:
+      - "Hardware/esp8266/BlazePisonetUniversal/BLAZE_PISONET_INTERCON_V1_6/**"
+      - "Hardware/tests/intercon_v16_peer_parser.cpp"
+      - ".github/workflows/blaze-pisonet-intercon-v16.yml"
+  pull_request:
+    paths:
+      - "Hardware/esp8266/BlazePisonetUniversal/BLAZE_PISONET_INTERCON_V1_6/**"
+      - "Hardware/tests/intercon_v16_peer_parser.cpp"
+      - ".github/workflows/blaze-pisonet-intercon-v16.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-parser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify peer parser with host compiler
+        run: |
+          set -eu
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic \
+            Hardware/tests/intercon_v16_peer_parser.cpp -o /tmp/intercon-v16-parser
+          /tmp/intercon-v16-parser
+      - name: Guard no plaintext credit command and preserve AP
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("Hardware/esp8266/BlazePisonetUniversal/BLAZE_PISONET_INTERCON_V1_6/BLAZE_PISONET_INTERCON_V1_6.ino").read_text()
+          assert "WiFi.mode(WIFI_AP_STA);" in s
+          assert "blaze_intercon::parseHello" in s
+          assert "interconConfig.role==INTERCON_STANDARD && csEnabled" in s
+          assert "cmd==\"CREDIT\"" not in s
+          assert "setRelay2(true);" in s
+          assert "server.on(\"/api/intercon/restart\",HTTP_POST" in s
+          print("V1.6 source assertions PASS")
+          PY
+      - name: Check portal JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("Hardware/esp8266/BlazePisonetUniversal/BLAZE_PISONET_INTERCON_V1_6/BLAZE_PISONET_INTERCON_V1_6.ino").read_text()
+          start=s.index("<script>")+len("<script>")
+          end=s.index("</script>",start)
+          Path("/tmp/intercon-v16-web.js").write_text(s[start:end])
+          PY
+          node --check /tmp/intercon-v16-web.js
+
+  esp8266-compile:
+    runs-on: ubuntu-latest
+    needs: source-and-parser
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install exact ESP8266 core and TM1637Display library
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp8266:esp8266@3.1.2
+          arduino-cli lib update-index
+          arduino-cli lib install "TM1637Display"
+      - name: Compile V1.6 for NodeMCU v2
+        run: |
+          arduino-cli compile --warnings all --fqbn esp8266:esp8266:nodemcuv2 \
+            Hardware/esp8266/BlazePisonetUniversal/BLAZE_PISONET_INTERCON_V1_6
+      - name: NO-GO reminder
+        run: echo "Successful compilation does not authorize payment or motherboard hardware flashing."
