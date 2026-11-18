@@ -1,4 +1,4 @@
-name: INTERCON Stage 3 durable journal build (DRAFT / NO-GO)
+name: INTERCON Stage 4 shadow credit transfer build (DRAFT / NO-GO)
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - "Hardware/tests/intercon_durable_journal_test.cpp"
+      - "Hardware/tests/intercon_lab_transfer_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - "Hardware/tests/intercon_durable_journal_test.cpp"
+      - "Hardware/tests/intercon_lab_transfer_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   workflow_dispatch:
 
@@ -45,6 +47,9 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Werror \
             Hardware/tests/intercon_durable_journal_test.cpp -o /tmp/intercon-durable-journal-tests
           /tmp/intercon-durable-journal-tests
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            Hardware/tests/intercon_lab_transfer_test.cpp -lcrypto -o /tmp/intercon-lab-transfer-test
+          /tmp/intercon-lab-transfer-test
 
   compile-esp8266:
     runs-on: ubuntu-latest
