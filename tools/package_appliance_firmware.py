@@ -243,11 +243,15 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
         raise FileExistsError(
             f"Staging destination already exists; refusing to overwrite or delete: {requested_staging_dir}"
         )
-    staging_dir = os.path.realpath(requested_staging_dir)
-    if os.path.lexists(staging_dir):
-        raise FileExistsError(
-            f"Resolved staging destination already exists; refusing to overwrite or delete: {staging_dir}"
+    requested_parent_dir = os.path.dirname(requested_staging_dir)
+    if os.path.realpath(requested_parent_dir) != requested_parent_dir:
+        raise ValueError(
+            "Staging destination parent path contains a symlink: "
+            f"{requested_parent_dir}"
         )
+    # Keep the validated operator path. Resolving the destination itself would
+    # silently redirect a new staging tree through a symlinked parent.
+    staging_dir = requested_staging_dir
     try:
         shared_path = os.path.commonpath((source_rootfs, staging_dir))
     except ValueError:
