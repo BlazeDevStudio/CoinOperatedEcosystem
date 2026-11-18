@@ -144,5 +144,33 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         )
 
 
+    def test_workflow_uses_immutable_node24_checkout_action(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        checkout_step = workflow.split(
+            "      - name: Checkout exact PR head", 1
+        )[1].split("      - name: Install bubblewrap", 1)[0]
+        self.assertIn(
+            "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            checkout_step,
+            "sandbox checkout must use the reviewed immutable Node24 action commit",
+        )
+        self.assertIn(
+            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+            checkout_step,
+            "sandbox must continue checking out the exact triggering PR/push SHA",
+        )
+        self.assertIn(
+            "persist-credentials: false",
+            checkout_step,
+            "sandbox checkout must not persist the workflow token in Git config",
+        )
+        self.assertNotRegex(
+            checkout_step,
+            r"uses:\s*actions/checkout@v",
+            "sandbox checkout must not use a mutable version tag",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
