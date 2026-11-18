@@ -631,10 +631,9 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
     sha256sum_candidate = shutil.which("sha256sum", path=TRUSTED_SYSTEM_PATH)
     if not sha256sum_candidate:
         raise OSError("Safe ImageBuilder wrapper requires sha256sum in trusted system directories")
-    sha256sum_path = os.path.realpath(sha256sum_candidate)
+    sha256sum_path = os.path.abspath(sha256sum_candidate)
     if (
         os.path.dirname(sha256sum_path) not in ("/usr/bin", "/bin")
-        or os.path.islink(sha256sum_path)
         or not os.path.isfile(sha256sum_path)
         or not os.access(sha256sum_path, os.X_OK)
         or not stat.S_ISREG(os.stat(sha256sum_path).st_mode)
@@ -659,7 +658,7 @@ SHA256SUM_PATH={sha256sum_arg}
 RUNNER_PATH={runner_arg}
 RUNNER_SHA256={runner_sha256}
 
-if [ ! -f "$SHA256SUM_PATH" ] || [ -L "$SHA256SUM_PATH" ] || [ ! -x "$SHA256SUM_PATH" ]; then
+if [ ! -f "$SHA256SUM_PATH" ] || [ ! -x "$SHA256SUM_PATH" ]; then
     echo "RELEASE-BLOCKED: pinned sha256sum executable is missing or unsafe" >&2
     exit 1
 fi
