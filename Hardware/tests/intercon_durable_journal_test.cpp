@@ -48,10 +48,21 @@ int main(){
   const Payload start={0xAABBCCDD,0,0,0,0,0,0};
   assert(j.initialize(start));
   assert(j.ready()&&j.record().generation==1&&j.activeSlot()=='A');
+  // No direct unbilled credit, identity change or sequence reset is allowed.
+  Record forged=j.record();
+  forged.p.remainingUnits=1000000ULL;
+  assert(!j.commit(forged));
+  forged=j.record();
+  forged.p.issuer=0xCAFEBABE;
+  assert(!j.commit(forged));
   Snapshot balance=getSlave(j);
   assert(apply(balance,{0xAABBCCDD,1,60},commitSlaveSnapshot,&j)==Outcome::Applied);
   assert(j.activeSlot()=='B'&&j.record().generation==2);
   assert(j.record().p.remainingUnits==6000000ULL);
+  // Countdown checkpoints may decrease, never increase, the journal balance.
+  Record illegal=j.record();
+  illegal.p.remainingUnits+=100000ULL;
+  assert(!j.commit(illegal));
   // Receiver committed but ACK lost: re-read real slot bytes, reject replay.
   Journal restarted(fs.port(),Kind::Slave);
   assert(restarted.recover()==Status::Ready);
@@ -99,6 +110,12 @@ int main(){
   assert(stage(mp,120,commitMasterPending,&master));
   assert(master.record().p.sequence==1&&master.record().p.pendingSequence==1);
   assert(!stage(mp,120,commitMasterPending,&master)); // one unpaid event only
+  Record illegalMaster=master.record();
+  illegalMaster.p.pendingSequence=0;
+  illegalMaster.p.pendingSeconds=0;
+  illegalMaster.p.sequence=1;
+  illegalMaster.p.remainingUnits=100000ULL;
+  assert(!master.commit(illegalMaster));
   Journal masterRestart(mf.port(),Kind::Master);
   assert(masterRestart.recover()==Status::Ready);
   MasterPending pending={masterRestart.record().p.sequence,
