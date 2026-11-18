@@ -1602,6 +1602,29 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option device 'eth0'", uci)
 
 
+    def test_stage_overlay_creates_missing_parent_directories_safely(self):
+        source_rootfs = os.path.join(self.temp_dir, "missing-parent-source")
+        os.makedirs(source_rootfs)
+        source_marker = os.path.join(source_rootfs, "source-marker.txt")
+        with open(source_marker, "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        missing_parent = os.path.join(
+            self.temp_dir, "new-staging-parent", "nested", "output"
+        )
+        staging_dest = os.path.join(missing_parent, "generated-overlay")
+        manifest = stage_overlay(
+            load_profile("ew1200g-pro"),
+            source_rootfs,
+            staging_dest,
+        )
+
+        self.assertTrue(os.path.isdir(staging_dest))
+        self.assertEqual(manifest["staging_dir"], staging_dest)
+        with open(os.path.join(staging_dest, "source-marker.txt"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "SOURCE-PRESERVED")
+
+
     def test_stage_overlay_refuses_existing_output_without_deleting_contents(self):
         source_rootfs = os.path.join(self.temp_dir, "safe-source")
         os.makedirs(source_rootfs)
