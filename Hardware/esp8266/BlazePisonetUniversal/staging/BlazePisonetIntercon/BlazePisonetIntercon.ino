@@ -465,6 +465,7 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Wi-Fi STA</strong><span id="staAddress">Disabled</span></div>
  <div id="peerList" class="help">No peers discovered yet.</div>
  <div class="row"><strong>Paired peer authentication</strong><span id="peerProof">Not paired</span></div>
+ <div class="row"><strong>Credit journal</strong><span id="journalStatus">Not initialized</span></div>
  <p class="help">Discovery is public status only; a signed PING/PONG challenge proves paired link credentials. Coin forwarding remains locked.</p></div></div>
 </section>
 <section id="hardware" class="panel">
@@ -554,6 +555,8 @@ function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole',
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
  put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
+ const journalNames=['Healthy','Missing — not initialized','CORRUPT — locked','Wrong peer/role — locked','Storage error — locked'];
+ put('journalStatus',o.interconRole===0?'Not used in Standard':(journalNames[o.journalStatus]||'Unknown — locked'));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
  const peers=$('peerList');peers.textContent='';
  if(Array.isArray(o.interconPeers)&&o.interconPeers.length){
@@ -703,6 +706,10 @@ bool csActiveHigh = true;
 #include "InterconSecureWire.h"
 #include "InterconDiscovery.h"
 #include "InterconPeerAuth.h"
+#include "InterconLittleFSJournal.h"
+// Read-only journal health: credit transfer is still disabled in runtime.
+InterconLittleFSJournal interconJournalStorage(false);
+blaze_durable::Journal interconJournal(interconJournalStorage);
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
 bool pcExpectedOn = false; // Estimated only. No physical state detection.
@@ -1816,6 +1823,10 @@ void sendStatus() {
   }
   s += ']';
   s += F(",\"interconMode\":\"DISCOVERY-ONLY: remote credits locked\"");
+  s += F(",\"journalStatus\":");s+=(int)interconJournal.status();
+  s += F(",\"journalReady\":");s+=(interconJournal.ready()?"true":"false");
+  // This journal is experimental and NOT the live V1.5 EEPROM timer balance.
+  s += F(",\"journalMode\":\"READ-ONLY: not the paid timer authority\"");
   s += F(",\"peerPaired\":");s+=(peerPairReady?"true":"false");
   s += F(",\"peerAuthenticated\":");s+=(peerOnline()?"true":"false");
   s += F(",\"peerChip\":");s+=peerPairReady?jsonQuote(String(peerPair.peerChip,HEX)):jsonQuote(String(""));
@@ -1904,6 +1915,16 @@ void setup() {
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
   loadInterconConfig(fsReady);
   peerLoadConfig(fsReady);
+  interconJournalStorage.setMounted(fsReady);
+  if(interconPref.role!=INTERCON_STANDARD && peerPairReady) {
+    const blaze_durable::Role expectedRole=
+        interconPref.role==INTERCON_MASTER?blaze_durable::Role::Master:
+                                          blaze_durable::Role::Slave;
+    const blaze_durable::Load journalState=
+        interconJournal.load(expectedRole,ESP.getChipId(),peerPair.peerChip);
+    Serial.printf("[INTERCON] read-only journal status=%u (no credit forwarding)\n",
+                  (unsigned)journalState);
+  }
   loadPersistentState();
   loadIdlePreferences();
   loadPowerAndCoinPrefs();
