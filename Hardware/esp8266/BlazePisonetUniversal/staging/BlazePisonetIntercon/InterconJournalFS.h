@@ -24,6 +24,7 @@ struct InterconJournalFS {
     File f=LittleFS.open(path,"r");
     if(!f)return false;
     actual=f.size();
+    if(actual==0)actual=1; // Existing empty file is CORRUPT, not absent.
     if(actual!=blaze_journal::RECORD_SIZE){f.close();return true;}
     const size_t got=f.read(out,blaze_journal::RECORD_SIZE);
     f.close();
