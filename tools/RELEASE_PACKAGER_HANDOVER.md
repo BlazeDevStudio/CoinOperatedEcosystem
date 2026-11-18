@@ -964,3 +964,40 @@ Board compile artifacts are CI outputs only; their provider digests are not inde
 **Next owner actions:** PHX-QA and PHX-MASTER independently review source/test head `988d2a6d`; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for mandatory bubblewrap acceptance; PHX-CORE / COE integration owner settle §6.9 ULA provisioning; integration owner unblocks #26 workflows.
 
 No merge, signing, publication, hardware flash, payment migration or customer deployment occurred. Physical acceptance remains NOT TESTED: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
+
+
+## 2026-11-18 UTC05 — reject Rental source paths with symlinked parent components
+
+**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / 83 PACKAGING TESTS PASS / 10-OF-10 PROFILES PASS / ESP32 + ESP8266 PUSH BUILDS PASS / CASE GUARD PASS / MANDATORY SANDBOX HOST-BLOCKED / PRODUCTION NO-GO.
+
+**Scope and refs:** PHX-RELEASE only, existing child draft PR #35 stacked on parent draft PR #31. Parent/base remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Exact source/test head is `656540334b0f25cd43021a4de9b0b54d5f4cccbc`; current docs head at the time of this entry is the same source/test head. Child compare is **12 commits ahead / 0 behind** parent. Source/test paths are only `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py`.
+
+**Defect:** `_copy_staging_file()` protected only the final filename with `O_NOFOLLOW`. A Rental source path whose parent directory was a symlink still traversed that parent and copied a file from an operator-owned external directory. Final-component protection alone did not constrain the full source path.
+
+**Test-first and correction**
+- Regression commit [`5c22338e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5c22338e69d7860c3f32fad477ec79feb5904983) adds `test_copy_staging_file_rejects_symlinked_source_parent`. It creates an external Rental source directory, aliases it through a symlinked parent, and requires rejection before a destination file is created while preserving the external sentinel.
+- Exact RED [#44242344408](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44242344408), job `134592991846`: **FAILED AS EXPECTED** at the new assertion, `AssertionError: ValueError not raised`. 83 tests ran, one failure, two intentional sandbox-only skips. Existing final-component symlink regression passed. The profile and board jobs were skipped after the packaging test failure.
+- Source fix [`65654033`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/656540334b0f25cd43021a4de9b0b54d5f4cccbc) factors the descriptor-relative path walk into `_open_file_without_symlink_parents()`. It opens every parent component from filesystem root with `O_DIRECTORY | O_NOFOLLOW`, opens the final source with `O_NOFOLLOW`, retains regular-file and device/inode checks, and reuses the same helper for generated build-script creation. Unsupported hosts fail closed; no symlink or unsandboxed fallback was added.
+
+**Exact source/test-head CI at `65654033`**
+- Push shared/firmware/packaging [#44242430784](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44242430784): **COMPLETED SUCCESS**. Packaging/tool suite: **83 tests, 2 intentional skips**; firmware-hardening and shared-contract validation PASS; appliance profile staging **10/10 PASS**.
+- ESP32 job `134593339262`: **SUCCESS**, compile and artifact upload completed.
+- ESP8266 job `134593339421`: **SUCCESS**, compile and artifact upload completed.
+- PR shared/firmware/packaging [#44242437545](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44242437545): validation **SUCCESS** (83 tests / two intentional skips, 10/10 profile staging); ESP8266 **SUCCESS**; ESP32 was **IN PROGRESS** at handover authoring and is not credited as complete here.
+- Case-collision [#44242437616](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44242437616): **SUCCESS**.
+
+**Mandatory sandbox**
+- Push [#44242430710](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44242430710) and PR [#44242437575](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44242437575): **FAILED CLOSED AT HOST PREFLIGHT**. The eight sandbox-host preflight unit tests and non-root identity checks passed; actual bubblewrap namespace setup failed with `bwrap: setting up uid map: Permission denied`, exit 125. Mandatory sandbox packaging regressions were **SKIPPED**, not passed. This is hosted-runner infrastructure blockage, not a packager regression result or sandbox acceptance.
+
+**Cross-repository refresh**
+- MASTER #288 remains OPEN/DRAFT at `e95cda0ae3f08c4f1dbdfcdfa79808cc887cd7b3`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`, and the PHX-RELEASE workflow route is reimplementation-review only.
+- Experiments #242 remains OPEN/DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; exact Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472): handover and build-windows **SUCCESS**.
+- Experiments #291 remains OPEN/DRAFT at `a74b8b940fba3aa8651f1a9ee8bbf23cf112726e`; exact Windows run [#44199987756](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44199987756): handover/build **SUCCESS**, write-privileged publisher **SKIPPED**.
+- COE integration #26 remains OPEN/DRAFT at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR workflows remain **QUEUED**, no combined integration acceptance.
+- MASTER UTC04 lineage audit identifies incompatible Stage-3 journal alternatives #39/#40/#42 (different on-flash record formats), with #41 dependent on #39; source license/redistribution rights for the Labs-origin Pisonet Universal import remain UNKNOWN. Do not select, merge, transplant or promote these candidates without MASTER/CORE/QA owner decisions.
+- Architecture Contracts §6.9 still blocks `fd00:db8:blaze::/48`. PHX-CORE/MASTER/COE integration owner must define valid installation-scoped RFC 4193 ULA provisioning and durable persistence before RELEASE changes the packager. No replacement prefix was invented.
+- Canonical private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json` was not available through the exposed Library surface. Search surfaced older v5-v7 snapshots only; they were not substituted. No private registry contents were copied.
+
+**Reviews and next actions:** No submitted independent reviews were returned for #31 or #35. PHX-QA should independently review the parent-component no-follow regression and shared descriptor walker at source/test head `65654033`. Infrastructure owner must provide an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces for mandatory sandbox packaging tests. MASTER/CORE/COE must resolve §6.9 ULA provisioning and the integration journal/license lineage; COE integration owner must unblock #26 workflows.
+
+No merge, signing, release publication, hardware flashing, payment migration or customer deployment occurred. Physical acceptance remains **NOT TESTED**: 150 power cuts and 30-device/24-hour soak. **PRODUCTION NO-GO.**
