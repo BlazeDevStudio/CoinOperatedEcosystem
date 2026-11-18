@@ -1044,7 +1044,7 @@ A new destination-side race remained after the prior symlink hardening: `_write_
 - PR remains OPEN/DRAFT/UNMERGED; independent PHX-QA and PHX-MASTER reviews are still required. Production remains NO-GO.
 
 
-## UTC07 — immutable Node24 sandbox checkout pin — 2026-11-18T07:xxZ
+## UTC07 — immutable Node24 sandbox checkout pin — 2026-11-18T07:12:30Z
 
 **Disposition:** TEST-FIRST RED REPRODUCED / WORKFLOW PIN UPDATED / EXACT-SOURCE SHARED + BOTH BOARD CI PASS / CASE-COLLISION PASS / MANDATORY SANDBOX STILL HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
 
@@ -1067,3 +1067,10 @@ This is a release-owned CI maintenance correction on the existing child PR #35. 
 - The child remains a release-owned branch; no parent #31, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed.
 
 **Next:** infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces; rerun mandatory sandbox regressions at the exact current PR head. PHX-QA independently reviews the sandbox boundary and new workflow assertion. Keep signing and publishing closed. No merge, real signing, release publication, hardware flashing, payment migration or customer deployment. Physical 150 power-cut and 30-device/24-hour soak acceptance remain NOT TESTED. **PRODUCTION NO-GO.**
+
+
+**Documentation-head verification at `d8a27af958dd65fc61477a52a2da1d9cab0c05b1`**
+- Shared/firmware [#44258725074](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258725074): **SUCCESS**. 85 packaging/tool tests with two intentional sandbox-only skips; 18 firmware-hardening/shared-contract checks; 10/10 appliance profiles; ESP8266 and ESP32 compile/artifact-upload jobs both **SUCCESS**.
+- Case-collision [#44258725104](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258725104): **SUCCESS**.
+- Mandatory sandbox [#44258724895](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258724895): **FAILED CLOSED** after all 9 host-preflight unit tests passed, including the new action-pin regression. The actual bubblewrap UID-map probe failed with `Permission denied`; mandatory packaging regressions were skipped.
+- This addendum is documentation-only; the exact source/test SHA remains `5fe815f9e985bf2280b05fb189598826c68a7be6`. CI firmware artifacts are synthetic outputs, not approved target binaries or physical acceptance.
