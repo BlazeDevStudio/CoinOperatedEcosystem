@@ -128,8 +128,11 @@ void interconSecureReceived(const char* data,int len,IPAddress sourceIP) {
        input.eventLow==peerChallengeLow){
       peerLastProof=millis();peerChallengeOutstanding=false;
     }
+  } else if(!strcmp(input.kind,"CRED") || !strcmp(input.kind,"ACKN")) {
+    // The Stage 4 hook journals a SHADOW test balance only. It cannot grant
+    // live time or energize coin/relay outputs. Real-money routing is locked.
+    interconLabReceived(input,approved);
   }
-  // CRED and ACKN intentionally ignored; no remote code may grant time.
 }
 void interconSecureTick(){
   if(!peerPairReady||!interconPref.staEnabled||
