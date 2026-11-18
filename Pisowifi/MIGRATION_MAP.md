@@ -96,7 +96,7 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 | `Pisowifi/tests/capabilities.sh` | `542c68807b29fdd67bb1220b61e343daf5db88dd` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_faults.sh` | `8e8053f709d53e78cef154ee9b6d0242075bebf7` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_fixture_smoke.sh` | `a17f2e7885087a2c30d0a8e9c8d45098f28579b3` | locally derived; source retained where applicable; CI NOT_RUN |
-| `Pisowifi/tests/run_focus.sh` | `fa1f4f2c6393504499d50659d8bf980caf7ff85b` | locally derived; source retained where applicable; CI NOT_RUN |
+| `Pisowifi/tests/run_focus.sh` | `056dfe37323004ded5c92ca2410ed95ce1e150c7` | locally derived; now invokes the contract-vector verifier; exact-head CI PENDING |
 | `Pisowifi/tests/config_concurrency.sh` | `f8eaa2c0bc3cd1018942fe4bed7511a65db1118d` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/admin_config_result.sh` | `975b3245d078e33faa54f22ac9fb5af0bfe49cf0` | locally derived; source retained where applicable; CI NOT_RUN |
 | `Pisowifi/tests/config_apply_failclosed.sh` | `e6a6af64999769d5481506e7ee64e3934f4ae909` | locally derived; source retained where applicable; CI NOT_RUN |
@@ -104,6 +104,9 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 | `Pisowifi/tests/bootstrap_and_cli_auth_guard.sh` | `1bb5aa0072084ad6f0b24e118bb07ad2b597213a` | locally authored CLI auth REQUEST_METHOD isolation and 99-blazepwifi fail-closed CSPRNG regression |
 | `Pisowifi/tests/member_receipt_failure_atomicity.sh` | `19dfc3cc50e1884b30e62cf0e71a5d02f123979b` | locally authored #31 receipt-failure regression (formerly expected-RED `member_crash_atomicity_red.sh`); dash PASS, CI PENDING |
 | `Pisowifi/tests/member_txn_journal.sh` | `01dc9c65ae9d74eaafb403d47aebcd20edd14390` | locally authored #31 journal crash-injection suite (simulated faults only); dash PASS, CI PENDING |
+| `Pisowifi/tests/coin_receipt_contract_v1.py` | `20458f793b00b563b526fbabbcf86a80f4d78770` | locally authored deterministic receipt contract/vector verifier; synthetic key only; exact-head CI PENDING |
+| `Pisowifi/docs/contracts/COIN_RECEIPT_V1.md` | `cadc8057976f8a5ebb8c0e2af3bedbea7425d1f8` | locally authored candidate contract; no runtime activation or financial authority |
+| `Pisowifi/docs/contracts/COIN_RECEIPT_V1_GOLDEN.json` | `ff4c7be5b779abbd0315bb8917297e2875cdfb4a` | locally authored deterministic synthetic-key vectors; no production keys |
 
 ## Other provenance
 
@@ -136,3 +139,7 @@ These source-linked test fixtures were generated/reworked on the draft branch; t
 
 - Test-first [CI #43653301906](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/43653301906), source commit `5de696dbb85a40542e07748b61b829668766eaf9`, reproduced an authenticated Vendo `register` `ok:true` or malformed response on a symlinked `controllers.tsv` (source-linked disposable test `tests/vendo_controller_failclosed.sh`). This is a real CGI-level software fault, not physical or money testing.
 - New derived Vendo source blob `5a4d39c62d019b8c442af9f5cd380c4c0d302c6a` checks controller initialization, stages/validates the heartbeat under the existing account then controller lock, propagates metadata persistence failure, and refuses register/ping/poll signed success if controller policy JSON fails. Source source/blob provenance and historical origin remain unchanged; commercial controller signed admission and financial authority not present. Exact-head CI pending.
+
+### 2026-11-18 event-bound coin receipt contract candidate (PHX-CORE draft)
+
+- `COIN_RECEIPT_V1.md` and its deterministic synthetic-key verifier define the only proposed authenticated receipt envelope for a future controller acknowledgement: canonical event binding, key version, durable ledger epoch/sequence, expiry, disposition, and exact-byte replay. The current CGI deliberately does not emit it because no durable ledger epoch/sequence authority exists in this migration branch. The test is contract-only and does not enable coin credit, alter Vendo behavior, provision keys, or change firmware's default-deny recovery hold. Exact-head CI remains required.

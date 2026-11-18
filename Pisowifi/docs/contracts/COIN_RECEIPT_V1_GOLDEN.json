@@ -1,0 +1,75 @@
+{
+  "contract": "blazepwifi-coin-receipt-v1",
+  "synthetic_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "vectors": [
+    {
+      "name": "committed_first",
+      "fields": {
+        "domain": "blazepwifi-coin-receipt-v1",
+        "controller_id": "vendo-01",
+        "key_version": 7,
+        "receipt_id": "22a06e7559141f5e1d1d4d57e1f46b2fa6c1fced1ca778dd384c5016bcf000b4",
+        "event_nonce": "0123456789abcdef",
+        "target_nonce": "a1b2c3d4e5f60708",
+        "pulse_count": 3,
+        "account_id_hash": "8ab90163dcb572ef5bf01c84829077c21cc5c26842b11ea1a045af5acaf3bb1d",
+        "ledger_epoch": "00112233445566778899aabbccddeeff",
+        "ledger_sequence": 42,
+        "issued_at": 1794950400,
+        "expires_at": 1794950700,
+        "disposition": "COMMITTED",
+        "reason": "CREDIT_COMMITTED",
+        "credit_delta_centavos": 300,
+        "credit_total_centavos": 1250
+      },
+      "canonical": "domain=blazepwifi-coin-receipt-v1\ncontroller_id=vendo-01\nkey_version=7\nreceipt_id=22a06e7559141f5e1d1d4d57e1f46b2fa6c1fced1ca778dd384c5016bcf000b4\nevent_nonce=0123456789abcdef\ntarget_nonce=a1b2c3d4e5f60708\npulse_count=3\naccount_id_hash=8ab90163dcb572ef5bf01c84829077c21cc5c26842b11ea1a045af5acaf3bb1d\nledger_epoch=00112233445566778899aabbccddeeff\nledger_sequence=42\nissued_at=1794950400\nexpires_at=1794950700\ndisposition=COMMITTED\nreason=CREDIT_COMMITTED\ncredit_delta_centavos=300\ncredit_total_centavos=1250\n",
+      "mac": "1f463c872c93e47a2eda9c53b6cb0d44706506cc1206dc8a0a988595179cb7fb"
+    },
+    {
+      "name": "committed_retry",
+      "fields": {
+        "domain": "blazepwifi-coin-receipt-v1",
+        "controller_id": "vendo-01",
+        "key_version": 7,
+        "receipt_id": "22a06e7559141f5e1d1d4d57e1f46b2fa6c1fced1ca778dd384c5016bcf000b4",
+        "event_nonce": "0123456789abcdef",
+        "target_nonce": "a1b2c3d4e5f60708",
+        "pulse_count": 3,
+        "account_id_hash": "8ab90163dcb572ef5bf01c84829077c21cc5c26842b11ea1a045af5acaf3bb1d",
+        "ledger_epoch": "00112233445566778899aabbccddeeff",
+        "ledger_sequence": 42,
+        "issued_at": 1794950400,
+        "expires_at": 1794950700,
+        "disposition": "COMMITTED",
+        "reason": "CREDIT_COMMITTED",
+        "credit_delta_centavos": 300,
+        "credit_total_centavos": 1250
+      },
+      "canonical": "domain=blazepwifi-coin-receipt-v1\ncontroller_id=vendo-01\nkey_version=7\nreceipt_id=22a06e7559141f5e1d1d4d57e1f46b2fa6c1fced1ca778dd384c5016bcf000b4\nevent_nonce=0123456789abcdef\ntarget_nonce=a1b2c3d4e5f60708\npulse_count=3\naccount_id_hash=8ab90163dcb572ef5bf01c84829077c21cc5c26842b11ea1a045af5acaf3bb1d\nledger_epoch=00112233445566778899aabbccddeeff\nledger_sequence=42\nissued_at=1794950400\nexpires_at=1794950700\ndisposition=COMMITTED\nreason=CREDIT_COMMITTED\ncredit_delta_centavos=300\ncredit_total_centavos=1250\n",
+      "mac": "1f463c872c93e47a2eda9c53b6cb0d44706506cc1206dc8a0a988595179cb7fb"
+    },
+    {
+      "name": "rejected_disabled",
+      "fields": {
+        "domain": "blazepwifi-coin-receipt-v1",
+        "controller_id": "vendo-02",
+        "key_version": 9,
+        "receipt_id": "b8bd11103d0e150584987af90c334b9b0ab95c187376b729e8f76faee32500cf",
+        "event_nonce": "fedcba9876543210",
+        "target_nonce": "1020304050607080",
+        "pulse_count": 2,
+        "account_id_hash": "32b97b6ee4802fcc05a723bc4373801509b4e38abdc9827eebf5456e08a7330b",
+        "ledger_epoch": "ffeeddccbbaa99887766554433221100",
+        "ledger_sequence": 77,
+        "issued_at": 1794950500,
+        "expires_at": 1794950800,
+        "disposition": "REJECTED",
+        "reason": "CONTROLLER_DISABLED",
+        "credit_delta_centavos": 0,
+        "credit_total_centavos": 0
+      },
+      "canonical": "domain=blazepwifi-coin-receipt-v1\ncontroller_id=vendo-02\nkey_version=9\nreceipt_id=b8bd11103d0e150584987af90c334b9b0ab95c187376b729e8f76faee32500cf\nevent_nonce=fedcba9876543210\ntarget_nonce=1020304050607080\npulse_count=2\naccount_id_hash=32b97b6ee4802fcc05a723bc4373801509b4e38abdc9827eebf5456e08a7330b\nledger_epoch=ffeeddccbbaa99887766554433221100\nledger_sequence=77\nissued_at=1794950500\nexpires_at=1794950800\ndisposition=REJECTED\nreason=CONTROLLER_DISABLED\ncredit_delta_centavos=0\ncredit_total_centavos=0\n",
+      "mac": "63cbcebf5afeb252e2290f0b33042037a249da1903eca677588c2640e13c2a6b"
+    }
+  ]
+}
