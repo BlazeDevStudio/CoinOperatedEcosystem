@@ -200,7 +200,7 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
 
 
 def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
-    """Write a staged file without following a copied final-component symlink."""
+    """Write a staged file without following symlinked parent or final components."""
     path = os.path.join(directory, filename)
     try:
         existing_mode = os.lstat(path).st_mode
@@ -211,11 +211,43 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
             f"Refusing symlink or non-regular staged file destination: {path}"
         )
 
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    file_fd = os.open(path, flags, 0o644)
-    with os.fdopen(file_fd, "wb") as staged_file:
-        staged_file.write(content)
+    # O_NOFOLLOW on the final component is not enough: a parent directory can
+    # be replaced after lstat and redirect this write outside the staging tree.
+    # Open every component through directory descriptors, then validate the
+    # opened object before truncating it. O_NONBLOCK prevents a swapped FIFO
+    # from hanging the packager while its type is checked.
+    flags = os.O_WRONLY | os.O_CREAT
+    flags |= getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+    file_fd = -1
+    try:
+        try:
+            file_fd = _open_file_without_symlink_parents(
+                path,
+                flags,
+                0o644,
+                "Staged file destination",
+                "Safe staged file writes require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+                "Invalid staged file destination filename",
+            )
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise ValueError(
+                    f"Refusing symlink staged file destination: {path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(file_fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise ValueError(
+                f"Refusing non-regular staged file destination after open: {path}"
+            )
+        os.ftruncate(file_fd, 0)
+        with os.fdopen(file_fd, "wb") as staged_file:
+            file_fd = -1
+            staged_file.write(content)
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
 
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
