@@ -123,6 +123,37 @@ inline bool deserialize(const uint8_t in[RECORD_SIZE],Record& r){
   if(!valid(candidate))return false;
   r=candidate;return true;
 }
+// Only explicit monotonic financial transitions and downward time checkpoints
+// can be committed. Prevent an accidental direct Journal::commit() call from
+// increasing balance without a new paid event or clearing a pending event.
+inline bool permittedTransition(const Record& oldRec,const Record& next) {
+  if(oldRec.kind!=next.kind || oldRec.p.issuer!=next.p.issuer)return false;
+  const Payload& a=oldRec.p;
+  const Payload& b=next.p;
+  if(oldRec.kind==Kind::Master){
+    if(b.remainingUnits!=a.remainingUnits || b.paidCount!=a.paidCount ||
+       b.lastSeconds!=a.lastSeconds)return false;
+    if(a.pendingSequence==0) {
+      return a.sequence!=UINT64_MAX && b.sequence==a.sequence+1 &&
+             b.pendingSequence==b.sequence && b.pendingSeconds>0;
+    }
+    return b.sequence==a.sequence && b.pendingSequence==0 &&
+           b.pendingSeconds==0;
+  }
+  if(b.pendingSequence||b.pendingSeconds)return false;
+  if(b.sequence==a.sequence) {
+    // A journal-led countdown may decrease remaining time but never add it.
+    return b.paidCount==a.paidCount && b.lastSeconds==a.lastSeconds &&
+           b.remainingUnits<=a.remainingUnits;
+  }
+  if(a.sequence==UINT64_MAX||b.sequence!=a.sequence+1 ||
+     a.paidCount==UINT32_MAX || b.paidCount!=a.paidCount+1 ||
+     b.lastSeconds==0)return false;
+  const uint64_t extra=(uint64_t)b.lastSeconds*100000ULL;
+  return a.remainingUnits<=blaze_credit::MAX_UNITS &&
+         extra<=blaze_credit::MAX_UNITS-a.remainingUnits &&
+         b.remainingUnits==a.remainingUnits+extra;
+}
 class Journal {
   IO io={};
   Kind expected=Kind::Slave;
@@ -178,7 +209,7 @@ public:
   }
   bool commit(const Record& proposed){
     if(!ready()||!hasCurrent||current.generation==UINT64_MAX ||
-       proposed.kind!=expected)return false;
+       proposed.kind!=expected || !permittedTransition(current,proposed))return false;
     Record target=proposed;
     target.generation=current.generation+1;
     uint8_t bytes[RECORD_SIZE]={};
