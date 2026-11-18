@@ -902,7 +902,13 @@ bool requireAdmin() {
 void savePersistentState();
 void updateBuzzer();
 void stopChime();
-void resetTimer();
+bool resetTimer();
+bool interconJournalSetBalance(uint64_t units);
+void interconSlaveCheckpoint();
+void interconSlaveRestoreFromJournal();
+void interconMasterReceiveCoin(uint8_t count);
+void interconMasterTick();
+void interconRefreshCoinGate();
 // Declare functions with custom parameter types explicitly so Arduino does not
 // synthesize prototypes in an unsafe location in .ino translation units.
 void queuePattern(const std::vector<int>& freqs, const std::vector<int>& durs,
@@ -1663,7 +1669,10 @@ void playTimeEndingChime() {
 // Timer, sales, and interrupt-assisted coin pulse accounting
 // ------------------------------
 void startTimerFromSeconds(uint32_t secs) {
+  if(interconPref.role==INTERCON_MASTER)return; // Master routes, not rents
   if (secs == 0) { resetTimer(); return; }
+  if(interconPref.role==INTERCON_SLAVE &&
+     !interconJournalSetBalance((uint64_t)secs*100000ULL))return;
   stopChime();
   remainingSeconds = secs;
   remainingMs100 = (uint64_t)secs * 100000ULL;
@@ -1698,6 +1707,12 @@ void updateTimerState() {
   lastCountdownMillis = now;
   const uint64_t debit = (uint64_t)elapsed * (100U + countdownSpeedPercent);
   if (debit >= remainingMs100) {
+    if(interconPref.role==INTERCON_SLAVE &&
+       !interconJournalSetBalance(0)){
+      timerRunning=false;setRelays(false);schedulePcShutdown();
+      Serial.println(F("[INTERCON] CRITICAL: expiry commit failed; timer locked"));
+      return;
+    }
     remainingMs100=0; remainingSeconds=0; timerRunning=false;
     setRelays(false); schedulePcShutdown(); playTimeEndingChime(); savePersistentState();
     return;
@@ -1707,21 +1722,30 @@ void updateTimerState() {
   if (remainingSeconds <= warningSeconds && remainingSeconds > 0) {
     if (!chimePlaying && (uint32_t)(now-lastNearEndStartedAt)>=2000UL) playNearEndingChime();
   }
-  // A bounded checkpoint reduces staleness after power loss at a flash-wear cost.
-  // 5min checkpoints, in addition to transactional coin writes.
-  if ((uint32_t)(now-lastRecoveryCheckpoint)>=300000UL) {
+  // A Slave's authoritative paid-time snapshot shares the receipt journal.
+  // The previous 5-minute EEPROM checkpoint is only a Standard-mode shadow.
+  if(interconPref.role==INTERCON_SLAVE)interconSlaveCheckpoint();
+  else if((uint32_t)(now-lastRecoveryCheckpoint)>=300000UL) {
     lastRecoveryCheckpoint=now; savePersistentState();
   }
 }
-void resetTimer() {
+bool resetTimer() {
+  if(interconPref.role==INTERCON_SLAVE &&
+     !interconJournalSetBalance(0))return false;
   stopChime(); remainingSeconds=0; remainingMs100=0; timerRunning=false;
   setRelays(false); schedulePcShutdown(); savePersistentState();
+  return true;
 }
 // Manual admin time adjustment: no coin event, no sale/count increment.
 // Called after settling elapsed countdown and pending coins from /api/time.
 bool applyManualTime(bool replace, uint32_t inputSeconds) {
+  if(interconPref.role==INTERCON_MASTER)return false;
   uint64_t targetUnits = 0;
   if (!blazeComputeManualTarget(replace, remainingMs100, inputSeconds, targetUnits)) return false;
+  // Manual grants are NOT sales; they still must be committed with the
+  // last accepted remote event ID before powering on a Slave.
+  if(interconPref.role==INTERCON_SLAVE &&
+     !interconJournalSetBalance(targetUnits))return false;
   stopChime();
   remainingMs100 = targetUnits;
   remainingSeconds = (uint32_t)((remainingMs100 + 99999ULL) / 100000ULL);
@@ -1779,9 +1803,14 @@ void configureCoinInput() {
 void handleCoinInput() {
   uint8_t count=0;
   noInterrupts(); count=coinQueued; coinQueued=0; interrupts();
-  if (!interconLocalCoinsAllowed()) return;
+  if(interconPref.role==INTERCON_MASTER){
+    if(count)interconMasterReceiveCoin(count); // durable before transmit
+    return;
+  }
+  if (!interconLocalCoinsAllowed()) return; // Slave rejects local coin pulses
   for (uint8_t n=0;n<count;n++) { addCoinTime(); incrementSales(); }
 }
+#include "InterconPaidRuntime.h"
 
 // ------------------------------
 // Web/API helper functions: UI is a static PROGMEM asset in WebUI.h
@@ -1926,7 +1955,7 @@ void handleFileUpload() {
 // ------------------------------
 void setup() {
   Serial.begin(115200);Serial.println();
-  Serial.println(F("[BLAZE] V1.7+ Stage 3 INTERCON flash-journal lab; D6 PWR_SW / D7 CS"));
+  Serial.println(F("[BLAZE] Stage 4: journal-backed Slave timer + signed Master credit; D6 PWR_SW / D7 CS"));
   randomSeed(micros());
   bool fsReady=LittleFS.begin();
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
@@ -1965,6 +1994,7 @@ void setup() {
     Serial.println(F("[RECOVERY] Saved time restored, paused. New credit resumes it."));
   } else {remainingSeconds=0;timerRunning=false;remainingMs100=0;setRelays(false);}
   lastRecoveryCheckpoint=millis();
+  interconSlaveRestoreFromJournal(); // journal overrides any stale EEPROM balance
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP_STA); // Local AP stays available with optional STA uplink
@@ -2110,8 +2140,15 @@ void setup() {
   server.on("/action",HTTP_POST,[](){
     if(!requireAdmin())return;
     String a=server.arg("name");
-    if(a=="resetTimer") resetTimer();
-    else if(a=="clearSales") clearSales();
+    if(a=="resetTimer") {
+      if(!resetTimer()){reject("Authoritative journal unavailable; time not reset",503);return;}
+    }
+    else if(a=="clearSales") {
+      if(interconPref.role!=INTERCON_STANDARD) {
+        reject("Journal-backed Master/Slave sales history cannot be cleared here",409);return;
+      }
+      clearSales();
+    }
     else if(a=="warn")playWarningChime();
     else if(a=="relay1") {
       if(timerRunning) {reject("Manual cutoff switching disabled during paid time",409);return;}
@@ -2122,9 +2159,11 @@ void setup() {
       pcExpectedOn = !pcExpectedOn;
       pcShutdownPending=false;
     } else if(a=="csOn" || a=="csOff") {
-      if(a=="csOn" && interconPref.role!=INTERCON_STANDARD) {
-        reject("CS remains disabled in Master/Slave until signed credit protocol is ready",409);return;
+      if(a=="csOn" && interconPref.role==INTERCON_SLAVE) {
+        reject("Slave never enables a local physical coin acceptor",409);return;
       }
+      // Master can arm CS, but D7 remains OFF until paired/authenticated,
+      // its journal is healthy and no financial event awaits an ACK.
       // Honor any completed coins before physically disabling the slot.
       if(a=="csOff") handleCoinInput();
       // CS state is saved across ESP resets, regardless of timer state.
@@ -2284,6 +2323,8 @@ void loop() {
   displayUnit.update(remainingSeconds);
   interconLoop();
   interconSecureTick();
+  interconMasterTick(); // resend only the same durable pending ID
+  interconRefreshCoinGate(); // physical CS tracks ACK and peer reachability
   updateBuzzer();
   updateChimePlayer();
   yield();
