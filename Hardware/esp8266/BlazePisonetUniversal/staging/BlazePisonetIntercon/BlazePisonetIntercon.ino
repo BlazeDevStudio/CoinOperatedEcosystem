@@ -467,7 +467,10 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Paired peer authentication</strong><span id="peerProof">Not paired</span></div>
  <div class="row"><strong>Master flash journal</strong><span id="masterJournalHealth">Uninitialized</span></div>
  <div class="row"><strong>Slave flash journal</strong><span id="slaveJournalHealth">Uninitialized</span></div>
- <p class="help">Discovery is public status only; a signed PING/PONG challenge proves paired link credentials. Coin forwarding remains locked.</p></div></div>
+ <div class="row"><strong>Master journal test pending</strong><span id="labPending">No</span></div>
+ <div class="row"><strong>Slave journal shadow seconds</strong><span id="labShadow">0</span></div>
+ <div class="row"><strong>Last transfer sequence</strong><span id="labSequence">0</span></div>
+ <p class="help">Signed test credits move only between durable SHADOW journals. They never add actual rental time, affect sales, or turn on a PC. Physical Master coins remain disabled.</p></div></div>
 </section>
 <section id="hardware" class="panel">
  <div class="notice">A blank TM1637 display is not automatically a firmware failure. Confirm CLK, DIO, VCC, GND and the actual module type. Never apply 5 V to ESP8266 GPIO inputs.</div>
@@ -534,6 +537,11 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <h3>Durable credit journal (preparation only)</h3>
  <p class="help">Once pairing is saved, choose Master or Slave and use this only on an empty station with zero paid time. The journal records transaction metadata independently of legacy EEPROM. Initializing DOES NOT enable real coin forwarding.</p>
  <button type="button" onclick="initializeCreditJournal()">Initialize empty journal for chosen role</button>
+ <h3>Master-to-Slave journal transfer test</h3>
+ <p class="help">Laboratory validation only. The Master sends an authenticated, persisted event and the Slave journals it before acknowledging. The customer's countdown, sales, and relays are completely unaffected. Master and Slave must have healthy journals and verified pairing.</p>
+ <label>Test credit in seconds (shadow only)
+ <input id="labTestSeconds" type="number" min="1" max="3600" value="60" step="1"></label>
+ <button type="button" onclick="sendLabCredit()">Send journal-only test credit (Master)</button>
  </div></form></section>
 <section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
@@ -561,6 +569,9 @@ function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
  put('masterJournalHealth',o.masterJournalHealth||'Unavailable');
  put('slaveJournalHealth',o.slaveJournalHealth||'Unavailable');
+ put('labPending',o.masterLabPending?'PENDING ACK':'None');
+ put('labShadow',String(o.slaveLabShadowSeconds||0));
+ put('labSequence',String(o.interconRole===1?o.masterLabSequence:o.slaveLabSequence));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
  const peers=$('peerList');peers.textContent='';
  if(Array.isArray(o.interconPeers)&&o.interconPeers.length){
@@ -602,6 +613,16 @@ function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
 $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+async function sendLabCredit(){
+ const value=Number($('labTestSeconds').value);
+ if(!Number.isInteger(value)||value<1||value>3600){msg('Test seconds must be 1–3600');return}
+ if(!confirm('Send '+value+'s to the SLAVE SHADOW JOURNAL only? No customer time, sales, coins or relays will change.'))return;
+ try{
+   await request('/api/intercon/lab/stage',new URLSearchParams({seconds:String(value),confirm:'shadow-only'}));
+   msg('Durable test event staged. Master will retry until authenticated Slave ACK.');
+   await poll();
+ }catch(err){msg('Lab transfer rejected: '+err.message)}
+}
 async function initializeCreditJournal(){
  const role=lastStatus&&lastStatus.interconRole;
  if(role!==1&&role!==2){msg('Select Master or Slave and save settings first');return}
@@ -718,6 +739,7 @@ static const uint8_t CS_ENABLE_PIN = 13;
 bool csEnabled = true;
 bool csActiveHigh = true;
 #include "InterconSecureWire.h"
+void interconLabReceived(const blaze_peer::Frame& frame,IPAddress sourceIP);
 #include "InterconDiscovery.h"
 #include "InterconPeerAuth.h"
 #include "InterconJournalFS.h"
@@ -759,6 +781,7 @@ uint64_t remainingMs100 = 0; // milliseconds times 100: exact speed scaling with
 uint32_t lastRecoveryCheckpoint = 0;
 uint32_t chimePlayedMs = 0;
 uint32_t lastCoin = 0;
+#include "InterconLabCredit.h"
 
 DisplayManager displayUnit;
 File uploadFile;
@@ -1852,6 +1875,12 @@ void sendStatus() {
   s += F(",\"slaveJournalHealth\":");s+=jsonQuote(blaze_journal::statusName(slaveJournal.status()));
   s += F(",\"masterJournalGeneration\":");s+=masterJournal.hasRecord()?String((uint32_t)masterJournal.record().generation):"0";
   s += F(",\"slaveJournalGeneration\":");s+=slaveJournal.hasRecord()?String((uint32_t)slaveJournal.record().generation):"0";
+  s += F(",\"masterLabPending\":");s+=masterJournal.hasRecord()?(interconLabMasterPending().pendingSequence?"true":"false"):"false";
+  s += F(",\"masterLabSequence\":");s+=masterJournal.hasRecord()?String((uint32_t)masterJournal.record().p.sequence):"0";
+  s += F(",\"slaveLabSequence\":");s+=slaveJournal.hasRecord()?String((uint32_t)slaveJournal.record().p.sequence):"0";
+  s += F(",\"slaveLabShadowSeconds\":");s+=slaveJournal.hasRecord()?String((uint32_t)(slaveJournal.record().p.remainingUnits/100000ULL)):"0";
+  s += F(",\"labRejected\":");s+=interconLabRejected;
+  s += F(",\"labAcknowledged\":");s+=interconLabAcknowledged;
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
   JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);JNUM("idleTriggerSeconds",idleTriggerSeconds);
@@ -2019,6 +2048,32 @@ void setup() {
       reject("Durable journal initialization failed or uncertain; verify before retry",503);return;
     }
     server.send(200,"text/plain","Empty journal initialized. Remote paid credits remain LOCKED.");
+  });
+  server.on("/api/intercon/lab/stage",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP() ||
+       strcmp(adminPassword,"blaze-admin")==0 ||
+       strcmp(AP_PASSWORD,"12345678")==0){
+      reject("Use the private AP with changed credentials for journal transfer tests",403);return;
+    }
+    if(server.arg("confirm")!="shadow-only" || !server.hasArg("seconds")) {
+      reject("Explicit shadow-only confirmation required",400);return;
+    }
+    const String secondsText=server.arg("seconds");
+    if(secondsText.length()<1 || secondsText.length()>4){
+      reject("Test seconds must be 1–3600",400);return;
+    }
+    for(size_t i=0;i<secondsText.length();i++){
+      if(secondsText[i]<'0' || secondsText[i]>'9'){
+        reject("Test seconds must be digits",400);return;
+      }
+    }
+    const uint16_t secs=(uint16_t)secondsText.toInt();
+    if(!interconLabStageTest(secs)){
+      reject("Lab stage denied: authenticate peer, initialize healthy Master journal, resolve pending event, and ensure no paid session",409);return;
+    }
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain","Shadow credit durably staged. Awaiting paired Slave ACK.");
   });
   server.on("/api/intercon/new-key",HTTP_POST,[](){
     if(!requireAdmin())return;
@@ -2278,6 +2333,7 @@ void loop() {
   displayUnit.update(remainingSeconds);
   interconLoop();
   interconSecureTick();
+  interconLabTick();
   updateBuzzer();
   updateChimePlayer();
   yield();
