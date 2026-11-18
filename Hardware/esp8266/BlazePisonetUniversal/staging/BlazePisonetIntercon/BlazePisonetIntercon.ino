@@ -462,6 +462,7 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="card"><h2>INTERCON · Nearby nodes</h2><div class="row"><strong>Role</strong><span id="roleLabel">STANDARD</span></div>
  <div class="row"><strong>Discovered nodes (last 30 seconds)</strong><span id="peerCount">0</span></div>
  <div class="row"><strong>Wi-Fi STA</strong><span id="staAddress">Disabled</span></div>
+ <div id="peerList" class="help">No peers discovered yet.</div>
  <p class="help">Discovery is informational only. Master/Slave remote crediting is locked until a paired, signed, durable protocol is implemented. Standard local coin timing remains active.</p></div></div>
 </section>
 <section id="hardware" class="panel">
@@ -537,6 +538,10 @@ function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole',
  for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k]}
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
  put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
+ const peers=$('peerList');peers.textContent='';
+ if(Array.isArray(o.interconPeers)&&o.interconPeers.length){
+   for(const p of o.interconPeers){const line=document.createElement('div');line.textContent='Node '+p.id+' · '+p.ip;peers.appendChild(line)}
+ } else peers.textContent='No peers discovered yet.';
  for(const [id,key] of [['r1','relay1On'],['r2','relay2On']]){let e=$(id);e.textContent=o[key]?'ON':'OFF';e.className='state '+(o[key]?'on':'off')}
  put('csState',o.csEnabled?'ENABLED':'DISABLED');$('csState').className='state '+(o.csEnabled?'on':'off');
  put('pcState',o.pcExpectedOn?'EXPECTED ON':'EXPECTED OFF');put('pcGrace',o.shutdownPending?o.shutdownSecondsLeft+'s until pulse':'Not pending');
@@ -1761,6 +1766,18 @@ void sendStatus() {
   s += F(",\"staSsid\":");s+=jsonQuote(String(interconPref.staSsid));
   s += F(",\"interconRole\":");s+=interconPref.role;
   s += F(",\"interconPeerCount\":");s+=interconPeerCount();
+  s += F(",\"interconPeers\":[");
+  bool firstPeer=true;
+  for(uint8_t n=0;n<INTERCON_MAX_PEERS;n++) {
+    if(!interconPeers[n].chipId ||
+       (uint32_t)(millis()-interconPeers[n].lastSeen)>=30000UL)continue;
+    if(!firstPeer)s+=',';
+    firstPeer=false;
+    s += F("{\"id\":");s+=interconPeers[n].chipId;
+    s += F(",\"ip\":");s+=jsonQuote(interconPeers[n].ip.toString());
+    s += F("}");
+  }
+  s += ']';
   s += F(",\"interconMode\":\"DISCOVERY-ONLY: remote credits locked\"");
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
@@ -1984,25 +2001,15 @@ void setup() {
        (nextStaPass.length()>0 && nextStaPass.length()<8)) {
       reject("STA requires SSID 1-32 and password 8-63 characters (or blank for unchanged)",400);return;
     }
-    // Commit network role first; if storage is unusable, reject before
-    // mutating the rest of the controller configuration.
-    InterconPreferences previousIntercon=interconPref;
-    interconPref.role=nextRole;
-    interconPref.staEnabled=nextStaEnabled?1:0;
-    nextStaSsid.toCharArray(interconPref.staSsid,sizeof(interconPref.staSsid));
-    if(nextStaPass.length())nextStaPass.toCharArray(interconPref.staPassword,sizeof(interconPref.staPassword));
-    if(!saveInterconConfig()) {
-      interconPref=previousIntercon;
-      reject("Unable to persist INTERCON role or STA settings",503);return;
-    }
-    coinInputAllowed=interconLocalCoinsAllowed();
-    writeCsEnable();
     String newName=server.arg("apName");newName.trim();
     String newPass=server.arg("apPassword");
     if(newPass.length()==0)newPass=String(AP_PASSWORD);
     if(!apConfigIsValid(newName,newPass) || newPass.length()==0) {reject("AP name 1-32; password 8-63 characters");return;}
     String newAdmin=server.arg("adminPassword");
     if(newAdmin.length()!=0 && (newAdmin.length()<10 || newAdmin.length()>32)) {reject("Admin password must be 10-32 characters");return;}
+    if(nextStaEnabled && strcmp(adminPassword,"blaze-admin")==0 && newAdmin.length()==0) {
+      reject("Change default admin password before allowing access over STA LAN",409);return;
+    }
     uint8_t nc=(uint8_t)constrain(server.arg("coinPin").toInt(),0,16);
     uint8_t nr1=(uint8_t)constrain(server.arg("relayPin").toInt(),0,16);
     uint8_t nr2=(uint8_t)constrain(server.arg("relay2Pin").toInt(),0,16);
@@ -2047,6 +2054,26 @@ void setup() {
     bool newBuzLow=server.hasArg("buzzerActiveLow");
     bool mapChanged=nc!=coinPin || nr1!=relayPin || nr2!=relay2Pin || nclk!=displayClk || ndio!=displayDio;
     bool polarChanged=newCoinLow!=coinActiveLow || newR1Low!=relayActiveLow || newR2Low!=relay2ActiveLow || newBuzLow!=buzzerActiveLow;
+    // All input validation is complete. Reject unsafe relay remaps BEFORE
+    // committing the new role or network settings to LittleFS.
+    if((mapChanged || polarChanged) && (powerPulseActive || pcShutdownPending)) {
+      reject("Cannot remap power pins while PWR_SW is active/pending",409);return;
+    }
+    InterconPreferences previousIntercon=interconPref;
+    interconPref.role=nextRole;
+    interconPref.staEnabled=nextStaEnabled?1:0;
+    nextStaSsid.toCharArray(interconPref.staSsid,sizeof(interconPref.staSsid));
+    if(nextStaPass.length())nextStaPass.toCharArray(interconPref.staPassword,sizeof(interconPref.staPassword));
+    if(!saveInterconConfig()) {
+      interconPref=previousIntercon;
+      reject("Unable to persist INTERCON settings; other settings unchanged",503);return;
+    }
+    noInterrupts();
+    coinInputAllowed=interconLocalCoinsAllowed();
+    coinQueued=0;
+    coinPulseStartUs=0;
+    interrupts();
+    writeCsEnable();
     if(mapChanged || polarChanged){
       if (powerPulseActive || pcShutdownPending) {reject("Cannot remap power pins while PWR_SW is active/pending",409);return;}
       detachInterrupt(digitalPinToInterrupt(coinPin));
