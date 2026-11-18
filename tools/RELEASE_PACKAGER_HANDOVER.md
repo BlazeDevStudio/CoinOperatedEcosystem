@@ -1028,3 +1028,17 @@ A new destination-side race remained after the prior symlink hardening: `_write_
 - Invalid `fd00:db8:blaze::/48` remains a P0 architecture blocker. PHX-MASTER/CORE/COE integration must define the installation-scoped RFC 4193 provisioning/persistence interface before RELEASE changes network UCI.
 
 **Next:** finish inspecting the two board jobs at exact source/test head `aaecb633`; PHX-QA independently review the race and descriptor-open behavior; infrastructure owner provide the authorized disposable no-secret namespace-capable runner. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation changed. No merge, signing, publication, hardware flash, payment migration or customer deployment. Physical 150 power-cut and 30-device/24-hour soak acceptance remain NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## UTC06 final docs-head CI completion — 2026-11-18T06:20Z
+
+**This addendum supersedes only the in-progress board-job observation above; it does not change the tested source/test SHA.**
+
+- Child PR #35 docs/PR HEAD at this verification: `70593ed9c2ee6272be393b8f2b11b1ec954d86ce`.
+- Exact source/test HEAD: `aaecb633102712b471d923b5accdcaf8504809de`.
+- Final docs-head shared/firmware run [#44249893147](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44249893147) completed **SUCCESS**: validation job passed 84 packaging/tool tests with two intentional sandbox-only skips; firmware-hardening/shared-contract checks passed; appliance profile staging 10/10 passed; ESP8266 and ESP32 compile/artifact-upload jobs both completed **SUCCESS**.
+- Final docs-head case-collision [#44249893268](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44249893268) completed **SUCCESS**.
+- Final docs-head mandatory sandbox [#44249893131](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44249893131) completed **FAILURE / FAILED CLOSED**. Host preflight tests 8/8 and unprivileged identity passed; actual bubblewrap namespace setup was denied (`bwrap: setting up uid map: Permission denied`, exit 125). Mandatory sandbox packaging regressions were skipped, not passed.
+- Earlier source/test-head shared run [#44249718595](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44249718595) had validation and ESP8266 success, but ESP32 was cancelled by the documentation successor. Only final docs-head run #44249893147 is credited for both board compiles.
+- CI board artifacts are synthetic build outputs, not approved target firmware or physical hardware acceptance. No signing, tag, publication, merge, flash, payment migration or customer deployment occurred.
+- PR remains OPEN/DRAFT/UNMERGED; independent PHX-QA and PHX-MASTER reviews are still required. Production remains NO-GO.
