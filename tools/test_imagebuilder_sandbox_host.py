@@ -156,6 +156,16 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             "sandbox workflow must fail closed when bubblewrap is unavailable",
         )
         self.assertIn("bwrap --version", bootstrap_section)
+        self.assertIn(
+            "RELEASE-BLOCKED: bubblewrap is not installed on this runner",
+            bootstrap_section,
+            "missing Bubblewrap must report the boundary block explicitly",
+        )
+        self.assertIn(
+            "exit 125",
+            bootstrap_section,
+            "missing Bubblewrap must use the standard release-blocked exit code",
+        )
         self.assertNotRegex(
             bootstrap_section,
             r"\\bsudo\\s+apt-get\\b",
