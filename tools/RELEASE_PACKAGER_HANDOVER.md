@@ -1116,3 +1116,38 @@ Source/test HEAD: `233a9adde1f51e73ff5b228d59e058900430d73c`.
 - Next: PHX-QA independently reviews normal-exit/timeout group cleanup; infrastructure owner provides an authorized disposable, no-secret runner with unprivileged user namespaces and reruns the mandatory sandbox tests at the latest exact head.
 
 No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. CI board artifacts are synthetic build outputs, not approved target binaries or physical acceptance. **PRODUCTION NO-GO.**
+
+
+## UTC10 — forward per-invocation ImageBuilder timeout — 2026-11-18
+
+**Disposition:** TEST-FIRST RED REPRODUCED / FINAL SOURCE-TEST HEAD VERIFIED / BOTH BOARD CI BUILDS PASS / CASE-COLLISION PASS / MANDATORY REAL BWRAP HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Defect
+
+The release-owned sandbox runner already accepted a bounded --timeout-seconds argument from 1–14400 seconds with a 3600-second default. The generated operator wrapper did not forward an operator-selected value, so normal wrapper invocation always used the runner default. The existing mock-wrapper test timeout was a separate test-harness limit and did not exercise this operator-facing runner argument.
+
+### Test-first and implementation history
+
+- Test-first assertion [4cb0709d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4cb0709de2f56bb81e7e99d538a555e696c05daa) requires the generated wrapper to forward PHX_IMAGEBUILDER_TIMEOUT_SECONDS and the runner's default.
+- Expected RED, PR shared validation [#44283533005](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283533005): **FAILED exactly at the new assertion** because the generated wrapper omitted --timeout-seconds. Packaging suite ran 87 tests with one expected failure and two intentional sandbox-only skips. Case-collision [#44283533082](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283533082) **PASS**.
+- Initial source attempt [d5cc76eb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d5cc76eb9bd79746aff09fd38a9d10af1fd4cff7) was **not accepted**: the first generated f-string referenced DEFAULT_BUILD_TIMEOUT_SECONDS without importing it, causing a test-time NameError in 29 tests. This implementation error is recorded, not hidden.
+- Intermediate correction [7ae6e5da](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7ae6e5da3fb97dc4a9d53382cd3b861372ed3bbf) restored a literal default.
+- Final source correction [99ee1c89](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/99ee1c89a4147b77f468f1570c8b449791451ebd) imports the canonical DEFAULT_BUILD_TIMEOUT_SECONDS from the release runner and emits a quoted timeout argument using the optional operator environment value. The runner remains the authority for the 1–14400-second range. No unquoted shell input, privilege, namespace or fallback behavior was added.
+
+### Exact source/test-head CI
+
+Source/test HEAD: 99ee1c89a4147b77f468f1570c8b449791451ebd.
+
+- PR shared/firmware [#44283880298](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283880298): **SUCCESS**. Packaging/tool suite: 87 tests, two intentional sandbox-only skips; 18 firmware-hardening/shared-contract checks; 10/10 appliance profiles; ESP8266 and ESP32 compile plus artifact-upload jobs both **SUCCESS**.
+- Push shared/firmware [#44283868073](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283868073): **SUCCESS**, same validation and both board compile/upload jobs **SUCCESS**.
+- PR case-collision [#44283880307](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283880307): **SUCCESS**.
+- PR mandatory sandbox [#44283879110](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283879110) and push sandbox [#44283868013](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44283868013): **FAILED CLOSED** after host-preflight 9/9 and unprivileged identity checks passed. Actual bubblewrap namespace setup failed with “bwrap: setting up uid map: Permission denied”; mandatory packaging regressions were **SKIPPED**, not passed.
+
+### Current stack and next owner action
+
+- Child PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35) remains OPEN / DRAFT / UNMERGED, stacked on parent #31 at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- Exact source/test HEAD: 99ee1c89a4147b77f468f1570c8b449791451ebd; this handover addendum is documentation-only.
+- Only tools/package_appliance_firmware.py, tools/test_package_appliance_firmware.py, and this release handover changed for this task. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation changed.
+- Next: PHX-QA independently reviews operator timeout forwarding and existing runner bounds; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner supporting unprivileged user namespaces so mandatory real bubblewrap regressions can run.
+
+No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. CI board builds are synthetic compilation artifacts, not approved OpenWrt images, production binaries or physical acceptance. **PRODUCTION NO-GO.**
