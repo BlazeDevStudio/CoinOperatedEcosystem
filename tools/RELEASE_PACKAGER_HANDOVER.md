@@ -1151,3 +1151,32 @@ Source/test HEAD: 99ee1c89a4147b77f468f1570c8b449791451ebd.
 - Next: PHX-QA independently reviews operator timeout forwarding and existing runner bounds; infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner supporting unprivileged user namespaces so mandatory real bubblewrap regressions can run.
 
 No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. CI board builds are synthetic compilation artifacts, not approved OpenWrt images, production binaries or physical acceptance. **PRODUCTION NO-GO.**
+
+
+## UTC11 — remove privileged Bubblewrap installation from NO-GO workflow — 2026-11-18
+
+**Disposition:** TEST-FIRST RED OBSERVED / FAIL-CLOSED WORKFLOW CORRECTION / SHARED VALIDATION PASS / ESP8266 BUILD PASS / ESP32 BUILD IN PROGRESS AT THIS HANDOVER / CASE-COLLISION PASS / SANDBOX AVAILABILITY BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+### Defect and safe correction
+
+The mandatory ImageBuilder sandbox workflow installed Bubblewrap with sudo apt-get before checking the user-namespace boundary. That privileged runner mutation was unnecessary to determine whether the runner can execute the required sandbox and conflicts with the release boundary: a runner without the dependency must fail closed, not self-modify or acquire a fallback path.
+
+- Test-first commit [9613fba9](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9613fba973764b0bd42dba0441655d214c7ce101) adds a workflow guard requiring command -v bwrap, rejecting sudo apt-get and any apt-get install bootstrap.
+- Expected RED shared CI [#44293811837](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44293811837) failed in Validate appliance firmware packaging & tools because the old workflow still contained the privileged install. This is the intended regression signal; board jobs were skipped after validation failed.
+- Workflow correction [e412066c](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e412066c2439e1acb96668fa12b2a5a1bcd9e81d) replaces the installer with a read-only availability/version check. It does not add a download, helper, sudo use, broad UID/GID mapping, namespace fallback, signer, artifact publisher or release action.
+
+### Current exact-head evidence
+
+Source/test HEAD: e412066c2439e1acb96668fa12b2a5a1bcd9e81d.
+
+- Shared/firmware [#44294024317](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44294024317): packaging/tool validation **SUCCESS**; ESP8266 compile **SUCCESS**; ESP32 was **IN PROGRESS** when this handover was written and is not credited as pass here.
+- Case-collision [#44294024362](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44294024362): **SUCCESS**.
+- Mandatory sandbox [#44294024223](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44294024223): **FAILED CLOSED** at Verify bubblewrap availability (no privileged install). This hosted runner did not provide Bubblewrap. No installation, privileged fallback or mandatory packaging regression execution occurred.
+
+### Next actions and limits
+
+- The infrastructure owner must provide an approved disposable, ephemeral, no-secret runner with Bubblewrap and unprivileged user namespaces enabled; rerun mandatory sandbox regression at the current exact head.
+- PHX-QA must independently review the no-sudo workflow guard and the exact-head run once the board matrix becomes terminal.
+- PR #35 remains draft and unmerged. CI builds remain synthetic compile outputs; they are not approved target binaries or physical acceptance.
+
+No merge, signing, tag, publication, firmware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
