@@ -527,7 +527,9 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <label>Shared random key (64 HEX digits)<input name="pairKey" type="password" minlength="64" maxlength="64" pattern="[0-9A-Fa-f]{64}" autocomplete="new-password" required></label>
  </div>
  <p class="help">The key is never returned in status JSON. For initial provisioning use a trusted random 32-byte key and enter it on both stations. Do not reuse a shop-wide key. AP traffic is WPA2 protected but the admin portal itself is HTTP, not HTTPS.</p>
- <button type="submit">Save peer pairing</button></div></form></section>
+ <div class="buttons"><button type="button" onclick="generatePeerKey()">Generate fresh pairing key</button><button type="submit" class="primary">Save peer pairing</button></div>
+ <p class="help">After generating a key, copy it to the other paired controller. Do not generate a different key on that controller.</p>
+ </div></form></section>
 <section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
  <div class="card"><div class="eyebrow">Legacy monthly bucket</div><div class="metric" id="saleMonth">0</div></div></div>
@@ -593,6 +595,14 @@ function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
 $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+async function generatePeerKey(){
+ try{
+   const key=await request('/api/intercon/new-key',new URLSearchParams({generate:'yes'}));
+   const input=$('peerPairForm').elements.pairKey;
+   input.type='text';input.value=String(key);input.focus();input.select();
+   msg('Generated on this ESP. Copy this key to both peers, then save pairing.');
+ }catch(err){msg('Key generation denied: '+err.message)}
+}
 $('peerPairForm').addEventListener('submit',async e=>{
  e.preventDefault();
  if(!confirm('Save these pair credentials? Ensure both boards use the same independently generated secret.'))return;
@@ -1947,6 +1957,22 @@ void setup() {
   interconLastAdvertised=millis()-10000UL;
   server.on("/",HTTP_GET,[](){if(!requireAdmin())return;server.send_P(200,PSTR("text/html"),WEB_UI);});
   server.on("/api/status",HTTP_GET,[](){if(!requireAdmin())return;sendStatus();});
+  server.on("/api/intercon/new-key",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP() ||
+       strcmp(adminPassword,"blaze-admin")==0){
+      reject("Generate secrets only through the local AP with a changed admin password",403);return;
+    }
+    // ESP.random() uses the ESP8266 HW RNG when radio entropy is available.
+    String hex;hex.reserve(64);
+    for(uint8_t i=0;i<8;i++){
+      char word[9];
+      snprintf(word,sizeof(word),"%08lX",(unsigned long)ESP.random());
+      hex+=word;
+    }
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain",hex);
+  });
   server.on("/api/intercon/pair",HTTP_POST,[](){
     if(!requireAdmin())return;
     // The secret may only be provisioned through the ESP8266's own WPA2 AP.
