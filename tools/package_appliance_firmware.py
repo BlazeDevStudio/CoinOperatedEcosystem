@@ -223,19 +223,25 @@ def _write_staging_file(directory: str, filename: str, content: str) -> None:
     _write_staging_bytes(directory, filename, content.encode("utf-8"))
 
 
+
 def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
-    """Copy one unchanged regular rental source file without following a final symlink."""
+    """Copy one regular rental source file without following symlinked path components."""
     source_stat = os.lstat(source_path)
     if not stat.S_ISREG(source_stat.st_mode):
         raise ValueError(f"Refusing symlink or non-regular rental source file: {source_path}")
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise OSError("Safe rental source copying requires O_NOFOLLOW support")
 
     source_fd = -1
     try:
-        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
         try:
-            source_fd = os.open(source_path, flags)
+            source_fd = _open_file_without_symlink_parents(
+                source_path,
+                flags,
+                0,
+                "Rental source file",
+                "Safe rental source copying requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+                "Invalid rental source file filename",
+            )
         except OSError as exc:
             if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
                 raise ValueError(
@@ -264,7 +270,6 @@ def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
             os.close(source_fd)
 
     _write_staging_bytes(directory, filename, content)
-
 
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
     """Stage the rootfs into a fresh, isolated destination without deleting existing data."""
@@ -395,27 +400,33 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
 
 
 
-def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> int:
-    """Create a new file through a descriptor chain that never follows parent symlinks."""
+
+def _open_file_without_symlink_parents(
+    path: str,
+    flags: int,
+    mode: int,
+    purpose: str,
+    unsupported_message: str,
+    invalid_filename_message: str,
+) -> int:
+    """Open a file through directory descriptors without following any symlink component."""
     if (
         os.name != "posix"
         or not hasattr(os, "O_DIRECTORY")
         or not hasattr(os, "O_NOFOLLOW")
         or os.open not in getattr(os, "supports_dir_fd", set())
     ):
-        raise OSError(
-            "Safe build-script creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support"
-        )
+        raise OSError(unsupported_message)
 
     absolute_path = os.path.abspath(path)
     parent_path, filename = os.path.split(absolute_path)
     if filename in ("", ".", ".."):
-        raise ValueError("Invalid build-script output filename")
+        raise ValueError(invalid_filename_message)
 
     directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
     try:
         # Walk from the filesystem root one component at a time. O_NOFOLLOW
-        # protects every parent component, not only the final output filename.
+        # protects every parent component, not only the final filename.
         for component in parent_path.split(os.sep):
             if not component:
                 continue
@@ -428,7 +439,7 @@ def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> 
             except OSError as exc:
                 if exc.errno in (errno.ELOOP, errno.ENOTDIR):
                     raise ValueError(
-                        f"Build script parent path contains a symlink or non-directory: {parent_path}"
+                        f"{purpose} parent path contains a symlink or non-directory: {parent_path}"
                     ) from exc
                 raise
             os.close(directory_fd)
@@ -443,6 +454,17 @@ def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> 
     finally:
         os.close(directory_fd)
 
+
+def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> int:
+    """Create a new build script through a descriptor chain that never follows parent symlinks."""
+    return _open_file_without_symlink_parents(
+        path,
+        flags,
+        mode,
+        "Build script",
+        "Safe build-script creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+        "Invalid build-script output filename",
+    )
 
 def generate_build_script(manifest: dict, script_path: str) -> None:
     """Emit an executable shell script to run ImageBuilder and generate SHA-256 release checksums."""
