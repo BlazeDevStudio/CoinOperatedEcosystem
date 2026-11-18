@@ -187,6 +187,51 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
+    def test_write_staging_bytes_rejects_parent_replaced_with_symlink_after_lstat(self):
+        staging_root = os.path.join(self.temp_dir, "write-race-staging")
+        destination_dir = os.path.join(staging_root, "etc", "config")
+        external_dir = os.path.join(self.temp_dir, "operator-owned-config")
+        os.makedirs(destination_dir)
+        os.makedirs(external_dir)
+
+        sentinel_path = os.path.join(external_dir, "operator-owned.txt")
+        with open(sentinel_path, "wb") as fp:
+            fp.write(b"KEEP-OPERATOR-CONFIG")
+
+        destination_path = os.path.join(destination_dir, "network")
+        swapped = {"value": False}
+        original_lstat = os.lstat
+
+        def lstat_then_swap_parent(path, *args, **kwargs):
+            try:
+                result = original_lstat(path, *args, **kwargs)
+            except FileNotFoundError:
+                if os.fspath(path) == destination_path and not swapped["value"]:
+                    os.rmdir(destination_dir)
+                    os.symlink(external_dir, destination_dir, target_is_directory=True)
+                    swapped["value"] = True
+                raise
+            return result
+
+        # Replace the destination parent after the final-file lstat but before
+        # open. Path-based O_NOFOLLOW on the final filename does not protect
+        # this parent-directory race.
+        with mock.patch.object(
+            packager.os, "lstat", side_effect=lstat_then_swap_parent
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "Staged file destination parent path contains a symlink"
+            ):
+                packager._write_staging_bytes(
+                    destination_dir, "network", b"config=operator-overwrite\\n"
+                )
+
+        self.assertTrue(swapped["value"])
+        self.assertTrue(os.path.islink(destination_dir))
+        self.assertFalse(os.path.lexists(os.path.join(external_dir, "network")))
+        with open(sentinel_path, "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-OPERATOR-CONFIG")
+
     def test_copy_staging_file_rejects_source_replaced_with_symlink_after_lstat(self):
         source_dir = os.path.join(self.temp_dir, "rental-source-race")
         destination_dir = os.path.join(self.temp_dir, "rental-destination-race")
