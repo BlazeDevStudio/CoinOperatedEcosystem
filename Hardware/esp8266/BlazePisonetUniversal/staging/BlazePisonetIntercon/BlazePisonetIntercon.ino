@@ -1957,11 +1957,15 @@ void setup() {
     if(timerRunning||remainingSeconds>0||pcShutdownPending||powerPulseActive){
       reject("Finish and reconcile paid time before pairing",409);return;
     }
+    if(strcmp(adminPassword,"blaze-admin")==0){
+      reject("Change the default administrator password before storing a peer secret",409);return;
+    }
     String chip=server.arg("peerChip"),addrText=server.arg("peerIp"),secret=server.arg("pairKey");
     InterconPairConfig candidate={};
     IPAddress addr;
     if(!peerDecodeChip(chip,candidate.peerChip)||!addr.fromString(addrText)||
-       addr==IPAddress(0,0,0,0)||addr.isMulticast()||addrText.length()>15||
+       addr==IPAddress(0,0,0,0)||addr[0]>=224||addr[0]==127||
+       addr[0]==0||addrText.length()>15||
        !peerDecodeKey(secret,candidate.key)){
       reject("Pairing requires a different 8-digit HEX chip ID, unicast IPv4, and 64 HEX key characters",400);return;
     }
