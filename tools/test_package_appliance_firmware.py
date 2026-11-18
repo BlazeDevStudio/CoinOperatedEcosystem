@@ -1673,7 +1673,14 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
                 self.returncode = -9
 
         process = TimedOutProcess()
-        with mock.patch.object(run_imagebuilder_sandbox.os, "killpg") as killpg:
+
+        def no_process_groups_remain(pgid, signum):
+            if signum == 0:
+                raise ProcessLookupError()
+
+        with mock.patch.object(
+            run_imagebuilder_sandbox.os, "killpg", side_effect=no_process_groups_remain
+        ) as killpg:
             (stdout, stderr), timed_out = run_imagebuilder_sandbox._communicate_with_timeout(
                 process, timeout_seconds=1, child_pgid=41002
             )
