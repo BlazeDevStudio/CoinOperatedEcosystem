@@ -104,7 +104,7 @@ check('blaze_credit::apply(updated,credit,interconSlaveCommit,nullptr)' in runti
       'interconSlaveSendAck(sequence);' in runtime and
       'onPaidTimeGranted();' in runtime,
       "Slave commits credit plus sequence before ACK and PC power request")
-check('blaze_credit::stage(current,(uint16_t)seconds,' in runtime and
+check('blaze_credit::stage(current,(uint16_t)grant,' in runtime and
       'interconMasterCommit,nullptr' in runtime and
       'interconMasterSendPending();' in runtime,
       "Master persists accepted coin event before wireless send")
