@@ -256,6 +256,46 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             content = f.read()
         self.assertIn("make image PROFILE=gl-mt1300", content)
         self.assertIn("RELEASE_MANIFEST.sha256", content)
+
+    def test_generated_wrapper_rejects_replaced_staging_directory_symlink(self):
+        profile = load_profile("gl-mt1300")
+        staging_dir = os.path.join(self.temp_dir, "staging-replaced-by-link")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging_dir)
+        wrapper = os.path.join(self.temp_dir, "staging-symlink-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        # Simulate an operator path being replaced after staging and wrapper
+        # generation. The external directory is deliberately not a rootfs.
+        real_staging = os.path.join(self.temp_dir, "staging-original")
+        os.rename(staging_dir, real_staging)
+        external_staging = os.path.join(self.temp_dir, "operator-owned-staging")
+        os.makedirs(external_staging)
+        sentinel_path = os.path.join(external_staging, "operator-owned.txt")
+        with open(sentinel_path, "w", encoding="utf-8") as fp:
+            fp.write("KEEP-OPERATOR-STAGING\n")
+        os.symlink(external_staging, staging_dir, target_is_directory=True)
+
+        builder = os.path.join(self.temp_dir, "staging-symlink-builder")
+        os.makedirs(builder)
+        make_marker = os.path.join(self.temp_dir, "make-must-not-run")
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\n\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\n")
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("staged rootfs path contains a symlink", result.stderr)
+        self.assertFalse(
+            os.path.exists(make_marker),
+            "ImageBuilder must not run when the staged rootfs path is replaced by a symlink",
+        )
+        self.assertTrue(os.path.islink(staging_dir))
+        self.assertTrue(os.path.isdir(real_staging))
+        with open(sentinel_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "KEEP-OPERATOR-STAGING\n")
+
     def test_generated_build_script_passes_posix_shell_syntax_check(self):
         profile = load_profile("gl-mt1300")
         manifest = stage_overlay(
