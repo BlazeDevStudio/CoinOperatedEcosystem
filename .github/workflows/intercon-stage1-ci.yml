@@ -6,12 +6,14 @@ on:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
+      - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   pull_request:
     paths:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
+      - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   workflow_dispatch:
 
@@ -35,6 +37,9 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Werror \
             Hardware/tests/intercon_secure_wire_test.cpp -lcrypto -o /tmp/intercon-secure-wire-tests
           /tmp/intercon-secure-wire-tests
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            Hardware/tests/intercon_credit_ledger_test.cpp -o /tmp/intercon-credit-ledger-tests
+          /tmp/intercon-credit-ledger-tests
 
   compile-esp8266:
     runs-on: ubuntu-latest
