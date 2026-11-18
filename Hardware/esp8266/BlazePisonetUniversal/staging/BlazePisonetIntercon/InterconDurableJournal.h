@@ -19,6 +19,18 @@ enum class Kind : uint16_t { Master=1, Slave=2 };
 enum class Status : uint8_t {
   Empty, Ready, Degraded, Corrupt, IoError, WrongKind, Uncertain
 };
+inline const char* statusName(Status status) {
+  switch(status){
+    case Status::Empty:return "NOT_INITIALIZED";
+    case Status::Ready:return "READY";
+    case Status::Degraded:return "DEGRADED_LOCKED";
+    case Status::Corrupt:return "CORRUPT_LOCKED";
+    case Status::IoError:return "IO_ERROR_LOCKED";
+    case Status::WrongKind:return "WRONG_ROLE_LOCKED";
+    case Status::Uncertain:return "UNCERTAIN_LOCKED";
+  }
+  return "UNKNOWN_LOCKED";
+}
 struct Payload {
   uint32_t issuer;         // Master: own chip; Slave: authorized paired Master
   uint64_t sequence;       // Last issued or received monotonic sequence
