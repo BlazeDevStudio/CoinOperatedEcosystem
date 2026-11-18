@@ -51,7 +51,7 @@ jobs:
         run: |
           if ! command -v bwrap >/dev/null 2>&1; then
             echo 'RELEASE-BLOCKED: bubblewrap is not installed on this runner' >&2
-            exit 1
+            exit 125
           fi
           bwrap --version
 
