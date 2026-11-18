@@ -763,6 +763,18 @@ echo "=== Building Appliance Firmware for {profile_id} ==="
 cd "$BUILD_DIR"
 {cmd}
 
+# The pre-build check rejects existing symlinks, but Makefile execution can
+# replace a previously absent output ancestor with a symlink. Revalidate
+# every target/subtarget path component before the manifest scan.
+IMAGE_PATH="$BUILD_DIR"
+for IMAGE_COMPONENT in bin targets {target_arch.replace("/", " ")}; do
+    IMAGE_PATH="$IMAGE_PATH/$IMAGE_COMPONENT"
+    if [ -L "$IMAGE_PATH" ]; then
+        echo "RELEASE-BLOCKED: symlinked ImageBuilder output directory after build: $IMAGE_PATH" >&2
+        exit 1
+    fi
+done
+
 echo "=== Verifying Built Firmware Binaries & Generating Manifest ==="
 IMAGE_REL_DIR="bin/targets/{target_arch}"
 if [ ! -d "$IMAGE_REL_DIR" ]; then
