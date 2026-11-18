@@ -47,10 +47,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
 
-      - name: Install bubblewrap (no UID/GID mapping helpers)
+      - name: Verify bubblewrap availability (no privileged install)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap
+          command -v bwrap
           bwrap --version
 
       - name: Run sandbox host preflight unit tests
