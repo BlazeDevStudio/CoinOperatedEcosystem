@@ -1,15 +1,17 @@
-name: INTERCON Stage 1 ESP8266 compile (draft / NO-GO)
+name: INTERCON Stage 2 authenticated peer build (DRAFT / NO-GO)
 
 on:
   push:
     paths:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
+      - "Hardware/tests/intercon_secure_wire_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   pull_request:
     paths:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
+      - "Hardware/tests/intercon_secure_wire_test.cpp"
       - ".github/workflows/intercon-stage1-ci.yml"
   workflow_dispatch:
 
@@ -24,9 +26,19 @@ jobs:
       - name: Verify non-production role, network, coin-gate invariants
         run: python3 Hardware/tests/test_intercon_stage1_contract.py
 
+  signed-wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run portable HMAC-SHA256 parser tests with OpenSSL
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            Hardware/tests/intercon_secure_wire_test.cpp -lcrypto -o /tmp/intercon-secure-wire-tests
+          /tmp/intercon-secure-wire-tests
+
   compile-esp8266:
     runs-on: ubuntu-latest
-    needs: static-contract
+    needs: [static-contract, signed-wire]
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
