@@ -465,6 +465,8 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Wi-Fi STA</strong><span id="staAddress">Disabled</span></div>
  <div id="peerList" class="help">No peers discovered yet.</div>
  <div class="row"><strong>Paired peer authentication</strong><span id="peerProof">Not paired</span></div>
+ <div class="row"><strong>Master flash journal</strong><span id="masterJournalHealth">Uninitialized</span></div>
+ <div class="row"><strong>Slave flash journal</strong><span id="slaveJournalHealth">Uninitialized</span></div>
  <p class="help">Discovery is public status only; a signed PING/PONG challenge proves paired link credentials. Coin forwarding remains locked.</p></div></div>
 </section>
 <section id="hardware" class="panel">
@@ -529,6 +531,9 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <p class="help">The key is never returned in status JSON. For initial provisioning use a trusted random 32-byte key and enter it on both stations. Do not reuse a shop-wide key. AP traffic is WPA2 protected but the admin portal itself is HTTP, not HTTPS.</p>
  <div class="buttons"><button type="button" onclick="generatePeerKey()">Generate fresh pairing key</button><button type="submit" class="primary">Save peer pairing</button></div>
  <p class="help">After generating a key, copy it to the other paired controller. Do not generate a different key on that controller.</p>
+ <h3>Durable credit journal (preparation only)</h3>
+ <p class="help">Once pairing is saved, choose Master or Slave and use this only on an empty station with zero paid time. The journal records transaction metadata independently of legacy EEPROM. Initializing DOES NOT enable real coin forwarding.</p>
+ <button type="button" onclick="initializeCreditJournal()">Initialize empty journal for chosen role</button>
  </div></form></section>
 <section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
@@ -554,6 +559,8 @@ function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole',
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
  put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
+ put('masterJournalHealth',o.masterJournalHealth||'Unavailable');
+ put('slaveJournalHealth',o.slaveJournalHealth||'Unavailable');
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
  const peers=$('peerList');peers.textContent='';
  if(Array.isArray(o.interconPeers)&&o.interconPeers.length){
@@ -595,6 +602,16 @@ function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
 $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+async function initializeCreditJournal(){
+ const role=lastStatus&&lastStatus.interconRole;
+ if(role!==1&&role!==2){msg('Select Master or Slave and save settings first');return}
+ if(!confirm('Initialize an EMPTY '+(role===1?'Master':'Slave')+' journal? This cannot repair a corrupted journal and does not enable customer coins.'))return;
+ try{
+   await request('/api/intercon/journal/init',new URLSearchParams({confirm:'initialize-empty-only'}));
+   msg('Empty credit journal initialized. Wireless paid credit stays locked.');
+   await poll();
+ }catch(e){msg('Journal initialization denied: '+e.message)}
+}
 async function generatePeerKey(){
  try{
    const key=await request('/api/intercon/new-key',new URLSearchParams({generate:'yes'}));
@@ -703,6 +720,26 @@ bool csActiveHigh = true;
 #include "InterconSecureWire.h"
 #include "InterconDiscovery.h"
 #include "InterconPeerAuth.h"
+#include "InterconJournalFS.h"
+// Separate Master/Slave namespaces. No coin or timer value is read from this
+// journal until complete atomic reconciliation with legacy timekeeper exists.
+InterconJournalFS masterJournalFiles("/bicj-master",false);
+InterconJournalFS slaveJournalFiles("/bicj-slave",false);
+blaze_journal::Journal masterJournal(masterJournalFiles.port(),blaze_journal::Kind::Master);
+blaze_journal::Journal slaveJournal(slaveJournalFiles.port(),blaze_journal::Kind::Slave);
+const char* journalStatusName(blaze_journal::Status status){
+  switch(status){
+    case blaze_journal::Status::Empty:return "NOT_INITIALIZED";
+    case blaze_journal::Status::Ready:return "READY";
+    case blaze_journal::Status::Degraded:return "DEGRADED_LOCKED";
+    case blaze_journal::Status::Corrupt:return "CORRUPT_LOCKED";
+    case blaze_journal::Status::IoError:return "IO_ERROR_LOCKED";
+    case blaze_journal::Status::WrongKind:return "WRONG_ROLE_LOCKED";
+    case blaze_journal::Status::Uncertain:return "UNCERTAIN_LOCKED";
+  }
+  return "UNKNOWN_LOCKED";
+}
+
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
 bool pcExpectedOn = false; // Estimated only. No physical state detection.
@@ -1822,6 +1859,10 @@ void sendStatus() {
   s += F(",\"peerIp\":");s+=peerPairReady?jsonQuote(String(peerPair.peerIp)):jsonQuote(String(""));
   s += F(",\"localChip\":");s+=jsonQuote(String(ESP.getChipId(),HEX));
   s += F(",\"peerAuthErrors\":");s+=peerFailedAuth;
+  s += F(",\"masterJournalHealth\":");s+=jsonQuote(journalStatusName(masterJournal.status()));
+  s += F(",\"slaveJournalHealth\":");s+=jsonQuote(journalStatusName(slaveJournal.status()));
+  s += F(",\"masterJournalGeneration\":");s+=masterJournal.hasRecord()?String((uint32_t)masterJournal.record().generation):"0";
+  s += F(",\"slaveJournalGeneration\":");s+=slaveJournal.hasRecord()?String((uint32_t)slaveJournal.record().generation):"0";
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
   JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);JNUM("idleTriggerSeconds",idleTriggerSeconds);
@@ -1904,6 +1945,10 @@ void setup() {
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
   loadInterconConfig(fsReady);
   peerLoadConfig(fsReady);
+  masterJournalFiles.mounted=fsReady;
+  slaveJournalFiles.mounted=fsReady;
+  masterJournal.recover();
+  slaveJournal.recover();
   loadPersistentState();
   loadIdlePreferences();
   loadPowerAndCoinPrefs();
@@ -1957,6 +2002,35 @@ void setup() {
   interconLastAdvertised=millis()-10000UL;
   server.on("/",HTTP_GET,[](){if(!requireAdmin())return;server.send_P(200,PSTR("text/html"),WEB_UI);});
   server.on("/api/status",HTTP_GET,[](){if(!requireAdmin())return;sendStatus();});
+  server.on("/api/intercon/journal/init",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP()){
+      reject("Provision journals only through the controller's WPA2 AP",403);return;
+    }
+    if(interconPref.role==INTERCON_STANDARD ||
+       !interconConfigHealthy||!peerPairReady||!interconFileSystemReady){
+      reject("Select Master or Slave, repair storage, and enroll a trusted peer first",409);return;
+    }
+    if(strcmp(AP_PASSWORD,"12345678")==0 ||
+       strcmp(adminPassword,"blaze-admin")==0){
+      reject("Change both default AP and administrator passwords first",409);return;
+    }
+    if(timerRunning||remainingSeconds||pcShutdownPending||powerPulseActive ||
+       coinQueued||server.arg("confirm")!="initialize-empty-only"){
+      reject("Journal initialization requires no paid balance or pending operation and explicit confirmation",409);return;
+    }
+    // Critical: never reinitialize an existing, degraded or corrupted ledger.
+    blaze_journal::Journal& target=interconPref.role==INTERCON_MASTER?masterJournal:slaveJournal;
+    if(target.status()!=blaze_journal::Status::Empty){
+      reject("Journal is not empty. Never reset or overwrite existing credit history.",409);return;
+    }
+    blaze_journal::Payload initial={};
+    initial.issuer=(interconPref.role==INTERCON_MASTER)?ESP.getChipId():peerPair.peerChip;
+    if(!target.initialize(initial)){
+      reject("Durable journal initialization failed or uncertain; verify before retry",503);return;
+    }
+    server.send(200,"text/plain","Empty journal initialized. Remote paid credits remain LOCKED.");
+  });
   server.on("/api/intercon/new-key",HTTP_POST,[](){
     if(!requireAdmin())return;
     if(server.client().localIP()!=WiFi.softAPIP() ||
