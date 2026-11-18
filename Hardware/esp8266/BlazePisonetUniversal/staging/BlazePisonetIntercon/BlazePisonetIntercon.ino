@@ -464,7 +464,8 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Discovered nodes (last 30 seconds)</strong><span id="peerCount">0</span></div>
  <div class="row"><strong>Wi-Fi STA</strong><span id="staAddress">Disabled</span></div>
  <div id="peerList" class="help">No peers discovered yet.</div>
- <p class="help">Discovery is informational only. Master/Slave remote crediting is locked until a paired, signed, durable protocol is implemented. Standard local coin timing remains active.</p></div></div>
+ <div class="row"><strong>Paired peer authentication</strong><span id="peerProof">Not paired</span></div>
+ <p class="help">Discovery is public status only; a signed PING/PONG challenge proves paired link credentials. Coin forwarding remains locked.</p></div></div>
 </section>
 <section id="hardware" class="panel">
  <div class="notice">A blank TM1637 display is not automatically a firmware failure. Confirm CLK, DIO, VCC, GND and the actual module type. Never apply 5 V to ESP8266 GPIO inputs.</div>
@@ -515,7 +516,18 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <label>New AP password (blank = unchanged)<input name="apPassword" type="password" maxlength="63" placeholder="At least 8 characters"></label>
  <label>New admin password (blank = unchanged)<input name="adminPassword" type="password" minlength="10" maxlength="32" placeholder="10–32 characters"></label></div>
  <p class="help">Changing Wi-Fi AP name or password requires restarting the ESP8266. Change the initial admin password before putting the station in service.</p></div>
- <button type="submit" class="primary wide">Save settings</button></form></section>
+ <button type="submit" class="primary wide">Save settings</button></form>
+ <form id="peerPairForm" autocomplete="off"><div class="card">
+ <h2>INTERCON · authenticated peer</h2>
+ <p class="note">Pair through this ESP8266's own WPA2 AP at 192.168.4.1. Create the same random 32-byte secret on the two chosen boards. Each board needs the other board's 8-hex-digit chip ID and router-assigned STA IP address. No payment commands are enabled in this build.</p>
+ <div class="fields">
+ <label>My chip ID (read-only)<input id="localChip" readonly value="Loading…"></label>
+ <label>Peer chip ID (8 HEX digits)<input name="peerChip" maxlength="8" pattern="[0-9A-Fa-f]{8}" required placeholder="00A1B2C3"></label>
+ <label>Peer STA IP<input name="peerIp" placeholder="192.168.1.101" maxlength="15" required></label>
+ <label>Shared random key (64 HEX digits)<input name="pairKey" type="password" minlength="64" maxlength="64" pattern="[0-9A-Fa-f]{64}" autocomplete="new-password" required></label>
+ </div>
+ <p class="help">The key is never returned in status JSON. For initial provisioning use a trusted random 32-byte key and enter it on both stations. Do not reuse a shop-wide key. AP traffic is WPA2 protected but the admin portal itself is HTTP, not HTTPS.</p>
+ <button type="submit">Save peer pairing</button></div></form></section>
 <section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
  <div class="card"><div class="eyebrow">Legacy monthly bucket</div><div class="metric" id="saleMonth">0</div></div></div>
@@ -538,7 +550,9 @@ function put(k,v){let e=$(k);if(e)e.textContent=v}
 function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole','staSsid','apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness','idleTriggerSeconds','shutdownGraceSeconds','pwrPulseMilliseconds'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
  for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k]}
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
- put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
+ put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');
+ put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
+ if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
  const peers=$('peerList');peers.textContent='';
  if(Array.isArray(o.interconPeers)&&o.interconPeers.length){
    for(const p of o.interconPeers){const line=document.createElement('div');line.textContent='Node '+p.id+' · '+p.ip;peers.appendChild(line)}
@@ -579,6 +593,17 @@ function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
 $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+$('peerPairForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ if(!confirm('Save these pair credentials? Ensure both boards use the same independently generated secret.'))return;
+ try{
+   let data=new FormData(e.target);
+   await request('/api/intercon/pair',data);
+   e.target.elements.pairKey.value='';
+   msg('Peer pairing saved. Signed handshake is active once STA is connected.');
+   await poll();
+ }catch(err){msg('Pairing failed: '+err.message)}
+});
 $('uploadForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);let result=await request('/upload?patternName='+encodeURIComponent(f.get('patternName')),f);msg(String(result))}catch(err){msg('Upload failed: '+err.message)}});
 poll();setInterval(poll,1500);
 </script></body></html>)BLAZEHTML";
@@ -665,7 +690,9 @@ bool relay2State = false;
 static const uint8_t CS_ENABLE_PIN = 13;
 bool csEnabled = true;
 bool csActiveHigh = true;
+#include "InterconSecureWire.h"
 #include "InterconDiscovery.h"
+#include "InterconPeerAuth.h"
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
 bool pcExpectedOn = false; // Estimated only. No physical state detection.
@@ -1779,6 +1806,12 @@ void sendStatus() {
   }
   s += ']';
   s += F(",\"interconMode\":\"DISCOVERY-ONLY: remote credits locked\"");
+  s += F(",\"peerPaired\":");s+=(peerPairReady?"true":"false");
+  s += F(",\"peerAuthenticated\":");s+=(peerOnline()?"true":"false");
+  s += F(",\"peerChip\":");s+=peerPairReady?jsonQuote(String(peerPair.peerChip,HEX)):jsonQuote(String(""));
+  s += F(",\"peerIp\":");s+=peerPairReady?jsonQuote(String(peerPair.peerIp)):jsonQuote(String(""));
+  s += F(",\"localChip\":");s+=jsonQuote(String(ESP.getChipId(),HEX));
+  s += F(",\"peerAuthErrors\":");s+=peerFailedAuth;
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
   JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);JNUM("idleTriggerSeconds",idleTriggerSeconds);
@@ -1860,6 +1893,7 @@ void setup() {
   bool fsReady=LittleFS.begin();
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
   loadInterconConfig(fsReady);
+  peerLoadConfig(fsReady);
   loadPersistentState();
   loadIdlePreferences();
   loadPowerAndCoinPrefs();
@@ -1913,6 +1947,29 @@ void setup() {
   interconLastAdvertised=millis()-10000UL;
   server.on("/",HTTP_GET,[](){if(!requireAdmin())return;server.send_P(200,PSTR("text/html"),WEB_UI);});
   server.on("/api/status",HTTP_GET,[](){if(!requireAdmin())return;sendStatus();});
+  server.on("/api/intercon/pair",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    // The secret may only be provisioned through the ESP8266's own WPA2 AP.
+    // HTTP Basic on a shared STA network does NOT encrypt the key.
+    if(server.client().localIP()!=WiFi.softAPIP()){
+      reject("Provision pairing only while connected to this controller's own AP",403);return;
+    }
+    if(timerRunning||remainingSeconds>0||pcShutdownPending||powerPulseActive){
+      reject("Finish and reconcile paid time before pairing",409);return;
+    }
+    String chip=server.arg("peerChip"),addrText=server.arg("peerIp"),secret=server.arg("pairKey");
+    InterconPairConfig candidate={};
+    IPAddress addr;
+    if(!peerDecodeChip(chip,candidate.peerChip)||!addr.fromString(addrText)||
+       addr==IPAddress(0,0,0,0)||addr.isMulticast()||addrText.length()>15||
+       !peerDecodeKey(secret,candidate.key)){
+      reject("Pairing requires a different 8-digit HEX chip ID, unicast IPv4, and 64 HEX key characters",400);return;
+    }
+    addrText.toCharArray(candidate.peerIp,sizeof(candidate.peerIp));
+    if(!peerSaveConfig(candidate)){reject("Pairing store failed; no pairing activated",503);return;}
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain","Peer credentials saved. Signed PING/PONG will start when STA connects. Remote credit stays locked.");
+  });
   server.on("/display/test",HTTP_POST,[](){
     if(!requireAdmin())return;
     String mode=server.arg("mode");
@@ -2126,6 +2183,7 @@ void loop() {
   updatePcPowerControl();
   displayUnit.update(remainingSeconds);
   interconLoop();
+  interconSecureTick();
   updateBuzzer();
   updateChimePlayer();
   yield();
