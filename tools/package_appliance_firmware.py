@@ -90,6 +90,8 @@ def generate_network_uci(profile: dict) -> str:
     lan_vlan = _validate_uci_vlan_id(vlan_ids.get("lan"), "lan")
     guest_vlan = _validate_uci_vlan_id(vlan_ids.get("guest"), "guest")
     vendo_vlan = _validate_uci_vlan_id(vlan_ids.get("vendo"), "vendo")
+    if len({lan_vlan, guest_vlan, vendo_vlan}) != 3:
+        raise ValueError("LAN, guest, and vendo VLAN IDs must be distinct")
     wan_interface = _validate_uci_interface(net.get("wan_interface"), "wan_interface")
 
     raw_ports = net.get("ports")
