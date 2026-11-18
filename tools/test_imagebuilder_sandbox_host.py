@@ -91,6 +91,19 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertNotIn("newuidmap", lowered)
         self.assertNotIn("newgidmap", lowered)
 
+    def test_probe_command_hides_host_credential_and_external_mount_paths(self):
+        helper = self.helper_or_skip()
+        command = helper.build_probe_command("/usr/bin/bwrap")
+        tmpfs_paths = {
+            command[index + 1]
+            for index, token in enumerate(command[:-1])
+            if token == "--tmpfs"
+        }
+        self.assertEqual(
+            tmpfs_paths,
+            {"/tmp", "/home", "/root", "/run", "/mnt", "/media", "/srv"},
+        )
+
     def test_probe_accepts_a_supported_fake_host(self):
         helper = self.helper_or_skip()
         with tempfile.TemporaryDirectory() as directory:
