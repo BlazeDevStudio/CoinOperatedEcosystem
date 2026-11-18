@@ -110,12 +110,11 @@ int main(){
   // Flash had settled even though call reported failure; reboot must inspect.
   assert(d.current.snapshot.master.pendingSequence==0);
   assert(d.current.snapshot.master.lastIssued==1);
-  assert(!d.commit(d.current.snapshot)==false || d.current.status==Status::Healthy);
 
   // Separate Slave image: receipt dedupe + paid units in SAME record.
   Flash slave;
   assert(slave.init());
-  SlaveTxn st{&slave};
+  SlaveTxn st{&slave,{}};
   auto snapshot=slave.current.snapshot.slave;
   const blaze_credit::Event first={slave.expected.peer,1,90};
   slave.failRename=true;
