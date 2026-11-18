@@ -161,6 +161,34 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(api_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/api should be executable (0755)")
 
+    def test_generic_overlay_defers_ula_to_installation_first_boot(self):
+        staging_dest = os.path.join(self.temp_dir, "staging_ula_firstboot")
+        profile = load_profile("ew1200g-pro")
+        stage_overlay(profile, DEFAULT_ROOTFS, staging_dest)
+
+        network_path = os.path.join(staging_dest, "etc", "config", "network")
+        with open(network_path, "r", encoding="utf-8") as fp:
+            network_uci = fp.read()
+        self.assertNotIn(
+            "ula_prefix",
+            network_uci,
+            "A reusable hardware image must not embed a site ULA prefix",
+        )
+
+        firstboot_path = os.path.join(
+            staging_dest, "etc", "uci-defaults", "99-blazepwifi-ula-prefix"
+        )
+        self.assertTrue(
+            os.path.isfile(firstboot_path),
+            "Generic appliance images must provision their ULA at installation first boot",
+        )
+        self.assertEqual(os.stat(firstboot_path).st_mode & 0o777, 0o755)
+        with open(firstboot_path, "r", encoding="utf-8") as fp:
+            firstboot = fp.read()
+        self.assertIn("od -An -N5", firstboot)
+        self.assertIn("uci commit network", firstboot)
+        self.assertNotIn("fd00:db8:blaze", firstboot)
+
     def test_stage_overlay_with_rental(self):
         staging_dest = os.path.join(self.temp_dir, "staging_rental")
         p = load_profile("orangepi-zero3")
