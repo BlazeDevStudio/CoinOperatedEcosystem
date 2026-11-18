@@ -12,6 +12,10 @@ SKETCH=ROOT/"esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon/BlazePis
 PEER=SKETCH.parent/"InterconDiscovery.h"
 source=SKETCH.read_text(encoding="utf-8")
 peer=PEER.read_text(encoding="utf-8")
+JOURNAL=SKETCH.parent/"InterconFlashJournal.h"
+CODEC=SKETCH.parent/"InterconJournalCodec.h"
+journal=JOURNAL.read_text(encoding="utf-8")
+codec=CODEC.read_text(encoding="utf-8")
 
 def check(condition: bool, message: str) -> None:
     if not condition:
@@ -60,4 +64,22 @@ check('s += F(",\\\"interconPeers\\\":[");' in source,
       "authenticated status includes nearby peer list")
 check('s += F(",\\\"staPassword\\\":");' not in source,
       "STA password is never echoed in status JSON")
-print("PASS: Stage 1 static contract checks complete (NOT a paid-coin acceptance test)")
+check('interconJournalRecover(fsReady);' in source,
+      "recovery is wired into boot without granting paid time")
+check('interconJournalInitialize()' in source and
+      '/api/intercon/journal/initialize' in source and 'Journal already exists or storage unavailable' in source,
+      "journal initialization requires explicit admin action and refuses existing records")
+check('if(interconJournalFsReady &&' in source and
+      'LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1)' in source,
+      "re-pair and role changes cannot silently clear existing journal history")
+check('IMAGE_BYTES=92' in codec and 'keyTag[16]' in codec and
+      'crc32(out,88)' in codec,
+      "canonical 92-byte on-flash images and 128-bit key binding")
+check('interconJournalWriteFailed=true' in journal and
+      'interconRecovered.status!=blaze_journal::Status::Healthy' in journal,
+      "failed or degraded journal prevents further automatic commits")
+check('interconJournalCommit(' not in source,
+      "NO live remote coin or timer code invokes the journal commit function")
+check('if (!interconLocalCoinsAllowed()) return;' in source,
+      "Stage 3 still fails closed on Master/Slave physical coin acceptance")
+print("PASS: Stage 3 static contract checks complete (NOT a paid-coin acceptance test)")
