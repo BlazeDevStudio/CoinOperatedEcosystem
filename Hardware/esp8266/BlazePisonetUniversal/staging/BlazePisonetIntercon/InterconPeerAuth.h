@@ -1,9 +1,12 @@
 #pragma once
-// BLAZE INTERCON v2: manually provisioned, authenticated PING/PONG ONLY.
-// Peer discovery remains untrusted. Remote credit, relay and CS commands are
-// explicitly ignored by this module and remain blocked by firmware policy.
+// BLAZE INTERCON v2: signed pairing and single paired-peer message dispatch.
+// Actual paid events are only handled by the Stage 4 transaction layer, which
+// must durably commit the journal before changing time or sending ACK.
+// Discovery alone never authorizes payment, relays or CS.
 #include "InterconSecureWire.h"
 #include <stddef.h>
+void interconHandleCredit(const blaze_peer::Frame& frame);
+void interconHandleAck(const blaze_peer::Frame& frame);
 
 static const uint32_t INTERCON_PAIR_MAGIC=0x42504132UL;
 struct InterconPairConfig {
@@ -128,8 +131,13 @@ void interconSecureReceived(const char* data,int len,IPAddress sourceIP) {
        input.eventLow==peerChallengeLow){
       peerLastProof=millis();peerChallengeOutstanding=false;
     }
+  } else if(!strcmp(input.kind,"CRED")) {
+    // Signed and correctly addressed, but only the owner role's durable
+    // journal and paired live handshake can authorize credit application.
+    interconHandleCredit(input);
+  } else if(!strcmp(input.kind,"ACKN")) {
+    interconHandleAck(input);
   }
-  // CRED and ACKN intentionally ignored; no remote code may grant time.
 }
 void interconSecureTick(){
   if(!peerPairReady||!interconPref.staEnabled||
