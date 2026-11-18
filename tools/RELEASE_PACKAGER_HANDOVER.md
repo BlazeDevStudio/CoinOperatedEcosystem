@@ -1543,3 +1543,98 @@ Rollback is a normal revert, without force-push, in reverse order: hardlink regr
 - Repository administrator: independently verify branch protection and required release checks.
 
 No PR merge, production signing, tag, release publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. PRODUCTION NO-GO.
+
+
+## PHX-RELEASE UTC19 — COE ULA child reconciliation and first-boot rollback safety
+
+**Disposition:** existing child PR #44 reconciled onto the current #35 head without force-push; ULA first-boot rollback defect reproduced test-first and fixed; second-level sandbox workflow coverage added; final shared CI, both board compile/upload jobs and case-collision pass; mandatory sandbox fails closed because Bubblewrap is absent; site-level multi-appliance ULA sharing and target behavior remain unaccepted. **OPEN / DRAFT / UNMERGED / PRODUCTION NO-GO.**
+
+### Live ownership and source identity
+
+- MASTER #288 exact head: **d2cb869d76b1e0ef694a8b9ce6bb7c0d427d4243**; architecture contract §6.9 assigns the site-scoped ULA contract to MASTER, implementation to RELEASE, independent verification to QA, and later target validation to HARDWARE. OWNERSHIP_ROUTES.json remains DRAFT_REVIEW_ONLY; no migration or route change.
+- COE parent #31 exact head: **59ed44d0b911e176f1a95b9cf5585ef811ffd31b**.
+- COE release parent #35 exact head/base: **1a5be48d2845781b0b07bad39a37f8440cea4d4f**.
+- COE child #44 branch: **phoenix/release-ula-installation-identity-20261118**; final code/CI head before this handover: **36d5be3480d1a5aa82b65a4fbf60aa02a96b2914**; base is current #35 head above. The child is OPEN / DRAFT / UNMERGED.
+
+### Reconciliation
+
+At activation start, #44 head **1736b379f790896f6a744ad2f3ac3c5f1f5de3bc** was stale against current #35: comparison showed five child commits ahead and 49 parent commits behind, with merge base **a6ea33642766cff3e8d3c7ada43c51c3cb8bfb63**. MASTER's current role assignment explicitly routed this reconciliation to PHX-RELEASE.
+
+The branch was reconciled by a non-force merge commit **18afd742dc959fb6e3dde14f5fdac7ab4f644cf6** with the old #44 head as first parent and current #35 head as second parent. This made current #35 an ancestor of the child and left only release-owned ULA files in the PR diff. The first API tree assembly produced an oversized duplicated packager blob; it was corrected by **d2aadc95b1863af692d124f458f1e1b86f789148** before CI. No CI result is claimed for intermediate 18afd742.
+
+### ULA provisioner and scoped rollback defect
+
+The release-owned packager no longer emits the invalid global literal **fd00:db8:blaze::/48**. The generic overlay stages an executable OpenWrt **/etc/uci-defaults/99-blazepwifi-ula-prefix** script instead of baking one site prefix into a reusable hardware profile. The script derives a 40-bit random global ID, constructs a canonical locally assigned fd00::/8 /48, checks its generated form, commits through UCI, and requires persisted readback.
+
+A focused runtime regression found a separate failure-path defect: on UCI commit network failure, the initial script called package-wide **uci revert network**, which could discard unrelated pending network settings. Test-first regression commit **d2aadc95** produced expected RED on exact head: [#44378891114](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44378891114) failed only at test_ula_firstboot_commit_failure_preserves_unrelated_pending_network_changes; the suite reported 107 tests, one failure and two intentional sandbox-only skips. Case-collision [#44378891615](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44378891615) passed.
+
+Source correction **93fe6825ca6792b2fb13dd76bdfd82e13fd06b56** now reverts only **network.globals.ula_prefix** and, only when this script created it, the **network.globals** section. It never reverts the entire network package. The regression uses a synthetic UCI command stub and verifies an unrelated pending network.lan.ipaddr value survives the simulated commit failure. This is host CI evidence, not target UCI/netifd acceptance.
+
+### Mandatory sandbox trigger reconciliation
+
+The second-level child PR was not covered by the previous sandbox branch filters. A test was added requiring the #35 branch in pull_request.branches and the #44 branch in push.branches.
+
+- Expected RED at **b6dcd2f055a93b52f56bc3054e4ec07266240c3f**: [#44379619420](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379619420) failed at the new trigger assertion; case-collision [#44379619358](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379619358) passed.
+- First workflow attempt **1d0e8d9cac9976ee5ded65652a3c3af7a0d50f98** placed the #44 branch in the wrong trigger section; shared validation [#44379747399](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379747399) still failed the push-section assertion, and sandbox [#44379747302](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379747302) failed at host preflight before the Bubblewrap check. This was a workflow-edit placement error, not a product failure.
+- Corrected workflow commit **36d5be3480d1a5aa82b65a4fbf60aa02a96b2914** places the #35 base branch under pull_request and the #44 child branch under push. The final host-preflight suite passed 14/14.
+
+### Exact-source CI at final code/CI head 36d5be3480d1a5aa82b65a4fbf60aa02a96b2914
+
+- Shared/firmware PR run [#44379937223](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379937223): SUCCESS. Packaging/tools suite 108 tests, two intentional sandbox-only skips; firmware hardening/shared contracts 18 checks PASS; appliance profiles 10/10 PASS; ESP8266 compile and artifact upload PASS; ESP32 compile and artifact upload PASS.
+- Case-collision [#44379937207](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379937207): SUCCESS.
+- Mandatory sandbox PR [#44379937205](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379937205) and push [#44379923240](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44379923240): FAIL CLOSED at **RELEASE-BLOCKED: bubblewrap is not installed on this runner**, exit 125. Host preflight 14/14 PASS. Unprivileged identity, namespace probe and mandatory Bubblewrap packaging regressions were SKIPPED, not passed. No unsandboxed fallback.
+
+The board outputs are CI compile/upload artifacts only. They are not approved OpenWrt appliance images, production binaries, target-router tests or physical hardware acceptance.
+
+### Architecture and target blockers — do not promote
+
+The current first-boot generator creates a random prefix per appliance installation. MASTER §6.9 additionally requires devices on the same LAN/site to share one prefix. This PR does not yet implement or prove a site-level distribution authority for multiple Blaze router appliances on the same site. PHX-MASTER / PHX-CORE / COE integration owner must confirm whether one appliance installation is the complete site authority or define an approved site-prefix provisioning/distribution input. Do not claim multi-appliance same-site sharing until that contract is explicit and tested.
+
+OpenWrt target execution order, UCI/netifd behavior, persistence across upgrade/restore, and multi-device same-site sharing remain NOT TESTED. PHX-QA must independently review exact source/test behavior; PHX-HARDWARE may validate target behavior only after authorization. The private canonical project registry v11 was not accessible through the exposed Library/connector surface; older registry snapshots were not substituted and no private contents were copied.
+
+### Cross-repository status
+
+- Experiments #242 remains OPEN / DRAFT at **734b89d9e7792247e8376335c3f3685500ab3f89**; Windows handover/build [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) SUCCESS.
+- Experiments #291 remains OPEN / DRAFT at **691ed55dbe39a79a88eac45f6eebff81cee5e628**; Windows handover/build [#44353380470](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44353380470) SUCCESS; privileged publisher SKIPPED.
+- COE integration #26 remains OPEN / DRAFT at **b382d233ff06c8791b1028bed3c617cc7b670d12**; eight workflows remain QUEUED with zero jobs. No combined integration acceptance.
+- No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was edited. No shared profile schema, finance contract, ULA architecture contract or ownership route was changed.
+
+### Next owner actions
+
+1. PHX-INFRA: provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces; rerun the mandatory sandbox at the exact candidate.
+2. PHX-MASTER / PHX-CORE / COE integration owner: decide and document site-prefix authority/distribution semantics for multiple appliances on one LAN.
+3. PHX-QA: independently review the exact final packager/test tree and generated UCI behavior.
+4. PHX-HARDWARE: perform target-specific OpenWrt validation only after the architecture and QA gates are satisfied and explicit authorization is given.
+5. COE integration owner: unblock the eight queued #26 workflows and complete per-file provenance/license/test reconciliation.
+6. Registry custodian: restore authorized read-only access to canonical private registry v11.
+
+No merge, signing, tag, release publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved target binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC20 — validate UCI network.globals section type before ULA reuse
+
+**DRAFT / exact source-test CI PASS / mandatory Bubblewrap BLOCKED / PRODUCTION NO-GO.**
+
+### Defect and test-first evidence
+
+The first-boot ULA provisioner previously checked `network.globals.ula_prefix` before checking the named `network.globals` section type. A malformed UCI configuration could place a syntactically valid-looking `ula_prefix` option on a different section type (for example, `interface`); the script would accept that value and exit successfully without verifying that the owning section was actually `globals`.
+
+- Test-first regression commit [`f77b17aa`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f77b17aad2d010855f55c3ee483ee20c34488323) exercises both a wrong-type section containing a valid-looking prefix and the valid `globals` idempotent case.
+- Expected RED: [PR run #44389165261](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389165261), validation job 135101770846, failed only at the new wrong-section regression. The suite ran 109 tests, one failure, two intentional sandbox-only skips. Case-collision [#44389165504](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389165504) passed.
+- Source correction [`81cb1747`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/81cb1747342b0335d586184c5ba58cb138d6201a) checks the named section type before reading or accepting its option, rejects a non-`globals` section before any UCI set/commit, and reuses the validated type when deciding whether to create the section.
+- The test also preserves idempotency for an existing correctly typed `globals` section with a valid persisted prefix.
+
+### Exact source/test-head verification — `81cb1747342b0335d586184c5ba58cb138d6201a`
+
+- Shared/firmware PR [#44389405432](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389405432): **SUCCESS**. Packaging/tool suite 109 tests, two intentional sandbox-only skips; firmware hardening/shared contracts 18 checks; appliance profiles 10/10; ESP32 and ESP8266 compile plus artifact-upload jobs all passed.
+- Shared/firmware push [#44389387827](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389387827): **SUCCESS**, including validation and both board compile/artifact-upload jobs.
+- Case-collision [#44389405069](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389405069): **SUCCESS**.
+- Mandatory sandbox PR [#44389406256](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389406256) and push [#44389387907](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44389387907): **FAIL CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Host preflight 14/14 passed; unprivileged identity, namespace probe and mandatory Bubblewrap packaging regressions were skipped, not passed. No unsandboxed fallback.
+
+### Scope and limits
+
+Only `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py` changed for this source/test task; this handover section records the evidence. The UCI behavior test uses a synthetic command stub. It is not target OpenWrt UCI/netifd or boot-order acceptance.
+
+MASTER §6.9's site-level ULA authority/distribution requirement remains unresolved: this change validates the local UCI section type only and does not establish same-site multi-appliance prefix sharing. Bubblewrap infrastructure, independent PHX-QA review, MASTER architecture approval, target validation and all production gates remain open.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed. No merge, signing, tag, publication, flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO.**

@@ -55,6 +55,68 @@ EXCLUDED_PACKAGES = [
     "dnsmasq-full"
 ]
 
+ULA_FIRSTBOOT_FILENAME = "99-blazepwifi-ula-prefix"
+
+
+def generate_ula_firstboot_script() -> str:
+    """Generate a target-side one-time, installation-scoped ULA provisioner."""
+    return (
+        "#!/bin/sh\n"
+        "# Installation-scoped RFC 4193 ULA provisioner.\n"
+        "# A generic image must never share a site identity across installs.\n"
+        "\n"
+        "log_error() { logger -t blazepwifi-ula -- \"$*\" 2>/dev/null || true; }\n"
+        "is_valid_ula_prefix() {\n"
+        "    printf '%s\\n' \"$1\" | grep -Eq '^fd[0-9a-f]{2}:[0-9a-f]{4}:[0-9a-f]{4}::/48$'\n"
+        "}\n"
+        "\n"
+        "# A named UCI section may exist with an incompatible type; validate it before trusting any option.\n"
+        "globals_type=\"$(uci -q get network.globals 2>/dev/null || true)\"\n"
+        "if [ -n \"$globals_type\" ] && [ \"$globals_type\" != \"globals\" ]; then\n"
+        "    log_error \"refusing network.globals section with unexpected type: $globals_type\"; exit 1\n"
+        "fi\n"
+        "\n"
+        "existing=\"$(uci -q get network.globals.ula_prefix 2>/dev/null || true)\"\n"
+        "if [ -n \"$existing\" ]; then\n"
+        "    is_valid_ula_prefix \"$existing\" && exit 0\n"
+        "    log_error \"refusing invalid persisted ULA prefix\"; exit 1\n"
+        "fi\n"
+        "\n"
+        "# fd plus a 40-bit pseudorandom global ID (RFC 4193).\n"
+        "global_id=\"$(od -An -N5 -tx1 /dev/urandom 2>/dev/null | tr -d '[:space:]')\"\n"
+        "if ! printf '%s\\n' \"$global_id\" | grep -Eq '^[0-9a-f]{10}$'; then\n"
+        "    log_error \"unable to obtain a 40-bit random ULA global ID\"; exit 1\n"
+        "fi\n"
+        "prefix=\"fd$(printf '%s' \"$global_id\" | cut -c1-2):$(printf '%s' \"$global_id\" | cut -c3-6):$(printf '%s' \"$global_id\" | cut -c7-10)::/48\"\n"
+        "is_valid_ula_prefix \"$prefix\" || { log_error \"generated ULA failed validation\"; exit 1; }\n"
+        "\n"
+        "created_globals=0\n"
+        "if [ -z \"$globals_type\" ]; then\n"
+        "    if ! uci set network.globals='globals'; then log_error \"unable to create network.globals\"; exit 1; fi\n"
+        "    created_globals=1\n"
+        "fi\n"
+        "rollback_pending_ula() {\n"
+        "    uci revert network.globals.ula_prefix >/dev/null 2>&1 || true\n"
+        "    if [ \"$created_globals\" = \"1\" ]; then\n"
+        "        uci revert network.globals >/dev/null 2>&1 || true\n"
+        "    fi\n"
+        "}\n"
+        "if ! uci set network.globals.ula_prefix=\"$prefix\"; then\n"
+        "    rollback_pending_ula\n"
+        "    log_error \"unable to stage ULA prefix\"; exit 1\n"
+        "fi\n"
+        "# A failed ULA commit must not revert unrelated network configuration.\n"
+        "if ! uci commit network; then\n"
+        "    rollback_pending_ula\n"
+        "    log_error \"unable to persist ULA prefix\"; exit 1\n"
+        "fi\n"
+        "persisted=\"$(uci -q get network.globals.ula_prefix 2>/dev/null || true)\"\n"
+        "if [ \"$persisted\" != \"$prefix\" ] || ! is_valid_ula_prefix \"$persisted\"; then\n"
+        "    log_error \"persisted ULA failed readback validation\"; exit 1\n"
+        "fi\n"
+        "exit 0\n"
+    )
+
 
 def load_profile(profile_id_or_path: str) -> dict:
     if os.path.isfile(profile_id_or_path):
@@ -116,7 +178,6 @@ def generate_network_uci(profile: dict) -> str:
         "\toption netmask '255.0.0.0'",
         "",
         "config globals 'globals'",
-        "\toption ula_prefix 'fd00:db8:blaze::/48'",
         "",
         "config device 'br_lan'",
         "\toption name 'br-lan'",
@@ -603,6 +664,12 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
     etc_config = _ensure_staging_directory(staging_dir, "etc/config")
     _write_staging_file(etc_config, "network", generate_network_uci(profile))
 
+    # ULA identity belongs to the installation, not the reusable hardware profile.
+    uci_defaults = _ensure_staging_directory(staging_dir, "etc/uci-defaults")
+    _write_staging_file(
+        uci_defaults, ULA_FIRSTBOOT_FILENAME, generate_ula_firstboot_script()
+    )
+
     # Save target profile specification into appliance metadata
     etc_blaze = _ensure_staging_directory(staging_dir, "etc/blazepwifi")
     _write_staging_file(etc_blaze, "appliance_profile.json", json.dumps(profile, indent=2))
@@ -675,6 +742,7 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
                 "/cgi-bin/" in relative_path_with_root
                 or "/init.d/" in relative_path_with_root
                 or "/usr/sbin/" in relative_path_with_root
+                or "/uci-defaults/" in relative_path_with_root
                 or relative_path.endswith(".sh")
             ):
                 file_mode = 0o755

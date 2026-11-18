@@ -180,6 +180,23 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         )
 
 
+    def test_workflow_triggers_for_second_level_release_child_branch(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        pull_request_section = workflow.split("  pull_request:", 1)[1].split("  push:", 1)[0]
+        push_section = workflow.split("  push:", 1)[1].split("  workflow_dispatch:", 1)[0]
+        self.assertIn(
+            "      - phoenix/release-build-script-publication-safety-20261117",
+            pull_request_section,
+            "the mandatory sandbox must run when the ULA child PR targets the current packager branch",
+        )
+        self.assertIn(
+            "      - phoenix/release-ula-installation-identity-20261118",
+            push_section,
+            "the mandatory sandbox must run on the ULA child branch after reconciliation",
+        )
+
+
     def test_workflow_requires_existing_bubblewrap_without_privileged_install(self):
         with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
             workflow = fp.read()

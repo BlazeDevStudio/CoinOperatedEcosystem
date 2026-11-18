@@ -178,6 +178,270 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(api_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/api should be executable (0755)")
 
+    def test_generic_overlay_defers_ula_to_installation_first_boot(self):
+        staging_dest = os.path.join(self.temp_dir, "staging_ula_firstboot")
+        profile = load_profile("ew1200g-pro")
+        stage_overlay(profile, DEFAULT_ROOTFS, staging_dest)
+
+        network_path = os.path.join(staging_dest, "etc", "config", "network")
+        with open(network_path, "r", encoding="utf-8") as fp:
+            network_uci = fp.read()
+        self.assertNotIn(
+            "ula_prefix",
+            network_uci,
+            "A reusable hardware image must not embed a site ULA prefix",
+        )
+
+        firstboot_path = os.path.join(
+            staging_dest, "etc", "uci-defaults", "99-blazepwifi-ula-prefix"
+        )
+        self.assertTrue(
+            os.path.isfile(firstboot_path),
+            "Generic appliance images must provision their ULA at installation first boot",
+        )
+        self.assertEqual(os.stat(firstboot_path).st_mode & 0o777, 0o755)
+        with open(firstboot_path, "r", encoding="utf-8") as fp:
+            firstboot = fp.read()
+        self.assertIn("od -An -N5", firstboot)
+        self.assertIn("uci commit network", firstboot)
+        self.assertNotIn("fd00:db8:blaze", firstboot)
+        syntax = subprocess.run(
+            ["sh", "-n", firstboot_path], capture_output=True, text=True
+        )
+        self.assertEqual(
+            syntax.returncode,
+            0,
+            msg=f"Generated ULA first-boot script is not valid POSIX shell: {syntax.stderr}",
+        )
+
+    def test_ula_firstboot_commit_failure_preserves_unrelated_pending_network_changes(self):
+        staging_dest = os.path.join(self.temp_dir, "staging_ula_rollback")
+        stage_overlay(load_profile("ew1200g-pro"), DEFAULT_ROOTFS, staging_dest)
+        firstboot_path = os.path.join(
+            staging_dest, "etc", "uci-defaults", "99-blazepwifi-ula-prefix"
+        )
+
+        bin_dir = os.path.join(self.temp_dir, "ula-test-bin")
+        os.makedirs(bin_dir)
+        state_path = os.path.join(self.temp_dir, "ula-uci-state.json")
+        state = {"unrelated": "network.lan.ipaddr=10.0.0.1"}
+        with open(state_path, "w", encoding="utf-8") as fp:
+            json.dump(state, fp)
+
+        uci_path = os.path.join(bin_dir, "uci")
+        uci_script = r"""#!/usr/bin/env python3
+import json
+import os
+import sys
+
+state_path = os.environ["ULA_TEST_STATE"]
+with open(state_path, "r", encoding="utf-8") as fp:
+    state = json.load(fp)
+
+args = sys.argv[1:]
+if args and args[0] == "-q":
+    args = args[1:]
+if not args:
+    raise SystemExit(2)
+
+command = args[0]
+if command == "get":
+    key = args[1]
+    if key == "network.globals.ula_prefix" and state.get("persisted_prefix"):
+        print(state["persisted_prefix"])
+        raise SystemExit(0)
+    if key == "network.globals" and state.get("globals_type"):
+        print(state["globals_type"])
+        raise SystemExit(0)
+    raise SystemExit(1)
+
+if command == "set":
+    assignment = args[1]
+    if assignment == "network.globals=globals":
+        state["pending_globals_type"] = "globals"
+    elif assignment.startswith("network.globals.ula_prefix="):
+        state["pending_prefix"] = assignment.split("=", 1)[1]
+    else:
+        raise SystemExit(2)
+    with open(state_path, "w", encoding="utf-8") as fp:
+        json.dump(state, fp)
+    raise SystemExit(0)
+
+if command == "commit":
+    state["commit_attempted"] = True
+    with open(state_path, "w", encoding="utf-8") as fp:
+        json.dump(state, fp)
+    raise SystemExit(1)
+
+if command == "revert":
+    target = args[1]
+    if target == "network.globals.ula_prefix":
+        state.pop("pending_prefix", None)
+        state["reverted_option"] = True
+    elif target == "network.globals":
+        state.pop("pending_globals_type", None)
+        state["reverted_section"] = True
+    elif target == "network":
+        state["unrelated"] = ""
+        state["full_revert"] = True
+    else:
+        raise SystemExit(2)
+    with open(state_path, "w", encoding="utf-8") as fp:
+        json.dump(state, fp)
+    raise SystemExit(0)
+
+raise SystemExit(2)
+"""
+        with open(uci_path, "w", encoding="utf-8") as fp:
+            fp.write(uci_script)
+        os.chmod(uci_path, 0o755)
+
+        od_path = os.path.join(bin_dir, "od")
+        with open(od_path, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\nprintf '12 34 56 78 9a\\n'\n")
+        os.chmod(od_path, 0o755)
+
+        env = os.environ.copy()
+        env["ULA_TEST_STATE"] = state_path
+        env["PATH"] = bin_dir + os.pathsep + env.get("PATH", os.defpath)
+        result = subprocess.run(
+            ["sh", firstboot_path],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        self.assertNotEqual(
+            result.returncode,
+            0,
+            "The simulated UCI commit failure must keep first-boot provisioning fail-closed",
+        )
+
+        with open(state_path, "r", encoding="utf-8") as fp:
+            final_state = json.load(fp)
+        self.assertTrue(final_state.get("commit_attempted"))
+        self.assertTrue(final_state.get("reverted_option"))
+        self.assertTrue(final_state.get("reverted_section"))
+        self.assertFalse(final_state.get("full_revert", False))
+        self.assertEqual(
+            final_state.get("unrelated"),
+            "network.lan.ipaddr=10.0.0.1",
+            "A failed ULA commit must not discard unrelated pending network configuration",
+        )
+        self.assertNotIn("pending_prefix", final_state)
+        self.assertNotIn("pending_globals_type", final_state)
+
+
+    def test_ula_firstboot_rejects_wrong_globals_section_type_before_accepting_prefix(self):
+        staging_dest = os.path.join(self.temp_dir, "staging_ula_wrong_section")
+        stage_overlay(load_profile("ew1200g-pro"), DEFAULT_ROOTFS, staging_dest)
+        firstboot_path = os.path.join(
+            staging_dest, "etc", "uci-defaults", "99-blazepwifi-ula-prefix"
+        )
+
+        bin_dir = os.path.join(self.temp_dir, "ula-wrong-section-bin")
+        os.makedirs(bin_dir)
+        state_path = os.path.join(self.temp_dir, "ula-wrong-section-state.json")
+        uci_path = os.path.join(bin_dir, "uci")
+        uci_script = r"""#!/usr/bin/env python3
+import json
+import os
+import sys
+
+state_path = os.environ["ULA_TEST_STATE"]
+with open(state_path, "r", encoding="utf-8") as fp:
+    state = json.load(fp)
+
+args = sys.argv[1:]
+if args and args[0] == "-q":
+    args = args[1:]
+if not args:
+    raise SystemExit(2)
+
+command = args[0]
+state.setdefault("commands", []).append(" ".join(args))
+
+def save_state():
+    with open(state_path, "w", encoding="utf-8") as fp:
+        json.dump(state, fp)
+
+if command == "get":
+    key = args[1]
+    if key == "network.globals":
+        value = state.get("globals_type")
+    elif key == "network.globals.ula_prefix":
+        value = state.get("persisted_prefix")
+    else:
+        value = None
+    save_state()
+    if value is None:
+        raise SystemExit(1)
+    print(value)
+    raise SystemExit(0)
+
+if command in ("set", "commit", "revert"):
+    if command == "commit":
+        state["commit_attempted"] = True
+    save_state()
+    raise SystemExit(0)
+
+raise SystemExit(2)
+"""
+        with open(uci_path, "w", encoding="utf-8") as fp:
+            fp.write(uci_script)
+        os.chmod(uci_path, 0o755)
+
+        env = os.environ.copy()
+        env["ULA_TEST_STATE"] = state_path
+        env["PATH"] = bin_dir + os.pathsep + env.get("PATH", os.defpath)
+
+        def run_with_state(initial_state):
+            with open(state_path, "w", encoding="utf-8") as fp:
+                json.dump(initial_state, fp)
+            result = subprocess.run(
+                ["sh", firstboot_path],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            with open(state_path, "r", encoding="utf-8") as fp:
+                final_state = json.load(fp)
+            return result, final_state
+
+        wrong_type_result, wrong_type_state = run_with_state({
+            "globals_type": "interface",
+            "persisted_prefix": "fd12:3456:789a::/48",
+            "commands": [],
+        })
+        self.assertNotEqual(
+            wrong_type_result.returncode,
+            0,
+            "A valid-looking ULA option inside a non-globals section must not be accepted",
+        )
+        self.assertEqual(
+            wrong_type_state["commands"],
+            ["get network.globals"],
+            "The provisioner must reject the incompatible section before reading or changing its option",
+        )
+        self.assertFalse(
+            wrong_type_state.get("commit_attempted", False),
+            "An incompatible network.globals section must never reach UCI commit",
+        )
+
+        valid_result, valid_state = run_with_state({
+            "globals_type": "globals",
+            "persisted_prefix": "fd12:3456:789a::/48",
+            "commands": [],
+        })
+        self.assertEqual(valid_result.returncode, 0, valid_result.stderr + valid_result.stdout)
+        self.assertEqual(
+            valid_state["commands"],
+            ["get network.globals", "get network.globals.ula_prefix"],
+            "An existing valid globals section and prefix must remain idempotent",
+        )
+        self.assertFalse(valid_state.get("commit_attempted", False))
+
     def test_stage_overlay_with_rental(self):
         staging_dest = os.path.join(self.temp_dir, "staging_rental")
         p = load_profile("orangepi-zero3")
