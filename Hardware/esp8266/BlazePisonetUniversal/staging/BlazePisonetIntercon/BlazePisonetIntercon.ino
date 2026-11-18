@@ -465,6 +465,8 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Wi-Fi STA</strong><span id="staAddress">Disabled</span></div>
  <div id="peerList" class="help">No peers discovered yet.</div>
  <div class="row"><strong>Paired peer authentication</strong><span id="peerProof">Not paired</span></div>
+ <div class="row"><strong>Credit journal (read-only)</strong><span id="journalState">Not initialized</span></div>
+ <p class="help">Journal health does not enable remote coin transfer. Payments remain locked pending hardware and countdown recovery tests.</p>
  <p class="help">Discovery is public status only; a signed PING/PONG challenge proves paired link credentials. Coin forwarding remains locked.</p></div></div>
 </section>
 <section id="hardware" class="panel">
@@ -528,8 +530,13 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  </div>
  <p class="help">The key is never returned in status JSON. For initial provisioning use a trusted random 32-byte key and enter it on both stations. Do not reuse a shop-wide key. AP traffic is WPA2 protected but the admin portal itself is HTTP, not HTTPS.</p>
  <div class="buttons"><button type="button" onclick="generatePeerKey()">Generate fresh pairing key</button><button type="submit" class="primary">Save peer pairing</button></div>
- <p class="help">After generating a key, copy it to the other paired controller. Do not generate a different key on that controller.</p>
- </div></form></section>
+ <p class="help">After generating a key, copy it to the other paired controller. Do not generate a different key on that controller. Once a journal exists, re-pairing is blocked until its history is reconciled.</p>
+ </div></form>
+ <div class="card"><h2>INTERCON · flash journal</h2>
+ <p class="note">Stage 3 storage laboratory. This writes an initial pair-bound, two-slot journal on an idle Master or Slave. It does not transfer credit, affect the local rental timer, or enable physical coin acceptance. Initialization is one-time only and cannot erase an existing or damaged journal.</p>
+ <div class="row"><strong>Journal condition</strong><span id="journalSettings">Checking…</span></div>
+ <div class="buttons"><button type="button" onclick="initializePeerJournal()">Initialize empty journal (lab only)</button></div>
+ </div></section>
 <section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
  <div class="card"><div class="eyebrow">Legacy monthly bucket</div><div class="metric" id="saleMonth">0</div></div></div>
@@ -554,6 +561,8 @@ function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole',
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
  put('roleLabel',['STANDARD','MASTER (LOCKED)','SLAVE (LOCKED)'][o.interconRole]||'UNKNOWN');
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
+ put('journalState',o.journalState+(o.journalGeneration?' · gen '+o.journalGeneration:''));
+ put('journalSettings',o.journalState+(o.journalGeneration?' · generation '+o.journalGeneration:''));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
  const peers=$('peerList');peers.textContent='';
  if(Array.isArray(o.interconPeers)&&o.interconPeers.length){
@@ -595,6 +604,14 @@ function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
 $('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+async function initializePeerJournal(){
+ if(!confirm('Initialize a NEW two-slot journal only on this idle LAB controller? This does not activate coin forwarding and cannot overwrite previous records.'))return;
+ try{
+  const data=new URLSearchParams({confirm:'initialize'});
+  const result=await request('/api/intercon/journal/initialize',data);
+  msg(String(result));await poll();
+ }catch(err){msg('Journal not initialized: '+err.message)}
+}
 async function generatePeerKey(){
  try{
    const key=await request('/api/intercon/new-key',new URLSearchParams({generate:'yes'}));
@@ -703,6 +720,7 @@ bool csActiveHigh = true;
 #include "InterconSecureWire.h"
 #include "InterconDiscovery.h"
 #include "InterconPeerAuth.h"
+#include "InterconFlashJournal.h"
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
 bool pcExpectedOn = false; // Estimated only. No physical state detection.
@@ -1822,6 +1840,16 @@ void sendStatus() {
   s += F(",\"peerIp\":");s+=peerPairReady?jsonQuote(String(peerPair.peerIp)):jsonQuote(String(""));
   s += F(",\"localChip\":");s+=jsonQuote(String(ESP.getChipId(),HEX));
   s += F(",\"peerAuthErrors\":");s+=peerFailedAuth;
+  s += F(",\"journalState\":");s+=jsonQuote(interconJournalStatusName());
+  s += F(",\"journalGeneration\":");
+  s += interconRecovered.status==blaze_journal::Status::Healthy?
+       String((unsigned long)interconRecovered.snapshot.generation):String("0");
+  s += F(",\"journalPending\":");
+  s += interconRecovered.status==blaze_journal::Status::Healthy &&
+       interconRecovered.snapshot.master.pendingSequence?"true":"false";
+  s += F(",\"journalCreditedEvents\":");
+  s += interconRecovered.status==blaze_journal::Status::Healthy?
+       String(interconRecovered.snapshot.slave.paidEventCount):String("0");
   #define JNUM(KEY,VALUE) s+=F(",\"" KEY "\":");s+=String(VALUE)
   JNUM("uptimeSeconds",millis()/1000UL); JNUM("heap",ESP.getFreeHeap());
   JNUM("displayClk",displayClk);JNUM("displayDio",displayDio);JNUM("brightness",displayBrightness);JNUM("idleTriggerSeconds",idleTriggerSeconds);
@@ -1898,12 +1926,13 @@ void handleFileUpload() {
 // ------------------------------
 void setup() {
   Serial.begin(115200);Serial.println();
-  Serial.println(F("[BLAZE] V1.5 D6 PWR_SW pulse and D7 CS toggle"));
+  Serial.println(F("[BLAZE] V1.7+ Stage 3 INTERCON flash-journal lab; D6 PWR_SW / D7 CS"));
   randomSeed(micros());
   bool fsReady=LittleFS.begin();
   if (!fsReady) Serial.println(F("[FS] LittleFS mount failed; custom chimes unavailable"));
   loadInterconConfig(fsReady);
   peerLoadConfig(fsReady);
+  interconJournalRecover(fsReady); // read-only; never grant time on recovery
   loadPersistentState();
   loadIdlePreferences();
   loadPowerAndCoinPrefs();
@@ -1974,6 +2003,35 @@ void setup() {
     server.sendHeader("Cache-Control","no-store");
     server.send(200,"text/plain",hex);
   });
+  server.on("/api/intercon/journal/initialize",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP() ||
+       strcmp(adminPassword,"blaze-admin")==0 ||
+       strcmp(AP_PASSWORD,"12345678")==0) {
+      reject("Journal initialization is AP-only and requires private AP/admin passwords",403);return;
+    }
+    if(server.arg("confirm")!="initialize"){
+      reject("Explicit initialization confirmation required",400);return;
+    }
+    if(interconPref.role==INTERCON_STANDARD || !peerPairReady ||
+       timerRunning || remainingSeconds>0 ||
+       pcShutdownPending || powerPulseActive){
+      reject("Journal requires an idle, paired Master/Slave with zero remaining paid time",409);return;
+    }
+    if(interconRecovered.status!=blaze_journal::Status::Absent ||
+       !interconJournalFsReady){
+      reject("Journal already exists or storage unavailable; never overwrite paid history",409);return;
+    }
+    noInterrupts();
+    coinInputAllowed=false;coinQueued=0;coinPulseStartUs=0;
+    interrupts();
+    writeCsEnable(); // Role locks physical CS output OFF
+    if(!interconJournalInitialize()){
+      reject("Journal initialization incomplete; service review required",503);return;
+    }
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain","Two-slot journal initialized and read-back verified; paid routing remains locked.");
+  });
   server.on("/api/intercon/pair",HTTP_POST,[](){
     if(!requireAdmin())return;
     // The secret may only be provisioned through the ESP8266's own WPA2 AP.
@@ -1983,6 +2041,12 @@ void setup() {
     }
     if(timerRunning||remainingSeconds>0||pcShutdownPending||powerPulseActive){
       reject("Finish and reconcile paid time before pairing",409);return;
+    }
+    // Changing keys/peer IDs after a journal is initialized invalidates
+    // acknowledgments, and must never silently reset paid-event history.
+    if(interconJournalFsReady &&
+       (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1))){
+      reject("Pairing locked: an INTERCON journal exists. Reconcile it before re-keying.",409);return;
     }
     if(strcmp(adminPassword,"blaze-admin")==0 || strcmp(AP_PASSWORD,"12345678")==0){
       reject("Change both default AP and administrator passwords before storing a peer secret",409);return;
