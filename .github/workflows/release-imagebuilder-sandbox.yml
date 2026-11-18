@@ -6,7 +6,6 @@ on:
       - integration/ecosystem-nonproprietary-candidate-20261111
       - phoenix/release-imagebuilder-failclosed-20261115
       - phoenix/release-build-script-publication-safety-20261117
-      - phoenix/release-ula-installation-identity-20261118
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
@@ -19,6 +18,7 @@ on:
     branches:
       - phoenix/release-imagebuilder-failclosed-20261115
       - phoenix/release-build-script-publication-safety-20261117
+      - phoenix/release-ula-installation-identity-20261118
     paths:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
