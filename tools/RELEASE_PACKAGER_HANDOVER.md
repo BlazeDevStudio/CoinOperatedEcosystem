@@ -1042,3 +1042,28 @@ A new destination-side race remained after the prior symlink hardening: `_write_
 - Earlier source/test-head shared run [#44249718595](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44249718595) had validation and ESP8266 success, but ESP32 was cancelled by the documentation successor. Only final docs-head run #44249893147 is credited for both board compiles.
 - CI board artifacts are synthetic build outputs, not approved target firmware or physical hardware acceptance. No signing, tag, publication, merge, flash, payment migration or customer deployment occurred.
 - PR remains OPEN/DRAFT/UNMERGED; independent PHX-QA and PHX-MASTER reviews are still required. Production remains NO-GO.
+
+
+## UTC07 — immutable Node24 sandbox checkout pin — 2026-11-18T07:xxZ
+
+**Disposition:** TEST-FIRST RED REPRODUCED / WORKFLOW PIN UPDATED / EXACT-SOURCE SHARED + BOTH BOARD CI PASS / CASE-COLLISION PASS / MANDATORY SANDBOX STILL HOST-BLOCKED / DRAFT / PRODUCTION NO-GO.
+
+This is a release-owned CI maintenance correction on the existing child PR #35. The dedicated ImageBuilder sandbox workflow still used an older immutable checkout commit whose action metadata was not Node24. The upstream immutable commit `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` was inspected directly in `actions/checkout/action.yml` at that exact commit; it declares `runs.using: node24` and its changelog identifies v7.0.1. No tag reference is used.
+
+**Test-first history**
+- Regression test commit [`667ff155`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/667ff155c68d4d44a3dbf3993722dab622aaf196) adds `test_workflow_uses_immutable_node24_checkout_action`. It asserts the exact reviewed 40-hex action pin, exact triggering PR/push SHA checkout, `persist-credentials: false`, and rejects mutable `@v*` references.
+- Exact RED [#44258083959](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258083959): shared validation failed exactly at the new assertion because the workflow still used `11bd71901bbe5b1630ceea73d27597364c9af683`; 85 tests ran with one expected failure and two intentional sandbox-only skips. Case-collision passed. The sandbox job also stopped at the failing host-preflight unit test before attempting the namespace probe; no host result is inferred from that RED run.
+- Workflow correction commit [`5fe815f9`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5fe815f9e985bf2280b05fb189598826c68a7be6) changes only the checkout action pin to the verified immutable Node24 commit. Exact PR-head ref and `persist-credentials: false` are preserved.
+
+**Exact source/test-head CI at `5fe815f9`**
+- Shared/firmware validation [#44258251193](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258251193): **SUCCESS**. Packaging/tool validation: 85 tests, two intentional sandbox-only skips; all 18 firmware-hardening/shared-contract tests passed; 10/10 appliance profiles passed; ESP32 and ESP8266 compile/artifact-upload jobs both **SUCCESS**.
+- Case-collision [#44258251159](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258251159): **SUCCESS**.
+- Mandatory sandbox [#44258251152](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44258251152): **FAILED CLOSED**, not accepted. The 9 host-preflight unit tests passed, including the new Node24 pin assertion; the actual bubblewrap user-namespace probe then failed with `bwrap: setting up uid map: Permission denied`. Mandatory sandbox packaging regressions were skipped. The Node24 pin removes the old checkout runtime; it does not resolve the hosted runner's UID-map restriction.
+
+**Current stack**
+- Child PR #35 remains OPEN/DRAFT/UNMERGED, based on parent #31 at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Source/test HEAD for this task: `5fe815f9e985bf2280b05fb189598826c68a7be6`.
+- This handover update is documentation-only.
+- The child remains a release-owned branch; no parent #31, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed.
+
+**Next:** infrastructure owner supplies an authorized disposable, ephemeral, no-secret runner with unprivileged user namespaces; rerun mandatory sandbox regressions at the exact current PR head. PHX-QA independently reviews the sandbox boundary and new workflow assertion. Keep signing and publishing closed. No merge, real signing, release publication, hardware flashing, payment migration or customer deployment. Physical 150 power-cut and 30-device/24-hour soak acceptance remain NOT TESTED. **PRODUCTION NO-GO.**
