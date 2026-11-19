@@ -238,86 +238,86 @@ def calculate_overlay_size(staging_dir: str) -> int:
                         if relative_directory == "."
                         else f"{relative_directory}/{entry_name}"
                     )
+                    try:
+                        entry_stat = os.stat(
+                            entry_name,
+                            dir_fd=directory_fd,
+                            follow_symlinks=False,
+                        )
+                    except FileNotFoundError as exc:
+                        raise ValueError(
+                            "Staged entry changed during overlay size walk: "
+                            f"{relative_entry}"
+                        ) from exc
+
+                    # Rootfs symlinks are intentional and have never been
+                    # included in the regular-file byte budget.
+                    if stat.S_ISLNK(entry_stat.st_mode):
+                        continue
+
+                    if stat.S_ISDIR(entry_stat.st_mode):
                         try:
-                            entry_stat = os.stat(
+                            child_fd = os.open(
                                 entry_name,
+                                directory_flags,
                                 dir_fd=directory_fd,
-                                follow_symlinks=False,
                             )
-                        except FileNotFoundError as exc:
-                            raise ValueError(
-                                "Staged entry changed during overlay size walk: "
-                                f"{relative_entry}"
-                            ) from exc
-
-                        # Rootfs symlinks are intentional and have never been
-                        # included in the regular-file byte budget.
-                        if stat.S_ISLNK(entry_stat.st_mode):
-                            continue
-
-                        if stat.S_ISDIR(entry_stat.st_mode):
-                            try:
-                                child_fd = os.open(
-                                    entry_name,
-                                    directory_flags,
-                                    dir_fd=directory_fd,
-                                )
-                            except OSError as exc:
-                                if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
-                                    raise ValueError(
-                                        "Staged directory changed or became a symlink "
-                                        f"during overlay size walk: {relative_entry}"
-                                    ) from exc
-                                raise
-
-                            opened_child = os.fstat(child_fd)
-                            if (
-                                not stat.S_ISDIR(opened_child.st_mode)
-                                or (entry_stat.st_dev, entry_stat.st_ino)
-                                != (opened_child.st_dev, opened_child.st_ino)
-                            ):
-                                os.close(child_fd)
+                        except OSError as exc:
+                            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
                                 raise ValueError(
-                                    "Staged directory changed while opening during "
+                                    "Staged directory changed or became a symlink "
+                                    f"during overlay size walk: {relative_entry}"
+                                ) from exc
+                            raise
+
+                        opened_child = os.fstat(child_fd)
+                        if (
+                            not stat.S_ISDIR(opened_child.st_mode)
+                            or (entry_stat.st_dev, entry_stat.st_ino)
+                            != (opened_child.st_dev, opened_child.st_ino)
+                        ):
+                            os.close(child_fd)
+                            raise ValueError(
+                                "Staged directory changed while opening during "
+                                f"overlay size walk: {relative_entry}"
+                            )
+                        pending_directories.append((child_fd, relative_entry))
+                        continue
+
+                    if stat.S_ISREG(entry_stat.st_mode):
+                        try:
+                            file_fd = os.open(
+                                entry_name,
+                                file_flags,
+                                dir_fd=directory_fd,
+                            )
+                        except OSError as exc:
+                            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                                raise ValueError(
+                                    "Staged file changed or became a symlink "
+                                    f"during overlay size walk: {relative_entry}"
+                                ) from exc
+                            raise
+
+                        try:
+                            opened_file = os.fstat(file_fd)
+                            if (
+                                not stat.S_ISREG(opened_file.st_mode)
+                                or (entry_stat.st_dev, entry_stat.st_ino)
+                                != (opened_file.st_dev, opened_file.st_ino)
+                            ):
+                                raise ValueError(
+                                    "Staged file changed while opening during "
                                     f"overlay size walk: {relative_entry}"
                                 )
-                            pending_directories.append((child_fd, relative_entry))
-                            continue
+                            total_bytes += opened_file.st_size
+                        finally:
+                            os.close(file_fd)
+                        continue
 
-                        if stat.S_ISREG(entry_stat.st_mode):
-                            try:
-                                file_fd = os.open(
-                                    entry_name,
-                                    file_flags,
-                                    dir_fd=directory_fd,
-                                )
-                            except OSError as exc:
-                                if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
-                                    raise ValueError(
-                                        "Staged file changed or became a symlink "
-                                        f"during overlay size walk: {relative_entry}"
-                                    ) from exc
-                                raise
-
-                            try:
-                                opened_file = os.fstat(file_fd)
-                                if (
-                                    not stat.S_ISREG(opened_file.st_mode)
-                                    or (entry_stat.st_dev, entry_stat.st_ino)
-                                    != (opened_file.st_dev, opened_file.st_ino)
-                                ):
-                                    raise ValueError(
-                                        "Staged file changed while opening during "
-                                        f"overlay size walk: {relative_entry}"
-                                    )
-                                total_bytes += opened_file.st_size
-                            finally:
-                                os.close(file_fd)
-                            continue
-
-                        # Preserve the prior treatment of non-regular special
-                        # entries without opening a FIFO/device or following it.
-                        total_bytes += entry_stat.st_size
+                    # Preserve the prior treatment of non-regular special
+                    # entries without opening a FIFO/device or following it.
+                    total_bytes += entry_stat.st_size
             finally:
                 os.close(directory_fd)
 
