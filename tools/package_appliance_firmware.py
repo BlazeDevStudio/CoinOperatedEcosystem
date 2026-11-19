@@ -239,18 +239,6 @@ def calculate_overlay_size(staging_dir: str) -> int:
                         else f"{relative_directory}/{entry_name}"
                     )
                     try:
-                        entry_stat = os.stat(
-                            entry_name,
-                            dir_fd=directory_fd,
-                            follow_symlinks=False,
-                        )
-                    except FileNotFoundError as exc:
-                        raise ValueError(
-                            "Staged entry changed during overlay size walk: "
-                            f"{relative_entry}"
-                        ) from exc
-
-                    try:
                         entry_fd = os.open(
                             entry_name,
                             entry_flags,
@@ -266,8 +254,19 @@ def calculate_overlay_size(staging_dir: str) -> int:
 
                     try:
                         opened_entry = os.fstat(entry_fd)
+                        try:
+                            current_entry = os.stat(
+                                entry_name,
+                                dir_fd=directory_fd,
+                                follow_symlinks=False,
+                            )
+                        except FileNotFoundError as exc:
+                            raise ValueError(
+                                "Staged entry changed during overlay size walk: "
+                                f"{relative_entry}"
+                            ) from exc
                         if (
-                            (entry_stat.st_dev, entry_stat.st_ino)
+                            (current_entry.st_dev, current_entry.st_ino)
                             != (opened_entry.st_dev, opened_entry.st_ino)
                         ):
                             raise ValueError(
