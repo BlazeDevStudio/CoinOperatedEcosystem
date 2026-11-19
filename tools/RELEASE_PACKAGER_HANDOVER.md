@@ -1671,3 +1671,27 @@ These are hosted synthetic CI and compile artifacts only. Artifact ZIP digests a
 **Next owners:** PHX-QA independently reviews the exact pinned toolchain/workflow and the unsigned action provenance if any future pin changes; PHX-HARDWARE owns firmware compatibility changes; PHX-INFRA provides the approved disposable Bubblewrap-capable runner; COE integration owner unblocks #26 and completes file/license/test provenance; PHX-MASTER reconciles #35/#44 stack and current control-plane refs; registry custodian restores authorized v11 access.
 
 **Disposition:** PR #35 remains OPEN / DRAFT / UNMERGED. No merge, signing, tag, publication, hardware flashing, financial migration or customer deployment. **PRODUCTION NO-GO.**
+
+## PHX-RELEASE UTC05 — profile input no-follow admission
+
+**Status at source/test head `cf80b938bdc6ab06bb84a3a129b66a634222916d`: release-owned fix committed; shared validation PASS; ESP8266 PASS; ESP32 still running at this checkpoint; mandatory sandbox remains blocked.**
+
+**Scope:** `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, this handover only. Existing COE child PR #35 remains OPEN / DRAFT / UNMERGED on `phoenix/release-build-script-publication-safety-20261117`, base parent #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed.
+
+### Defect and bounded correction
+
+`load_profile()` previously used path-based `os.path.isfile()` followed by ordinary `open()`. It followed a final profile-file symlink and a symlinked parent directory. A profile path could therefore resolve to content outside the intended regular profile file after the existence check.
+
+- Test-first commit [`c971ffd5`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c971ffd5a1428dcf7cd6ec021466a706477a874a) added final-file symlink and parent-directory symlink negative cases plus a regular custom-JSON-path positive control.
+- Expected RED [#44464576853](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464576853): validation failed exactly at the two new symlink assertions (`ValueError not raised`); 115 tests ran, 2 intentional skips, 2 expected failures. The regular custom JSON path control passed.
+- Case-collision [#44464576846](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464576846): SUCCESS.
+- Source correction [`cf80b938`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/cf80b938bdc6ab06bb84a3a129b66a634222916d): preserve profile-ID and explicit custom-JSON-path behavior, open via the existing descriptor-walk helper with `O_NOFOLLOW`, reject symlinked parent components, and require the opened descriptor to identify a regular file before JSON parsing.
+- Source/test-head shared run [#44464722316](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722316): validation job `135359632933` SUCCESS; 115 packaging/tool tests PASS with 2 intentional skips; 18 shared-contract checks PASS; 10 appliance profiles PASS. Both new symlink regressions and the regular custom-path control passed. ESP8266 job `135359719732` SUCCESS. ESP32 job `135359719719` was still IN_PROGRESS at handover preparation and is not credited as passed.
+- Source/test-head case-collision [#44464722413](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722413): SUCCESS.
+- Mandatory sandbox [#44464722305](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722305): FAILED CLOSED because Bubblewrap is not installed (exit 125) after 14/14 host-preflight tests passed. Namespace setup and sandbox-dependent packaging regressions were SKIPPED, not passed. No privileged installation or unsandboxed fallback was used.
+
+### Limits and review
+
+This is release-input path integrity evidence from hosted CI. It does not establish ImageBuilder sandbox acceptance, real OpenWrt binaries, signing, router behavior or physical acceptance. Explicit custom JSON paths remain supported when they resolve to regular files without symlink components; symlinked profile paths are intentionally rejected.
+
+**Next:** reconcile terminal ESP32 status and verify the final documentation-head Actions runs; PHX-QA independently review the no-follow profile loader and its input compatibility. PHX-INFRA still owns the approved disposable Bubblewrap-capable runner. Keep #35 draft/unmerged and production NO-GO.
