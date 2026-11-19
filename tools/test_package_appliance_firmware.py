@@ -462,6 +462,45 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "actual overlay usr/sbin utilities must remain executable",
         )
 
+    def test_calculate_overlay_size_rejects_file_replaced_with_symlink_after_classification(self):
+        staging_dir = os.path.join(self.temp_dir, "overlay-size-race")
+        os.makedirs(staging_dir)
+
+        staged_file = os.path.join(staging_dir, "payload.bin")
+        external_file = os.path.join(self.temp_dir, "operator-owned-payload.bin")
+        with open(staged_file, "wb") as fp:
+            fp.write(b"x")
+        with open(external_file, "wb") as fp:
+            fp.write(b"KEEP-OPERATOR-OWNED-CONTENT" * 256)
+
+        swapped = {"value": False}
+        original_open = os.open
+
+        def open_then_swap_final_file(path, flags, mode=0o777, *, dir_fd=None):
+            if (
+                os.fspath(path) == "payload.bin"
+                and dir_fd is not None
+                and not swapped["value"]
+            ):
+                os.unlink(staged_file)
+                os.symlink(external_file, staged_file)
+                swapped["value"] = True
+            return original_open(path, flags, mode, dir_fd=dir_fd)
+
+        # The size walk must pin the parent and open the same regular inode
+        # without following a symlink inserted after the entry was classified.
+        with mock.patch.object(packager.os, "open", side_effect=open_then_swap_final_file):
+            with self.assertRaisesRegex(ValueError, "symlink|changed"):
+                packager.calculate_overlay_size(staging_dir)
+
+        self.assertTrue(swapped["value"], "race fixture did not reach the size-read boundary")
+        self.assertTrue(os.path.islink(staged_file))
+        with open(external_file, "rb") as fp:
+            self.assertEqual(
+                fp.read(),
+                b"KEEP-OPERATOR-OWNED-CONTENT" * 256,
+            )
+
     def test_flash_overflow_guard(self):
         staging_dest = os.path.join(self.temp_dir, "staging_overflow")
         p = load_profile("ew1200g-pro")
