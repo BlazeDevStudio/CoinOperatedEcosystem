@@ -168,11 +168,10 @@ def calculate_overlay_size(staging_dir: str) -> int:
         or os.open not in getattr(os, "supports_dir_fd", set())
         or os.stat not in getattr(os, "supports_dir_fd", set())
         or os.stat not in getattr(os, "supports_follow_symlinks", set())
-        or os.listdir not in getattr(os, "supports_fd", set())
     ):
         raise OSError(
             "Safe overlay size calculation requires POSIX dir_fd, O_DIRECTORY, "
-            "O_NOFOLLOW and fd-based directory listing support"
+            "O_NOFOLLOW and descriptor-based directory listing support"
         )
 
     staging_root = os.path.abspath(staging_dir)
