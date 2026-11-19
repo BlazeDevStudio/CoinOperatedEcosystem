@@ -1,3 +1,49 @@
+## PHX-RELEASE UTC21 — reject hard-linked firmware output admission (2026-11-19)
+
+**Disposition:** one release-owned packaging admission defect reproduced test-first and fixed on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Control plane, ownership and exact heads
+
+- Read the live BLAZE-COMMS/1 control plane #172, cleanup-first issue #266, the owner's `06_RELEASE_ENGINEERING(1).txt`, and MASTER PR #288.
+- MASTER #288 exact head: `e0e499b4fd8f1e6ae3b15c7a22e3fa12559daf10`; route manifest blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`. PHX-RELEASE owns Phoenix-specific build/signing workflow files, packaging and manifests, not every workflow or other roles' runtime source.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; #291 exact head `3bffd9d14de42abf2c2f6079632e0348127ad025`. #291 has 16 changed paths including CORE/PISONET-owned files; its latest commit changes only CORE handover paths. RELEASE did not edit or append to that mixed-owner branch.
+- COE #26 exact head `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent #31 exact head `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; active release child #35 branch `phoenix/release-build-script-publication-safety-20261117`.
+- COE #35 base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; source/test head `6f007699a513e46d6d45bfca6693d91c02c03b5e`; docs head follows this entry.
+- COE #44 ULA installer draft remains separate at `582fd5d5e83e36b36546ac28534740298ba94af4`, based on older #35 head `1a5be48d2845781b0b07bad39a37f8440cea4d4f`. It was not rebased or modified; ULA provisioning is a shared hardware/networking contract requiring CORE/MASTER approval.
+
+### Confirmed defect and correction
+
+The generated ImageBuilder wrapper already rejected stale firmware images, symlink entries, empty images and symlinked output ancestors. It still admitted a regular `.bin` or `.img.gz` file with `st_nlink > 1`. A Makefile could hard-link a cached file outside `bin/targets/<target>/<subtarget>` into the expected output tree; the existing `find -type f` checksum scan then wrote a release manifest for the aliased payload.
+
+New test `test_generated_wrapper_denies_hardlinked_firmware_output` creates a cache file inside the disposable ImageBuilder tree, hard-links it into the target output directory, asserts identical inode / link count 2, preserves the cache bytes, and requires no `RELEASE_MANIFEST.sha256`.
+
+- Test-first commit: [`8cd598ce`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8cd598ce48c299ecdf4195e05b115718fa29fe7d).
+- Expected RED: [PR validation #44617273391](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44617273391), job `135889225770`: 118 tests, 2 skips, exactly one failure in the new test. The wrapper returned 0 and wrote `RELEASE_MANIFEST.sha256` for `hardlinked.bin`; the new assertion correctly exposed the admission gap.
+- Source correction: [`6f007699`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6f007699a513e46d6d45bfca6693d91c02c03b5e). The wrapper now rejects firmware candidates with `find ... -links +1` before empty-file validation and checksum-manifest creation.
+
+### Exact-source Actions at `6f007699`
+
+- PR [hardware/shared validation #44617526950](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44617526950), validation job `135890107114`: packaging/tool suite **118 tests PASS, 2 intentional skips**. The next all-profile staging step **FAILED BY DESIGN**: all 10 profiles were rejected because the approved site-scoped RFC 4193 ULA /48 authority remains unset. ESP8266 and ESP32 compile jobs were skipped. Overall workflow is **FAILURE**, not green.
+- Push [hardware/shared validation #44617513890](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44617513890), validation job `135890063056`: same exact-source result — 118 tests PASS / 2 skips; 10/10 profiles fail closed at the missing ULA authority; board compile jobs skipped.
+- PR [ImageBuilder sandbox #44617527410](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44617527410) and push [#44617513983](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44617513983): host preflight **14/14 PASS**; Bubblewrap is not installed (exit 125); namespace checks and mandatory sandbox packaging regressions were skipped. No privileged install or unsandboxed fallback was used.
+- Case-collision guard [#44617527377](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44617527377): **PASS**.
+
+No firmware artifact was produced. No profile was admitted, no board compilation was run, and no signing or publication occurred.
+
+### Remaining blockers and next owners
+
+1. PHX-CORE / COE integration: define the durable site-scoped ULA authority and approved source; do not substitute the synthetic test prefix.
+2. PHX-MASTER: approve the ULA provisioning interface and decide how the older-base #44 draft is reconciled with current #35.
+3. PHX-QA: independently review the hard-link admission regression and exact source SHA.
+4. PHX-INFRA: provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged user namespaces.
+5. PHX-RELEASE: continue from the docs head after this entry; do not repeat the hard-link test/fix.
+
+The canonical private Drive project registry v11 was not available through the authorized Library search surface; no older snapshot was substituted and no private contents were copied to GitHub.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No PR was merged, no release was tagged/published, and no signing, hardware flashing, payment migration or customer deployment occurred. Physical 150-power-cut and 30-device/24-hour acceptance remain **NOT TESTED**. **PRODUCTION NO-GO**.
+
+---
+
 ## PHX-RELEASE UTC18 — preserve the unconfigured production site-ULA default
 
 **Disposition:** one release-owned regression guard added on the existing COE #35 draft branch. No production prefix, network configuration, profile schema, ImageBuilder behavior, or shared interface was changed. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
