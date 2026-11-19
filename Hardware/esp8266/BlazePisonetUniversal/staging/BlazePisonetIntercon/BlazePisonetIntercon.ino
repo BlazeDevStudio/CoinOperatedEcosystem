@@ -421,6 +421,22 @@ input,select{font:inherit;color:var(--ink);border:1px solid #a9bac9;border-radiu
 #toast{display:none;padding:12px;margin-bottom:14px;background:var(--navy);color:white;border-radius:5px}#toast.show{display:block}
 table{width:100%;border-collapse:collapse;font-size:13px}td{padding:8px 4px;border-bottom:1px solid var(--line)}td:first-child{color:var(--muted)}.buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
 footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
+.pinmap-shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,.7fr) minmax(0,1fr);gap:8px;margin-top:12px}
+.pinmap-rail{display:flex;flex-direction:column;gap:6px}
+.pinmap-pin{background:#f1f5f8;border:1px solid #becbd6;border-radius:5px;padding:7px;min-height:60px;overflow-wrap:anywhere}
+.pinmap-pin.assigned{background:#e0edf5;border-color:#185a83}
+.pinmap-pin.reserved{background:#f6f1e6;border-color:#dbc28a}
+.pinmap-pin strong{display:block;font-size:12px;color:var(--navy)}
+.pinmap-pin span{display:block;font-size:11px;color:var(--muted)}
+.pinmap-pin em{display:block;font-size:11px;color:var(--ink);font-style:normal;font-weight:750}
+.pinmap-core{border:2px solid #273b53;border-radius:7px;background:#e6edf3;text-align:center;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:10px 4px;min-width:0}
+.pinmap-core strong{font-size:13px;color:var(--navy)}.pinmap-core span{font-size:11px;color:#344f67}
+.pinmap-usb{border:1px solid #6b8498;padding:5px 7px;border-radius:3px;background:#f8fafc;margin-top:12px;font-size:11px;font-weight:700}
+.pinmap-validation{margin-top:12px;padding:10px;font-size:13px;border:1px solid #9abdb0;background:#edf8f1;border-radius:5px}
+.pinmap-validation.invalid{border-color:#cb8181;background:#fff0f0;color:#8d2525}
+@media(max-width:560px){.pinmap-shell{grid-template-columns:minmax(0,1fr) minmax(78px,.65fr) minmax(0,1fr);gap:4px}
+.pinmap-pin{padding:5px;min-height:58px}.pinmap-core{padding:5px 2px}.pinmap-core strong{font-size:11px}
+.pinmap-core span,.pinmap-usb{font-size:10px}}
 @media(max-width:680px){.grid,.three,.fields{grid-template-columns:1fr}.fields.three{grid-template-columns:repeat(3,minmax(0,1fr))}.card{padding:15px}.nav button{font-size:12px;padding:9px 5px}.buttons button{flex:1}}
 </style></head><body>
 <header><h1>BLAZE PISONET</h1><p>ESP8266 Station Controller · Local access point · V1.6 INTERCON Stage 1 · CS &amp; power control</p></header>
@@ -513,13 +529,22 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  </div><div class="checks"><label><input name="coinActiveLow" type="checkbox">Coin active-low</label>
  <label><input name="relayActiveLow" type="checkbox">Relay 1 active-low</label><label><input name="relay2ActiveLow" type="checkbox">Relay 2 active-low</label>
  <label><input name="buzzerActiveLow" type="checkbox">Buzzer active-low</label></div>
- <p class="help">D7/GPIO13 is reserved for CS ENABLE. GPIO6–11 are reserved for flash. GPIO0/2/15 have boot restrictions. GPIO14 is reserved for the buzzer. Changing pins on a live station can interrupt equipment; only save when idle.</p></div>
+ <p class="help">D7/GPIO13 is reserved for CS ENABLE. GPIO6–11 are reserved for flash. GPIO0/2/15 have boot restrictions. GPIO14 is reserved for the buzzer. Changing pins on a live station can interrupt equipment; only save when idle.</p></div><div class="card"><h2>Live NodeMCU pinout · Settings preview</h2>
+<p class="note">Change any of the five configurable GPIO fields above; labels update immediately before saving. This is a <strong>functional D-label/GPIO diagram</strong>, not verified physical header positions for your custom adapter board. Check printed D-labels before wiring.</p>
+<div class="pinmap-shell" aria-label="Current ESP8266 functional pin assignments">
+ <div id="pinmap-left" class="pinmap-rail"></div>
+ <div class="pinmap-core"><strong>NodeMCU</strong><span>ESP8266<br>Functional<br>GPIO map</span><div class="pinmap-usb">USB</div></div>
+ <div id="pinmap-right" class="pinmap-rail"></div>
+</div>
+<div id="pinValidation" class="pinmap-validation" role="status" aria-live="polite">Loading saved assignments…</div>
+<p class="help">Default: Relay 1 D0, CLK D1, DIO D2, Coin D3, Buzzer D5 fixed, PWR_SW D6, CS D7 fixed. D4/D8 are boot-sensitive. RX/TX are reserved. GPIO6–11 are used by ESP8266 flash. The picture does not physically change wires.</p></div>
  <div class="card"><h2>INTERCON · wireless stations</h2>
  <div class="fields"><label>Operating role<select name="interconRole"><option value="0">Standard · local coin timer</option><option value="1">Master · authenticated coin forwarding (LAB)</option><option value="2">Slave · journal-backed remote credits (LAB)</option></select></label>
  <label>STA Wi-Fi SSID<input name="staSsid" maxlength="32" placeholder="Shop router SSID"></label>
  <label>STA password (blank = unchanged)<input name="staPassword" type="password" maxlength="63" placeholder="Router password"></label></div>
  <div class="checks"><label><input name="staEnabled" type="checkbox">Enable STA while retaining local AP</label></div>
- <p class="help">Both AP and router STA remain accessible on the local Wi-Fi. Standard remains independent. In Master mode D7 can power the external coin-slot ENABLE circuit only when the paired Slave is authenticated, the flash journal is healthy and no credit awaits ACK. Slave accepts authenticated CRED only and restores its paid balance from the same durable journal used for deduplication. This is still a laboratory-only paid-payment feature until electrical/power-cut tests pass.</p></div>
+ <p class="help">Both AP and router STA remain accessible on the local Wi-Fi. Standard remains independent. In Master mode D7 can power the external coin-slot ENABLE circuit only when the paired Slave is authenticated, the flash journal is healthy and no credit awaits ACK. Slave accepts authenticated CRED only and restores its paid balance from the same durable journal used for deduplication. This is still a laboratory-only paid-payment feature until electrical/power-cut tests pass.</p>
+<div id="roleSwitchPolicy" class="pinmap-validation" role="status">Changing roles requires an idle controller with no existing INTERCON journal. Payment history must never be erased by switching modes.</div></div>
  <div class="card"><h2>Wi-Fi and administrator</h2><div class="fields"><label>Wi-Fi AP name<input name="apName" maxlength="32" required></label>
  <label>New AP password (blank = unchanged)<input name="apPassword" type="password" maxlength="63" placeholder="At least 8 characters"></label>
  <label>New admin password (blank = unchanged)<input name="adminPassword" type="password" minlength="10" maxlength="32" placeholder="10–32 characters"></label></div>
@@ -562,13 +587,82 @@ document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',(
 async function request(path,data){const options={credentials:'same-origin',cache:'no-store'};if(data){options.method='POST';options.body=data;options.headers={'X-Blaze-Action':'1'}}
  const r=await fetch(path,options);let txt=await r.text();if(!r.ok)throw new Error(txt||('HTTP '+r.status));try{return JSON.parse(txt)}catch(e){return txt}}
 function put(k,v){let e=$(k);if(e)e.textContent=v}
+
+// Browser-only preview: policy intentionally mirrors firmware pinSetIsUnique.
+const pinmapFunctions=[['coinPin','Coin here'],['relayPin','Relay 1 here'],['relay2Pin','PWR_SW here'],['displayClk','CLK here'],['displayDio','DIO here'],['buzzerPin','Buzzer here (fixed)'],['csPin','CS here (fixed)']];
+const pinmapPads=[['D0',16],['D1',5],['D2',4],['D3',0],['D4',2],['D5',14],['D6',12],['D7',13],['D8',15],['RX',3],['TX',1]];
+function pinmapValidate(map){
+ const errors=[],used={};
+ for(const [name,label] of pinmapFunctions){
+  const pin=map[name];
+  if(!Number.isInteger(pin)||pin<0||pin>16){errors.push(label+': GPIO 0–16 required');continue}
+  if([1,3,6,7,8,9,10,11].includes(pin))errors.push(label+': reserved UART/flash GPIO');
+  (used[pin]||(used[pin]=[])).push(label);
+ }
+ for(const [pin,labels] of Object.entries(used))
+  if(labels.length>1)errors.push('GPIO'+pin+' conflict: '+labels.join(' / '));
+ if([2,15,16].includes(map.coinPin))errors.push('Coin input cannot use GPIO2, 15 or 16');
+ for(const name of ['relayPin','relay2Pin'])
+  if([0,2,15].includes(map[name]))errors.push('Relay output cannot use boot-strap GPIO0/2/15');
+ for(const name of ['displayClk','displayDio'])
+  if([0,2,15,16].includes(map[name]))errors.push('Display cannot use GPIO0/2/15/16');
+ if(map.buzzerPin!==14)errors.push('Buzzer fixed to D5/GPIO14');
+ if(map.csPin!==13)errors.push('CS fixed to D7/GPIO13');
+ return errors;
+}
+function pinmapReadForm(){
+ const f=$('settingsForm'),map={buzzerPin:14,csPin:13};
+ for(const name of ['coinPin','relayPin','relay2Pin','displayClk','displayDio']){
+  const v=f.elements[name].value;
+  map[name]=v.trim()===''?NaN:Number(v);
+ }
+ return map;
+}
+function updatePinout(){
+ const map=pinmapReadForm(),used={};
+ for(const [name,label] of pinmapFunctions)
+  if(Number.isInteger(map[name]))(used[map[name]]||(used[map[name]]=[])).push(label);
+ const left=$('pinmap-left'),right=$('pinmap-right');
+ left.textContent='';right.textContent='';
+ pinmapPads.forEach(([board,pin],i)=>{
+  const roles=used[pin]||[],item=document.createElement('div');
+  const reserved=[0,2,15,1,3].includes(pin);
+  item.className='pinmap-pin'+(roles.length?' assigned':'')+(reserved?' reserved':'');
+  const label=document.createElement('strong');label.textContent=board+' · GPIO'+pin;
+  const purpose=document.createElement(roles.length?'em':'span');
+  purpose.textContent=roles.length?roles.join(' / '):([1,3].includes(pin)?'Serial reserved':reserved?'Boot-sensitive':'Unassigned');
+  item.appendChild(label);item.appendChild(purpose);
+  (i<5?left:right).appendChild(item);
+ });
+ const errors=pinmapValidate(map),target=$('pinValidation');
+ target.className='pinmap-validation'+(errors.length?' invalid':'');
+ target.textContent=errors.length?'Cannot save: '+errors.join('; '):
+  'Map passes firmware GPIO rules. Preview only: verify real wiring before applying.';
+ const submit=$('settingsForm').querySelector('button[type=submit]');
+ if(submit)submit.disabled=errors.length>0;
+ return errors;
+}
+function updateRolePolicy(){
+ if(!lastStatus)return;
+ const f=$('settingsForm'),panel=$('roleSwitchPolicy');
+ if(!panel)return;
+ const changed=Number(f.elements.interconRole.value)!==Number(lastStatus.interconRole);
+ const blocked=!!lastStatus.roleSwitchLocked;
+ const balance=Number(lastStatus.remainingSeconds)>0;
+ panel.className='pinmap-validation'+(changed&&(blocked||balance)?' invalid':'');
+ panel.textContent=blocked?
+ 'Role switch LOCKED: a paid-event journal exists. Reconcile and migrate history separately; do not reset it to change modes.':
+ balance?'Finish or reconcile remaining paid time before changing modes.':
+ 'No journal detected: idle role changes are permitted; reboot and pair/provision again for Master/Slave.';
+}
+
 function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole','staSsid','apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness','idleTriggerSeconds','shutdownGraceSeconds','pwrPulseMilliseconds'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
- for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k]}
+ for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k];updatePinout();updateRolePolicy()}
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
  put('roleLabel',['STANDARD','MASTER · LAB','SLAVE · LAB'][o.interconRole]||'UNKNOWN');
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
  put('creditPath',o.creditPath||'Unavailable');put('masterPending',o.masterPending?'Pending · retrying':'No');
- put('orphanPulses',o.unresolvedPulses||0);put('armGuardState',o.masterArmGuard||'Unavailable');
+ put('orphanPulses',o.unresolvedPulses||0);put('armGuardState',o.masterArmGuard||'Unavailable');updateRolePolicy();
  put('journalState',o.journalState+(o.journalGeneration?' · gen '+o.journalGeneration:''));
  put('journalSettings',o.journalState+(o.journalGeneration?' · generation '+o.journalGeneration:''));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
@@ -618,7 +712,26 @@ async function act(name){try{await request('/action',new URLSearchParams({name})
 function confirmAction(a,t){if(confirm(t))act(a)}
 async function testDisplay(mode){try{await request('/display/test',new URLSearchParams({mode}));msg('Display test started. Observe the module.');await poll()}catch(e){msg(e.message)}}
 async function restoreDisplay(){if(!confirm('Restore display pins to GPIO5 (CLK) and GPIO4 (DIO)?'))return;try{await request('/display/default',new URLSearchParams({confirm:'yes'}));msg('Pins restored. Watch the brightness and welcome test.');window.formLoaded=false;await poll()}catch(e){msg(e.message)}}
-$('settingsForm').addEventListener('submit',async e=>{e.preventDefault();try{let f=new FormData(e.target);f.set('save','1');await request('/settings',f);msg('Saved. Network/role changes require restart.');window.formLoaded=false;await poll()}catch(err){msg('Settings not saved: '+err.message)}});
+$('settingsForm').addEventListener('input',e=>{
+ if(['coinPin','relayPin','relay2Pin','displayClk','displayDio'].includes(e.target.name))updatePinout();
+ if(e.target.name==='interconRole')updateRolePolicy();
+});
+$('settingsForm').addEventListener('change',e=>{if(e.target.name==='interconRole')updateRolePolicy()});
+$('settingsForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const errors=updatePinout();
+ if(errors.length){msg('Fix GPIO conflicts: '+errors.join('; '));return}
+ if(lastStatus && lastStatus.roleSwitchLocked &&
+    Number(e.target.elements.interconRole.value)!==Number(lastStatus.interconRole)){
+    msg('Cannot switch modes while a payment journal exists');return
+ }
+ try{
+   let f=new FormData(e.target);f.set('save','1');
+   await request('/settings',f);
+   msg('Saved. Network/role changes require restart.');
+   window.formLoaded=false;await poll();
+ }catch(err){msg('Settings not saved: '+err.message)}
+});
 async function initializePeerJournal(){
  if(!confirm('Initialize a NEW two-slot journal only on this idle LAB controller? This does not activate coin forwarding and cannot overwrite previous records.'))return;
  try{
@@ -1901,6 +2014,8 @@ void sendStatus() {
   s += F(",\"unresolvedPulses\":");s+=interconUnresolvedPulseCount;
   s += F(",\"masterArmGuard\":");s+=jsonQuote(interconArmGuardStatus());
   s += F(",\"coinGateActive\":");s+=(interconLocalCoinsAllowed()?"true":"false");
+  s += F(",\"roleSwitchLocked\":");
+  s+=(interconJournalFsReady && (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1))?"true":"false");
   s += F(",\"creditPath\":");
   if(interconPref.role==INTERCON_STANDARD)s+=jsonQuote("Local Standard");
   else if(interconPref.role==INTERCON_MASTER)
