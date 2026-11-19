@@ -539,11 +539,11 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
 <div id="pinValidation" class="pinmap-validation" role="status" aria-live="polite">Loading saved assignments…</div>
 <p class="help">Default: Relay 1 D0, CLK D1, DIO D2, Coin D3, Buzzer D5 fixed, PWR_SW D6, CS D7 fixed. D4/D8 are boot-sensitive. RX/TX are reserved. GPIO6–11 are used by ESP8266 flash. The picture does not physically change wires.</p></div>
  <div class="card"><h2>INTERCON · wireless stations</h2>
- <div class="fields"><label>Operating role<select name="interconRole"><option value="0">Standard · local coin timer</option><option value="1">Master · authenticated coin forwarding (LAB)</option><option value="2">Slave · journal-backed remote credits (LAB)</option></select></label>
+ <div class="fields"><label>Operating role<select name="interconRole"><option value="0">Standard · local coin timer</option><option value="1">Master · authenticated coin forwarding (LAB)</option><option value="2">Slave · journal-backed remote credits (LAB)</option><option value="3">Remote CS · PisoWiFi coin acceptor (LAB)</option></select></label>
  <label>STA Wi-Fi SSID<input name="staSsid" maxlength="32" placeholder="Shop router SSID"></label>
  <label>STA password (blank = unchanged)<input name="staPassword" type="password" maxlength="63" placeholder="Router password"></label></div>
  <div class="checks"><label><input name="staEnabled" type="checkbox">Enable STA while retaining local AP</label></div>
- <p class="help">Both AP and router STA remain accessible on the local Wi-Fi. Standard remains independent. In Master mode D7 can power the external coin-slot ENABLE circuit only when the paired Slave is authenticated, the flash journal is healthy and no credit awaits ACK. Slave accepts authenticated CRED only and restores its paid balance from the same durable journal used for deduplication. This is still a laboratory-only paid-payment feature until electrical/power-cut tests pass.</p>
+ <p class="help">Both AP and router STA remain accessible on the local Wi-Fi. Standard remains independent. In Master mode D7 can power the external coin-slot ENABLE circuit only when the paired Slave is authenticated, the flash journal is healthy and no credit awaits ACK. Slave accepts authenticated CRED only and restores its paid balance from the same durable journal used for deduplication. Remote CS assigns coin intake only: the PisoWiFi backend owns voucher sessions, rates and hotspot access. Signed controller OPEN closes automatically after 5–60 seconds. LAB only until physical tests pass.</p>
 <div id="roleSwitchPolicy" class="pinmap-validation" role="status">Changing roles requires an idle controller with no existing INTERCON journal. Payment history must never be erased by switching modes.</div></div>
  <div class="card"><h2>Wi-Fi and administrator</h2><div class="fields"><label>Wi-Fi AP name<input name="apName" maxlength="32" required></label>
  <label>New AP password (blank = unchanged)<input name="apPassword" type="password" maxlength="63" placeholder="At least 8 characters"></label>
@@ -551,8 +551,8 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <p class="help">Changing Wi-Fi AP name or password requires restarting the ESP8266. Change the initial admin password before putting the station in service.</p></div>
  <button type="submit" class="primary wide">Save settings</button></form>
  <form id="peerPairForm" autocomplete="off"><div class="card">
- <h2>INTERCON · authenticated peer</h2>
- <p class="note">Pair through this ESP8266's own WPA2 AP at 192.168.4.1. Use the same independently generated 32-byte secret on the two chosen boards. Change default AP and admin passwords first. Each board needs the other board's 8-hex-digit chip ID and router-assigned STA IP address. No payment commands are enabled in this build.</p>
+ <h2>INTERCON · authenticated peer or PisoWiFi router</h2>
+ <p class="note">Pair through this ESP8266's own WPA2 AP at 192.168.4.1. Use the same independently generated 32-byte secret on the two chosen boards. Change default AP and admin passwords first. Each board needs the other board's 8-hex-digit chip ID and router-assigned STA IP address. In Remote CS, configure the PicoWiFi backend as the peer using a nonzero 8-hex controller ID (not this ESP chip ID), its LAN IP and the same 32-byte shared key. Do not expose the controller endpoint to the internet.</p>
  <div class="fields">
  <label>My chip ID (read-only)<input id="localChip" readonly value="Loading…"></label>
  <label>Peer chip ID (8 HEX digits)<input name="peerChip" maxlength="8" pattern="[0-9A-Fa-f]{8}" required placeholder="00A1B2C3"></label>
@@ -561,13 +561,22 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  </div>
  <p class="help">The key is never returned in status JSON. For initial provisioning use a trusted random 32-byte key and enter it on both stations. Do not reuse a shop-wide key. AP traffic is WPA2 protected but the admin portal itself is HTTP, not HTTPS.</p>
  <div class="buttons"><button type="button" onclick="generatePeerKey()">Generate fresh pairing key</button><button type="submit" class="primary">Save peer pairing</button></div>
- <p class="help">After generating a key, copy it to the other paired controller. Do not generate a different key on that controller. Once a journal exists, re-pairing is blocked until its history is reconciled.</p>
+ <p class="help">Copy the exact key to the paired ESP or authorized PisoWiFi controller. Do not generate a different key there. Once a journal exists, re-pairing is blocked until its history is reconciled.</p>
  </div></form>
  <div class="card"><h2>INTERCON · flash journal</h2>
  <p class="note">Stage 3 storage laboratory. This writes an initial pair-bound, two-slot journal on an idle Master or Slave. It does not transfer credit, affect the local rental timer, or enable physical coin acceptance. Initialization is one-time only and cannot erase an existing or damaged journal.</p>
  <div class="row"><strong>Journal condition</strong><span id="journalSettings">Checking…</span></div>
  <div class="buttons"><button type="button" onclick="initializePeerJournal()">Initialize empty journal (lab only)</button></div>
- </div></section>
+ </div>
+<div class="card"><h2>PisoWiFi Remote CS · lab controls</h2>
+<p class="note">This NodeMCU controls D7 and records physical coin pulses. PisoWiFi owns the session, amount and internet credit. It cannot auto-credit the local timer. After every ESP reboot the acceptor stays locked until physical reconciliation.</p>
+<div class="row"><strong>Remote journal</strong><span id="remoteJournalStatus">Inactive</span></div>
+<div class="row"><strong>Authorized window</strong><span id="remoteWindowStatus">Closed</span></div>
+<div class="row"><strong>Router receipt</strong><span id="remoteEventStatus">None</span></div>
+<div class="buttons"><button type="button" onclick="initializeRemoteJournal()">Initialize new Remote CS journal</button>
+<button type="button" onclick="reconcileRemote()">Confirm physical coin reconciliation (this boot)</button></div>
+<p class="help">Save Remote CS role and restart, configure STA, disable CS, pair the trusted router ID/IP/key through this AP, initialize a NEW journal, inspect/reconcile coins, then enable CS. A signed OPEN from the router is still required to open D7. LAB only.</p>
+</div></section>
 <section id="sales" class="panel"><div class="grid three"><div class="card"><div class="eyebrow" id="salesHeading">All accepted pulses</div><div class="metric" id="saleAll">0</div></div>
  <div class="card"><div class="eyebrow">Legacy daily bucket</div><div class="metric" id="saleDay">0</div></div>
  <div class="card"><div class="eyebrow">Legacy monthly bucket</div><div class="metric" id="saleMonth">0</div></div></div>
@@ -659,10 +668,13 @@ function updateRolePolicy(){
 function populateForm(o){let f=$('settingsForm');for(const k of ['interconRole','staSsid','apName','coinPin','relayPin','relay2Pin','displayClk','displayDio','addMinutes','addSeconds','warningSeconds','speedPct','chimeDurationSeconds','brightness','idleTriggerSeconds','shutdownGraceSeconds','pwrPulseMilliseconds'])if(f.elements[k]&&o[k]!==undefined)f.elements[k].value=o[k];
  for(const k of ['staEnabled','coinActiveLow','relayActiveLow','relay2ActiveLow','buzzerActiveLow','csActiveHigh'])if(f.elements[k])f.elements[k].checked=!!o[k];updatePinout();updateRolePolicy()}
 function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?'PAID SESSION ACTIVE':(o.remainingSeconds>0?'SAVED TIME PAUSED · ADD CREDIT TO RESUME':'IDLE / AWAITING COIN'));put('statusline','Uptime '+o.uptimeSeconds+'s · Heap '+o.heap+' bytes · AP '+o.ip+' · STA '+(o.staIp||'disconnected'));
- put('roleLabel',['STANDARD','MASTER · LAB','SLAVE · LAB'][o.interconRole]||'UNKNOWN');
- put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
+ put('roleLabel',['STANDARD','MASTER · LAB','SLAVE · LAB','REMOTE CS · PISOWIFI LAB'][o.interconRole]||'UNKNOWN');
+ put('peerProof',o.peerPaired?(o.interconRole===3?'PisoWiFi controller configured · '+o.peerIp:(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof')):'Not paired');
  put('creditPath',o.creditPath||'Unavailable');put('masterPending',o.masterPending?'Pending · retrying':'No');
  put('orphanPulses',o.unresolvedPulses||0);put('armGuardState',o.masterArmGuard||'Unavailable');updateRolePolicy();
+ put('remoteJournalStatus',o.remoteJournal||'inactive');
+ put('remoteWindowStatus',o.remoteWindow?'OPEN · '+(o.remoteWindowSeconds||0)+'s':'CLOSED');
+ put('remoteEventStatus',o.remotePending?'PENDING · '+o.remotePulses+' pulses · event '+o.remoteEvent:'None');
  put('journalState',o.journalState+(o.journalGeneration?' · gen '+o.journalGeneration:''));
  put('journalSettings',o.journalState+(o.journalGeneration?' · generation '+o.journalGeneration:''));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
@@ -674,8 +686,8 @@ function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?
  put('csState',o.coinGateActive?'ACCEPTING':'CLOSED · '+(o.csEnabled?'requested ON':'requested OFF'));$('csState').className='state '+(o.coinGateActive?'on':'off');
  put('pcState',o.pcExpectedOn?'EXPECTED ON':'EXPECTED OFF');put('pcGrace',o.shutdownPending?o.shutdownSecondsLeft+'s until pulse':'Not pending');
  put('clk','GPIO'+o.displayClk);put('dio','GPIO'+o.displayDio);put('bright',o.brightness);put('displaymode',o.displayMode);
- put('saleAll',o.interconRole===1?o.masterDurableEvents:o.interconRole===2?o.journalCreditedEvents:o.salesOverall);
- put('salesHeading',o.interconRole===1?'Durable Master events':o.interconRole===2?'Durable Slave credit receipts':'All accepted pulses');
+ put('saleAll',o.interconRole===1?o.masterDurableEvents:o.interconRole===2?o.journalCreditedEvents:o.interconRole===3?o.remoteEventCount:o.salesOverall);
+ put('salesHeading',o.interconRole===1?'Durable Master events':o.interconRole===2?'Durable Slave credit receipts':o.interconRole===3?'Durable Remote CS events (not pesos)':'All accepted pulses');
  put('saleDay',o.salesToday);put('saleMonth',o.salesMonth)}
 async function poll(){try{let o=await request('/api/status');render(o);if(!window.formLoaded){populateForm(o);window.formLoaded=true}}catch(e){put('running','Disconnected: '+e.message)}}
 // Changes the real ESP8266 timer; these are not browser-only calculations.
@@ -732,6 +744,16 @@ $('settingsForm').addEventListener('submit',async e=>{
    window.formLoaded=false;await poll();
  }catch(err){msg('Settings not saved: '+err.message)}
 });
+async function initializeRemoteJournal(){
+ if(!confirm('LAB: initialize a new empty Remote CS journal on this paired, idle, CS-OFF board?'))return;
+ try{const out=await request('/api/pisowifi/journal/initialize',new URLSearchParams({confirm:'initialize'}));msg(String(out));await poll()}
+ catch(e){msg('Remote journal refused: '+e.message)}
+}
+async function reconcileRemote(){
+ if(!confirm('LAB: D7 OFF, chute inspected, all possible unjournaled physical coins reconciled and all router receipts settled. Confirm?'))return;
+ try{const out=await request('/api/pisowifi/reconcile',new URLSearchParams({confirm:'reconciled'}));msg(String(out));await poll()}
+ catch(e){msg('Remote reconciliation refused: '+e.message)}
+}
 async function initializePeerJournal(){
  if(!confirm('Initialize a NEW two-slot journal only on this idle LAB controller? This does not activate coin forwarding and cannot overwrite previous records.'))return;
  try{
@@ -2000,14 +2022,14 @@ void sendStatus() {
     s += F("}");
   }
   s += ']';
-  s += F(",\"interconMode\":\"STAGE4.1-LAB: Master reboot quarantine, physical validation pending\"");
+  s += F(",\"interconMode\":\"STAGE5-LAB: PisoWiFi Remote CS, hardware NO-GO\"");
   s += F(",\"peerPaired\":");s+=(peerPairReady?"true":"false");
   s += F(",\"peerAuthenticated\":");s+=(peerOnline()?"true":"false");
   s += F(",\"peerChip\":");s+=peerPairReady?jsonQuote(String(peerPair.peerChip,HEX)):jsonQuote(String(""));
   s += F(",\"peerIp\":");s+=peerPairReady?jsonQuote(String(peerPair.peerIp)):jsonQuote(String(""));
   s += F(",\"localChip\":");s+=jsonQuote(String(ESP.getChipId(),HEX));
   s += F(",\"peerAuthErrors\":");s+=peerFailedAuth;
-  s += F(",\"journalState\":");s+=jsonQuote(interconJournalStatusName());
+  s += F(",\"journalState\":");s+=jsonQuote(interconPref.role==INTERCON_REMOTE?remoteJournalStatus():interconJournalStatusName());
   s += F(",\"journalGeneration\":");
   s += interconRecovered.status==blaze_journal::Status::Healthy?
        String((unsigned long)interconRecovered.snapshot.generation):String("0");
@@ -2023,12 +2045,20 @@ void sendStatus() {
   s += F(",\"masterArmGuard\":");s+=jsonQuote(interconArmGuardStatus());
   s += F(",\"coinGateActive\":");s+=(interconLocalCoinsAllowed()?"true":"false");
   s += F(",\"roleSwitchLocked\":");
-  s+=(interconJournalFsReady && (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1))?"true":"false");
+  s+=(interconJournalFsReady && (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1)||remoteJournalPresent)?"true":"false");
   s += F(",\"creditPath\":");
   if(interconPref.role==INTERCON_STANDARD)s+=jsonQuote("Local Standard");
   else if(interconPref.role==INTERCON_MASTER)
     s+=jsonQuote(interconMasterReady()?"Master READY":"Master WAITING / LOCKED");
-  else s+=jsonQuote(interconSlaveReady()?"Slave JOURNAL READY":"Slave WAITING / LOCKED");
+  else if(interconPref.role==INTERCON_SLAVE)s+=jsonQuote(interconSlaveReady()?"Slave JOURNAL READY":"Slave WAITING / LOCKED");
+  else s+=jsonQuote(remoteCsGateReady()?"PisoWiFi CS WINDOW OPEN":"PisoWiFi CS WAITING / LOCKED");
+  s += F(",\"remoteJournal\":");s+=jsonQuote(remoteJournalStatus());
+  s += F(",\"remoteWindow\":");s+=(remoteCsGateReady()?"true":"false");
+  s += F(",\"remoteWindowSeconds\":");s+=remoteCsGateReady()?String((uint32_t)(remoteWindowExpires-millis())/1000UL):String("0");
+  s += F(",\"remotePending\":");s+=(remoteRecord.pendingEvent?"true":"false");
+  s += F(",\"remoteEvent\":");s+=jsonQuote(String((unsigned long)(remoteRecord.pendingEvent&0xFFFFFFFFUL),HEX));
+  s += F(",\"remotePulses\":");s+=String((unsigned)remoteRecord.pendingPulses);
+  s += F(",\"remoteEventCount\":");s+=String((unsigned long)(remoteRecord.eventCounter&0xFFFFFFFFUL));
   s += F(",\"masterDurableEvents\":");
   s+=interconJournalHealthy()?
       String((unsigned long)interconRecovered.snapshot.master.lastIssued):String("0");
