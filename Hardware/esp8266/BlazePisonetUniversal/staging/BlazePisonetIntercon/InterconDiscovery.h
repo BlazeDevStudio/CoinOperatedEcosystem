@@ -9,7 +9,7 @@
 #include <WiFiUdp.h>
 #include <stdlib.h>
 
-enum InterconRole : uint8_t { INTERCON_STANDARD=0, INTERCON_MASTER=1, INTERCON_SLAVE=2 };
+enum InterconRole : uint8_t { INTERCON_STANDARD=0, INTERCON_MASTER=1, INTERCON_SLAVE=2, INTERCON_REMOTE=3 };
 static const uint32_t INTERCON_CFG_MAGIC=0x42494E31UL;
 static const uint16_t INTERCON_DISCOVERY_PORT=4210;
 static const uint8_t INTERCON_MAX_PEERS=12;
@@ -33,6 +33,7 @@ InterconPeer interconPeers[INTERCON_MAX_PEERS]={};
 WiFiUDP interconUdp;
 void interconSecureReceived(const char* data,int len,IPAddress remoteIp);
 bool interconMasterReady();
+bool remoteCsGateReady();
 bool interconFileSystemReady=false;
 bool interconConfigHealthy=true;
 uint32_t interconLastAdvertised=0, interconLastReconnect=0;
@@ -74,7 +75,7 @@ void loadInterconConfig(bool fsReady) {
   interconPref=candidate;
   interconPref.staSsid[32]=0;
   interconPref.staPassword[64]=0;
-  if(interconPref.magic!=INTERCON_CFG_MAGIC || interconPref.role>INTERCON_SLAVE ||
+  if(interconPref.magic!=INTERCON_CFG_MAGIC || interconPref.role>INTERCON_REMOTE ||
      interconPref.staEnabled>1 || interconPref.checksum!=interconConfigChecksum() ||
      strlen(interconPref.staSsid)>32 || strlen(interconPref.staPassword)>63) {
     interconDefaults();
@@ -108,6 +109,7 @@ bool interconLocalCoinsAllowed() {
   if(!interconConfigHealthy || !csEnabled)return false;
   if(interconPref.role==INTERCON_STANDARD)return true;
   if(interconPref.role==INTERCON_MASTER)return interconMasterReady();
+  if(interconPref.role==INTERCON_REMOTE)return remoteCsGateReady();
   return false;
 }
 uint8_t interconPeerCount() {
