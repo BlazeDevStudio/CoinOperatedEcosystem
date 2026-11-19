@@ -1,3 +1,13 @@
+## PHX-RELEASE UTC02 — sandbox identity handover correction (2026-11-19)
+
+- Active draft: [COE PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Base #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first commit: [`4329380`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/432938075871979c8a8892300135cb0eee115a3c).
+- Expected RED: shared validation [#44443563240](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44443563240) failed at the new handover-consistency assertion (108 tests ran, one expected failure, two intentional sandbox-only skips). Mandatory sandbox [#44443563538](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44443563538) also stopped at the same host-preflight test; its Bubblewrap/runtime steps were skipped.
+- Corrected the stale current-candidate description: the runner uses an unprivileged single-ID user namespace and no `sudo`/`newuidmap`/`newgidmap`; the read-only root, writable builder bind, tmpfs masks, cleared environment, and deliberately shared network are now described consistently with source.
+- This is a source-to-handover consistency correction only. It does not change sandbox behavior, provide network isolation, or establish Bubblewrap runtime acceptance. The hosted runner still lacks pre-provisioned `bwrap`; no unsandboxed fallback is permitted.
+- No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER files were changed.
+
 ## PHX-RELEASE UTC14 — ImageBuilder execution boundary (CI pending)
 
 - Active draft: PR #31, branch `phoenix/release-imagebuilder-failclosed-20261115`.
@@ -11,8 +21,8 @@
   - [#44103570308](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44103570308): unprivileged bwrap failed loopback setup (`RTM_NEWADDR`).
   - [#44103764407](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44103764407): unprivileged bwrap failed mount propagation (`Failed to make / slave: Permission denied`).
 - Current candidate implementation:
-  - `tools/run_imagebuilder_sandbox.py` starts privileged bubblewrap, blocks until `newuidmap`/`newgidmap` map namespace UID/GID 0 to the invoking runner identity, then verifies the host owner of a probe file.
-  - Root filesystem is read-only; only the disposable ImageBuilder directory is writable; `/tmp` is tmpfs; the child environment is cleared and rebuilt without runner credentials.
+  - `tools/run_imagebuilder_sandbox.py` requires a non-root caller whose effective UID/GID match the real UID/GID, finds Bubblewrap only through the trusted `/usr/bin:/bin` path, and starts it directly in an **unprivileged single-ID user namespace**. Bubblewrap maps only the invoking host UID/GID to namespace root (`--uid 0`, `--gid 0`); the runner receives the namespace child PID through `--info-fd` and verifies the host owner of its probe file before accepting a build. It does **not** invoke `sudo`, `newuidmap`, or `newgidmap`.
+  - The host root is mounted read-only. The disposable ImageBuilder directory is the only writable host bind; `/tmp`, `/home`, `/root`, `/run`, `/mnt`, `/media`, and `/srv` are overlaid with ephemeral tmpfs mounts. The child environment is cleared and rebuilt with a minimal PATH/HOME/TMPDIR and no runner credentials.
   - `--share-net` is deliberate because this hosted runner cannot configure loopback. **Network isolation is not claimed**; MASTER/QA must review this boundary.
   - The test harness routes all eight generated-wrapper executions through this helper when `PHX_REQUIRE_BWRAP=1`.
 - Current exact-head Actions: [sandbox run #44104503489](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503489) is **PENDING with no jobs returned**. No sandbox pass or ownership-preservation result is claimed. Case-collision [#44104503379](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503379) passed; shared-contract/build run [#44104503348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503348) was still in progress at handover.
