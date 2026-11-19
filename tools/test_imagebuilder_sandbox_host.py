@@ -111,7 +111,7 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         marker = "- Current candidate implementation:"
         self.assertIn(marker, handover, "release handover must retain a current implementation section")
         section = handover.split(marker, 1)[1].split("- Current exact-head Actions:", 1)[0]
-        normalized = " ".join(section.split())
+        normalized = " ".join(section.split()).replace("**", "")
         self.assertIn(
             "single-ID user namespace",
             normalized,
