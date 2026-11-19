@@ -1079,7 +1079,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                                symlinked_output_dir=False,
                                timeout_seconds=60,
                                sleep_seconds=None,
-                               timeout_marker=None):
+                               timeout_marker=None,
+                               hardlinked_image=False):
         """Execute a generated wrapper against a disposable local Makefile."""
         profile = load_profile("gl-mt1300")
         stage_absolute = os.path.join(self.temp_dir, "staging with spaces")
@@ -1090,6 +1091,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         fake_builder = os.path.join(self.temp_dir, "fake-imagebuilder")
         os.makedirs(fake_builder, exist_ok=True)
+        if hardlinked_image:
+            cache_dir = os.path.join(fake_builder, "cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(os.path.join(cache_dir, "prior-image.bin"), "wb") as fp:
+                fp.write(b"STALE-CACHED-IMAGE-NOT-CURRENT")
         if preexisting_image_symlink:
             image_dir = os.path.join(fake_builder, "bin", "targets", "ramips", "mt7621")
             os.makedirs(image_dir, exist_ok=True)
@@ -1106,6 +1112,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 fp.write(b"KEEP-OPERATOR-DIRECTORY")
             os.symlink(external_dir, os.path.join(image_parent, "mt7621"))
         recipe = 'image:\n\t@test -d "$(FILES)"\n'
+        if hardlinked_image:
+            recipe += (
+                '\t@mkdir -p bin/targets/ramips/mt7621\n'
+                '\t@ln cache/prior-image.bin bin/targets/ramips/mt7621/hardlinked.bin\n'
+            )
         if mkdir_subtarget:
             recipe += '\t@mkdir -p bin/targets/ramips/mt7621\n'
         if image_subpath is not None:
@@ -1490,6 +1501,24 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("RELEASE-BLOCKED: target/subtarget image directory missing", result.stderr)
+
+    def test_generated_wrapper_denies_hardlinked_firmware_output(self):
+        result, builder, _, _ = self._run_mock_imagebuilder(hardlinked_image=True)
+        cached_image = os.path.join(builder, "cache", "prior-image.bin")
+        output_image = os.path.join(
+            builder, "bin", "targets", "ramips", "mt7621", "hardlinked.bin"
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RELEASE-BLOCKED: hard-linked firmware image", result.stderr)
+        self.assertFalse(
+            os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")),
+            "A hard-linked output must never be admitted into a release manifest",
+        )
+        self.assertEqual(os.stat(output_image).st_ino, os.stat(cached_image).st_ino)
+        self.assertEqual(os.stat(output_image).st_nlink, 2)
+        with open(cached_image, "rb") as fp:
+            self.assertEqual(fp.read(), b"STALE-CACHED-IMAGE-NOT-CURRENT")
 
     def test_generated_wrapper_denies_stale_image_from_prior_build(self):
         # GNU Make reports success without generating a new image. Old
