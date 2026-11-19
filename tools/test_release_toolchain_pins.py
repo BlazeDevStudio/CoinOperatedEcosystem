@@ -50,7 +50,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
     def test_external_actions_use_reviewed_immutable_commits(self):
         for action, (expected_sha, expected_count) in EXPECTED_ACTIONS.items():
             refs = re.findall(
-                rf"(?m)^\\s*uses:\\s*{re.escape(action)}@([^\\s#]+)",
+                rf"(?m)^\s*uses:\s*{re.escape(action)}@([^\s#]+)",
                 self.workflow,
             )
             self.assertEqual(
@@ -75,7 +75,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
             )
             self.assertRegex(
                 block,
-                r'(?m)^\\s*version:\\s*["\\']1\\.6\\.0["\\']?\\s*$',
+                r'(?m)^\s*version:\s*"1\.6\.0"\s*$',
                 f"Arduino CLI setup {index} must pin version {ARDUINO_CLI_VERSION}",
             )
 
@@ -110,7 +110,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
 
     def test_no_floating_board_core_install_commands_remain(self):
         floating = re.findall(
-            r"(?m)^\\s*arduino-cli core install (?:esp32:esp32|esp8266:esp8266)\\s*$",
+            r"(?m)^\s*arduino-cli core install (?:esp32:esp32|esp8266:esp8266)\s*$",
             self.workflow,
         )
         self.assertEqual(
