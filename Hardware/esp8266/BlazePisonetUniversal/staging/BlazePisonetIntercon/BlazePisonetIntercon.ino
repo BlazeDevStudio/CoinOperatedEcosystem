@@ -470,6 +470,9 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:10px 0 25px}
  <div class="row"><strong>Paid credit path</strong><span id="creditPath">Off</span></div>
  <div class="row"><strong>Master awaiting ACK</strong><span id="masterPending">No</span></div>
  <div class="row"><strong>Unresolved physical pulses</strong><span id="orphanPulses">0</span></div>
+  <div class="row"><strong>Master reboot safety guard</strong><span id="armGuardState">Locked until inspected</span></div>
+  <div class="buttons"><button onclick="reconcileMaster()">Confirm physical coin reconciliation (LAB)</button></div>
+  <p class="help">On EVERY Master reboot, D7 coin acceptance stays OFF until an operator inspects the acceptor and reconciles any unrecorded coin with the customer. First disable CS; this control does not automatically enable CS. A real power-loss coin can still be lost without electrical protection.</p>
  <p class="help">LAB BUILD: Master accepts at most one outstanding journaled event, and Slave commits paid time with its receipt BEFORE ACK. Any overflow, corrupt journal or uncertainty locks the coin acceptor. Real-hardware power-cut and coinslot validation are still required.</p></div></div>
 </section>
 <section id="hardware" class="panel">
@@ -565,7 +568,7 @@ function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?
  put('roleLabel',['STANDARD','MASTER · LAB','SLAVE · LAB'][o.interconRole]||'UNKNOWN');
  put('peerProof',o.peerPaired?(o.peerAuthenticated?'Authenticated · '+o.peerIp:'Paired · awaiting proof'):'Not paired');
  put('creditPath',o.creditPath||'Unavailable');put('masterPending',o.masterPending?'Pending · retrying':'No');
- put('orphanPulses',o.unresolvedPulses||0);
+ put('orphanPulses',o.unresolvedPulses||0);put('armGuardState',o.masterArmGuard||'Unavailable');
  put('journalState',o.journalState+(o.journalGeneration?' · gen '+o.journalGeneration:''));
  put('journalSettings',o.journalState+(o.journalGeneration?' · generation '+o.journalGeneration:''));
  if(o.localChip)put('localChip',o.localChip.toUpperCase().padStart(8,'0'));put('peerCount',o.interconPeerCount);put('staAddress',o.staConnected?o.staIp:(o.staEnabled?'Disconnected':'Disabled'));
@@ -574,7 +577,7 @@ function render(o){lastStatus=o;put('time',o.time);put('running',o.timerRunning?
    for(const p of o.interconPeers){const line=document.createElement('div');line.textContent='Node '+p.id+' · '+p.ip;peers.appendChild(line)}
  } else peers.textContent='No peers discovered yet.';
  for(const [id,key] of [['r1','relay1On'],['r2','relay2On']]){let e=$(id);e.textContent=o[key]?'ON':'OFF';e.className='state '+(o[key]?'on':'off')}
- put('csState',o.csEnabled?'ENABLED':'DISABLED');$('csState').className='state '+(o.csEnabled?'on':'off');
+ put('csState',o.coinGateActive?'ACCEPTING':'CLOSED · '+(o.csEnabled?'requested ON':'requested OFF'));$('csState').className='state '+(o.coinGateActive?'on':'off');
  put('pcState',o.pcExpectedOn?'EXPECTED ON':'EXPECTED OFF');put('pcGrace',o.shutdownPending?o.shutdownSecondsLeft+'s until pulse':'Not pending');
  put('clk','GPIO'+o.displayClk);put('dio','GPIO'+o.displayDio);put('bright',o.brightness);put('displaymode',o.displayMode);
  put('saleAll',o.interconRole===1?o.masterDurableEvents:o.interconRole===2?o.journalCreditedEvents:o.salesOverall);
@@ -605,6 +608,11 @@ $('manualTimeForm').addEventListener('submit',async e=>{
  const mode=e.submitter&&e.submitter.value==='set'?'set':'add';
  await submitManualTime(mode,Number(f.elements.hours.value),Number(f.elements.minutes.value),Number(f.elements.seconds.value));
 });
+async function reconcileMaster(){
+ if(!confirm('LAB ONLY: CS must be disabled, coin channel inspected, and EVERY possibly accepted but unjournaled physical coin reconciled with the customer. Confirm this has already been done?'))return;
+ try{const result=await request('/api/intercon/master/reconcile',new URLSearchParams({confirm:'reconciled'}));msg(String(result));await poll()}
+ catch(e){msg('Master re-arm refused: '+e.message)}
+}
 async function setCs(enabled){if(!enabled&&!confirm('Disable coin insertion now? This will ignore further coin pulses until re-enabled.'))return;await act(enabled?'csOn':'csOff')}
 async function act(name){try{await request('/action',new URLSearchParams({name}));await poll()}catch(e){msg('Action failed: '+e.message)}}
 function confirmAction(a,t){if(confirm(t))act(a)}
@@ -728,6 +736,7 @@ bool csActiveHigh = true;
 #include "InterconDiscovery.h"
 #include "InterconPeerAuth.h"
 #include "InterconFlashJournal.h"
+#include "InterconArmGuard.h"
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
 bool pcExpectedOn = false; // Estimated only. No physical state detection.
@@ -1870,7 +1879,7 @@ void sendStatus() {
     s += F("}");
   }
   s += ']';
-  s += F(",\"interconMode\":\"STAGE4-LAB: signed paid credit, physical validation pending\"");
+  s += F(",\"interconMode\":\"STAGE4.1-LAB: Master reboot quarantine, physical validation pending\"");
   s += F(",\"peerPaired\":");s+=(peerPairReady?"true":"false");
   s += F(",\"peerAuthenticated\":");s+=(peerOnline()?"true":"false");
   s += F(",\"peerChip\":");s+=peerPairReady?jsonQuote(String(peerPair.peerChip,HEX)):jsonQuote(String(""));
@@ -1890,6 +1899,8 @@ void sendStatus() {
   s += F(",\"masterPending\":");
   s += interconJournalHealthy() && interconRecovered.snapshot.master.pendingSequence?"true":"false";
   s += F(",\"unresolvedPulses\":");s+=interconUnresolvedPulseCount;
+  s += F(",\"masterArmGuard\":");s+=jsonQuote(interconArmGuardStatus());
+  s += F(",\"coinGateActive\":");s+=(interconLocalCoinsAllowed()?"true":"false");
   s += F(",\"creditPath\":");
   if(interconPref.role==INTERCON_STANDARD)s+=jsonQuote("Local Standard");
   else if(interconPref.role==INTERCON_MASTER)
@@ -1977,7 +1988,7 @@ void handleFileUpload() {
 // ------------------------------
 void setup() {
   Serial.begin(115200);Serial.println();
-  Serial.println(F("[BLAZE] Stage 4: journal-backed Slave timer + signed Master credit; D6 PWR_SW / D7 CS"));
+  Serial.println(F("[BLAZE] Stage 4.1 LAB: journal-backed Slave + Master reboot quarantine; D6 PWR_SW / D7 CS"));
   randomSeed(micros());
   // CRITICAL: stock LittleFSConfig defaults to autoFormat=true. Never erase
   // paid journal or paired credentials when corruption prevents mounting.
@@ -2086,6 +2097,39 @@ void setup() {
     }
     server.sendHeader("Cache-Control","no-store");
     server.send(200,"text/plain","Two-slot journal initialized and read-back verified; paid routing remains locked.");
+  });
+  server.on("/api/intercon/master/reconcile",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP() ||
+       strcmp(adminPassword,"blaze-admin")==0 ||
+       strcmp(AP_PASSWORD,"12345678")==0) {
+      reject("Master reconciliation requires its own AP and changed AP/admin passwords",403);return;
+    }
+    if(server.arg("confirm")!="reconciled"){
+      reject("Inspect coin chute and reconcile all uncertain customer payments first",400);return;
+    }
+    if(interconPref.role!=INTERCON_MASTER || !interconJournalHealthy() ||
+       !peerPairReady || interconRecovered.snapshot.master.pendingSequence ||
+       timerRunning || remainingSeconds>0 || pcShutdownPending ||
+       powerPulseActive || csEnabled){
+      reject("Disable CS; resolve pending grants, timer/PC operations and journal health first",409);return;
+    }
+    noInterrupts();
+    const bool electricalBurstPending=coinQueued>0 || coinPulseStartUs!=0;
+    interrupts();
+    if(electricalBurstPending){
+      reject("Unprocessed coin pulse edges; reconcile hardware with CS disabled",409);return;
+    }
+    if(!interconArmGuardProvision()){
+      reject("Persistent Master arm marker failed or mismatched: hard lock; service required",503);return;
+    }
+    // The marker is never cleared; EVERY future reboot starts quarantined.
+    interconMasterFlowHalted=false;
+    interconUnresolvedPulseCount=0; // explicitly acknowledged, not auto-forgiven
+    interconMasterArmPrepared=true;
+    interconRefreshCoinGate(); // remains closed: csEnabled is false
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain","Physical reconciliation acknowledged for this boot only. CS remains OFF; enable separately for LAB tests.");
   });
   server.on("/api/intercon/pair",HTTP_POST,[](){
     if(!requireAdmin())return;

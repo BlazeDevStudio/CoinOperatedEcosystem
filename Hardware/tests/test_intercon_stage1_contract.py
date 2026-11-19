@@ -20,6 +20,8 @@ RUNTIME=SKETCH.parent/"InterconPaidRuntime.h"
 PEER_AUTH=SKETCH.parent/"InterconPeerAuth.h"
 runtime=RUNTIME.read_text(encoding="utf-8")
 peer_auth=PEER_AUTH.read_text(encoding="utf-8")
+ARM_GUARD=SKETCH.parent/"InterconArmGuard.h"
+arm_guard=ARM_GUARD.read_text(encoding="utf-8")
 
 def check(condition: bool, message: str) -> None:
     if not condition:
@@ -134,4 +136,20 @@ check('if(!force && (uint32_t)(micros()-lastEdge)<650000UL)return;' in runtime a
       "bounded multi-pulse denomination captured as one durable transaction")
 check('if(interconPref.role==INTERCON_MASTER)interconMasterDrainCoin(true);' in source,
       "manual CS off flushes captured coin bursts before disabling")
-print("PASS: Stage 4 source integration safety checks (hardware validation still required)")
+check('#include "InterconArmGuard.h"' in source and
+      'interconMasterArmPrepared &&' in runtime and
+      '!interconMasterArmGuardFailed &&' in runtime,
+      "Master coin acceptance is locked after EVERY reboot until explicit arming")
+check('interconArmGuardProvision()' in source and
+      'server.on("/api/intercon/master/reconcile"' in source and
+      'interconRecovered.snapshot.master.pendingSequence' in source and
+      'powerPulseActive || csEnabled' in source,
+      "AP-only Master reconciliation checks CS and pending payment")
+check('INTERCON_ARM_FILE="/intercon-arm1"' in arm_guard and
+      'LittleFS.rename(INTERCON_ARM_TEMP,INTERCON_ARM_FILE)' in arm_guard and
+      'interconArmGuardRead(INTERCON_ARM_FILE,binding)' in arm_guard and
+      'interconMasterArmGuardFailed=true' in arm_guard,
+      "Bound persistent arm marker uses temp, verified rename and hard-lock failure")
+check('masterArmGuard' in source and 'coinGateActive' in source,
+      "Dashboard distinguishes requested CS setting from effective physical gate")
+print("PASS: Stage 4.1 source integration safety checks (hardware validation still required)")
