@@ -1615,3 +1615,16 @@ Rollback is by normal revert on PR #35 only, in reverse order: source correction
 - Repository administrator: verify protected branch/ruleset admission and required release checks; no repository settings were changed.
 
 No PR merge, production signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
+
+
+### UTC01 final documentation-head CI completion — 2026-11-19T01:33Z
+
+This addendum supersedes the earlier in-progress documentation-head board-job observation in the PHX-RELEASE UTC01 checkpoint. It does not change the source/test SHA or upgrade any artifact to production status.
+
+- Child PR #35 documentation/PR HEAD: `4074d37cbe5233eb982233def52e7a4b6b65d4b0`; base parent #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- PR shared/firmware run [#44437315555](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44437315555) completed SUCCESS: validation job `135269332332` PASS; packager/tool suite 107 tests with two intentional sandbox-only skips; firmware/shared checks 18/18 PASS; appliance profiles 10/10 PASS; ESP8266 job `135269431126` and ESP32 job `135269431312` both PASS including compile and artifact upload.
+- Push shared/firmware run [#44437306358](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44437306358) completed SUCCESS; validation and both ESP board compile/artifact-upload jobs PASS.
+- PR case-collision [#44437315434](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44437315434) completed SUCCESS.
+- PR mandatory sandbox [#44437315442](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44437315442) FAILED CLOSED: host preflight 13/13 PASS; Bubblewrap is absent and the job exits 125. Unprivileged identity, namespace setup and mandatory sandbox packaging regressions were SKIPPED. No unsandboxed fallback was used.
+
+These are hosted synthetic CI and compile artifacts only. Artifact ZIP digests are not per-firmware binary checksums; no byte-reproducibility, approved OpenWrt ImageBuilder target binary, physical hardware acceptance or production release is claimed. PR #35 remains OPEN / DRAFT / UNMERGED.
