@@ -1,4 +1,4 @@
-name: INTERCON Stage 4.2 V1.5 reconciliation and live GPIO map (DRAFT / NO-GO)
+name: INTERCON Stage 5 PisoWiFi Remote CS (DRAFT / NO-GO)
 
 on:
   push:
@@ -6,6 +6,8 @@ on:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
       - "Hardware/tests/test_intercon_pinout_ui.py"
+      - "Hardware/tests/intercon_remote_cs_protocol_test.cpp"
+      - "Hardware/tests/test_intercon_remote_cs_source.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - "Hardware/tests/intercon_journal_fault_test.cpp"
@@ -17,6 +19,8 @@ on:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
       - "Hardware/tests/test_intercon_pinout_ui.py"
+      - "Hardware/tests/intercon_remote_cs_protocol_test.cpp"
+      - "Hardware/tests/test_intercon_remote_cs_source.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - "Hardware/tests/intercon_journal_fault_test.cpp"
@@ -37,6 +41,7 @@ jobs:
         run: |
           python3 Hardware/tests/test_intercon_stage1_contract.py
           python3 Hardware/tests/test_intercon_pinout_ui.py
+          python3 Hardware/tests/test_intercon_remote_cs_source.py
 
   signed-wire:
     runs-on: ubuntu-latest
@@ -59,6 +64,9 @@ jobs:
           g++ -std=c++17 -O2 -Wall -Wextra -Werror \
             Hardware/tests/intercon_arm_guard_test.cpp -o /tmp/intercon-arm-guard-tests
           /tmp/intercon-arm-guard-tests
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            Hardware/tests/intercon_remote_cs_protocol_test.cpp -lcrypto -o /tmp/intercon-remote-cs-tests
+          /tmp/intercon-remote-cs-tests
 
   compile-esp8266:
     runs-on: ubuntu-latest
@@ -73,15 +81,15 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp8266:esp8266@3.1.2
           arduino-cli lib install "TM1637"
-      - name: Compile INTERCON Stage 4.2 reconciled sketch (source-only, no flashing)
+      - name: Compile INTERCON Stage 5 Remote CS sketch (source-only, no flashing)
         run: |
           arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --warnings all \
-            --output-dir /tmp/intercon-stage4-2-lab \
+            --output-dir /tmp/intercon-stage5-lab \
             Hardware/esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon
       - name: Publish compiled ESP8266 firmware for controlled LAB testing only
         uses: actions/upload-artifact@v4
         with:
-          name: blaze-intercon-stage4-2-ESP8266-LAB-NO-GO
-          path: /tmp/intercon-stage4-2-lab/*.bin
+          name: blaze-intercon-stage5-ESP8266-LAB-NO-GO
+          path: /tmp/intercon-stage5-lab/*.bin
           if-no-files-found: error
           retention-days: 14
