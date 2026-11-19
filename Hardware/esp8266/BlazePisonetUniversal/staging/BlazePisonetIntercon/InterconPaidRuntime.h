@@ -26,7 +26,8 @@ bool interconMasterReady(){
   return interconPref.role==INTERCON_MASTER && interconConfigHealthy &&
          interconJournalHealthy() && peerPairReady && peerOnline() &&
          interconPref.staEnabled && WiFi.status()==WL_CONNECTED &&
-         !interconMasterFlowHalted && csEnabled &&
+         !interconMasterFlowHalted && interconMasterArmPrepared &&
+          !interconMasterArmGuardFailed && csEnabled &&
          interconRecovered.snapshot.master.pendingSequence==0 &&
          addMinutes*60UL+addSeconds>0 &&
          addMinutes*60UL+addSeconds<=65535UL;
