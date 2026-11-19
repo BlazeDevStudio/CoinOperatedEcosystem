@@ -28,7 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Validate firmware hardening & syntax
         run: sh Hardware/tests/test_firmware_hardening.sh
@@ -48,17 +50,35 @@ jobs:
     needs: validate
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        uses: arduino/setup-arduino-cli@b3cda96fddef6af6c56b4c5efb5c47e2357935db # reviewed immutable Node24 action commit
+        with:
+          version: "1.6.0"
 
       - name: Install ESP8266 Core
         run: |
+          set -eu
+          version_output="$(arduino-cli version)"
+          printf '%s\n' "$version_output"
+          if ! printf '%s\n' "$version_output" | grep -Eq 'Version: 1\.6\.0([[:space:]]|$)'; then
+            printf 'RELEASE-TOOLCHAIN-RED: expected Arduino CLI 1.6.0, got: %s\n' "$version_output" >&2
+            exit 1
+          fi
           arduino-cli config init --overwrite
           arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
           arduino-cli core update-index
-          arduino-cli core install esp8266:esp8266
+          arduino-cli core install esp8266:esp8266@3.1.2
+          core_list="$(arduino-cli core list)"
+          printf '%s\n' "$core_list"
+          installed_version="$(printf '%s\n' "$core_list" | awk '$1 == "esp8266:esp8266" { print $2 }')"
+          if [ "$installed_version" != "3.1.2" ]; then
+            printf 'RELEASE-TOOLCHAIN-RED: expected ESP8266 core 3.1.2, got: %s\n' "$installed_version" >&2
+            exit 1
+          fi
 
       - name: Compile BlazePwifi Vendo ESP8266
         run: |
@@ -67,7 +87,7 @@ jobs:
           cp Hardware/esp8266/BlazePwifiVendo/BlazePwifiVendo.ino Hardware/dist/esp8266/
 
       - name: Upload ESP8266 Firmware Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: BlazeHardware-esp8266-firmware
           path: Hardware/dist/esp8266/
@@ -78,17 +98,35 @@ jobs:
     needs: validate
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        uses: arduino/setup-arduino-cli@b3cda96fddef6af6c56b4c5efb5c47e2357935db # reviewed immutable Node24 action commit
+        with:
+          version: "1.6.0"
 
       - name: Install ESP32 Core
         run: |
+          set -eu
+          version_output="$(arduino-cli version)"
+          printf '%s\n' "$version_output"
+          if ! printf '%s\n' "$version_output" | grep -Eq 'Version: 1\.6\.0([[:space:]]|$)'; then
+            printf 'RELEASE-TOOLCHAIN-RED: expected Arduino CLI 1.6.0, got: %s\n' "$version_output" >&2
+            exit 1
+          fi
           arduino-cli config init --overwrite
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32
+          arduino-cli core install esp32:esp32@3.3.13
+          core_list="$(arduino-cli core list)"
+          printf '%s\n' "$core_list"
+          installed_version="$(printf '%s\n' "$core_list" | awk '$1 == "esp32:esp32" { print $2 }')"
+          if [ "$installed_version" != "3.3.13" ]; then
+            printf 'RELEASE-TOOLCHAIN-RED: expected ESP32 core 3.3.13, got: %s\n' "$installed_version" >&2
+            exit 1
+          fi
 
       - name: Compile BlazePwifi Vendo ESP32
         run: |
@@ -97,7 +135,7 @@ jobs:
           cp Hardware/esp32/BlazePwifiVendo32/BlazePwifiVendo32.ino Hardware/dist/esp32/
 
       - name: Upload ESP32 Firmware Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: BlazeHardware-esp32-firmware
           path: Hardware/dist/esp32/
