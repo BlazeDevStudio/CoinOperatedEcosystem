@@ -12,6 +12,7 @@ HELPER_PATH = os.path.join(TOOLS_DIR, "check_imagebuilder_sandbox_host.py")
 WORKFLOW_PATH = os.path.join(
     REPO_ROOT, ".github", "workflows", "release-imagebuilder-sandbox.yml"
 )
+HANDOVER_PATH = os.path.join(TOOLS_DIR, "RELEASE_PACKAGER_HANDOVER.md")
 
 
 def load_helper():
@@ -103,6 +104,37 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             tmpfs_paths,
             {"/tmp", "/home", "/root", "/run", "/mnt", "/media", "/srv"},
         )
+
+    def test_handover_describes_the_current_unprivileged_user_namespace(self):
+        with open(HANDOVER_PATH, "r", encoding="utf-8") as fp:
+            handover = fp.read()
+        marker = "- Current candidate implementation:"
+        self.assertIn(marker, handover, "release handover must retain a current implementation section")
+        section = handover.split(marker, 1)[1].split("- Current exact-head Actions:", 1)[0]
+        normalized = " ".join(section.split())
+        self.assertIn(
+            "single-ID user namespace",
+            normalized,
+            "handover must describe the runner's actual single-ID user namespace",
+        )
+        self.assertIn(
+            "does not invoke `sudo`, `newuidmap`, or `newgidmap`",
+            normalized,
+            "handover must not claim external privileged mapping helpers",
+        )
+        self.assertNotIn(
+            "starts privileged bubblewrap",
+            normalized.lower(),
+            "handover must not describe the current unprivileged runner as privileged",
+        )
+        self.assertNotIn(
+            "blocks until `newuidmap`/`newgidmap`",
+            normalized,
+            "handover must not claim mapping helpers are used",
+        )
+        self.assertIn("`--share-net` is deliberate", normalized)
+        self.assertIn("network isolation is not claimed", normalized.lower())
+
 
     def test_probe_accepts_a_supported_fake_host(self):
         helper = self.helper_or_skip()
