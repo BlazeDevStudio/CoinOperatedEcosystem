@@ -462,7 +462,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "actual overlay usr/sbin utilities must remain executable",
         )
 
-    def test_calculate_overlay_size_rejects_file_replaced_with_symlink_after_classification(self):
+    def test_calculate_overlay_size_does_not_follow_file_replaced_with_symlink_before_open(self):
         staging_dir = os.path.join(self.temp_dir, "overlay-size-race")
         os.makedirs(staging_dir)
 
@@ -474,6 +474,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             fp.write(b"KEEP-OPERATOR-OWNED-CONTENT" * 256)
 
         swapped = {"value": False}
+        held_fd = {"value": None}
         original_open = os.open
 
         def open_then_swap_final_file(path, flags, mode=0o777, *, dir_fd=None):
@@ -482,34 +483,39 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 and dir_fd is not None
                 and not swapped["value"]
             ):
+                # Keep the original inode alive so the filesystem cannot reuse
+                # its number for the replacement symlink during this test.
+                held_fd["value"] = original_open(
+                    staged_file,
+                    os.O_PATH | os.O_NOFOLLOW,
+                )
                 os.unlink(staged_file)
                 os.symlink(external_file, staged_file)
                 swapped["value"] = True
             return original_open(path, flags, mode, dir_fd=dir_fd)
 
-        # The size walk must pin the parent and open the same regular inode
-        # without following a symlink inserted after the entry was classified.
         supported_dir_fd = set(os.supports_dir_fd)
-        with mock.patch.object(
-            packager.os, "open", side_effect=open_then_swap_final_file
-        ) as patched_open:
-            # The production capability check uses function identity. Preserve
-            # the real capability while substituting the open call for this
-            # deterministic race injection.
-            supported_dir_fd.add(patched_open)
-            with mock.patch.object(packager.os, "supports_dir_fd", supported_dir_fd):
-                with self.assertRaisesRegex(ValueError, "symlink|changed"):
-                    packager.calculate_overlay_size(staging_dir)
+        try:
+            with mock.patch.object(
+                packager.os, "open", side_effect=open_then_swap_final_file
+            ) as patched_open:
+                supported_dir_fd.add(patched_open)
+                with mock.patch.object(packager.os, "supports_dir_fd", supported_dir_fd):
+                    size_kib = packager.calculate_overlay_size(staging_dir)
+        finally:
+            if held_fd["value"] is not None:
+                os.close(held_fd["value"])
 
-        self.assertTrue(swapped["value"], "race fixture did not reach the size-read boundary")
+        self.assertTrue(swapped["value"], "race fixture did not reach the file-open boundary")
         self.assertTrue(os.path.islink(staged_file))
+        self.assertEqual(size_kib, 0, "external symlink target must not enter the overlay byte budget")
         with open(external_file, "rb") as fp:
             self.assertEqual(
                 fp.read(),
                 b"KEEP-OPERATOR-OWNED-CONTENT" * 256,
             )
 
-    def test_calculate_overlay_size_rejects_symlink_replaced_with_file_before_skip(self):
+    def test_calculate_overlay_size_counts_symlink_replaced_with_file_before_open(self):
         staging_dir = os.path.join(self.temp_dir, "overlay-size-reverse-race")
         os.makedirs(staging_dir)
 
@@ -519,7 +525,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             fp.write(b"KEEP-OPERATOR-OWNED-CONTENT" * 256)
         os.symlink(external_file, staged_file)
 
+        payload = b"new-staged-file" * 256
         swapped = {"value": False}
+        held_fd = {"value": None}
         original_open = os.open
 
         def open_then_replace_symlink(path, flags, mode=0o777, *, dir_fd=None):
@@ -528,23 +536,31 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 and dir_fd is not None
                 and not swapped["value"]
             ):
+                held_fd["value"] = original_open(
+                    staged_file,
+                    os.O_PATH | os.O_NOFOLLOW,
+                )
                 os.unlink(staged_file)
                 with open(staged_file, "wb") as fp:
-                    fp.write(b"new-staged-file" * 256)
+                    fp.write(payload)
                 swapped["value"] = True
             return original_open(path, flags, mode, dir_fd=dir_fd)
 
         supported_dir_fd = set(os.supports_dir_fd)
-        with mock.patch.object(
-            packager.os, "open", side_effect=open_then_replace_symlink
-        ) as patched_open:
-            supported_dir_fd.add(patched_open)
-            with mock.patch.object(packager.os, "supports_dir_fd", supported_dir_fd):
-                with self.assertRaisesRegex(ValueError, "changed|symlink"):
-                    packager.calculate_overlay_size(staging_dir)
+        try:
+            with mock.patch.object(
+                packager.os, "open", side_effect=open_then_replace_symlink
+            ) as patched_open:
+                supported_dir_fd.add(patched_open)
+                with mock.patch.object(packager.os, "supports_dir_fd", supported_dir_fd):
+                    size_kib = packager.calculate_overlay_size(staging_dir)
+        finally:
+            if held_fd["value"] is not None:
+                os.close(held_fd["value"])
 
-        self.assertTrue(swapped["value"], "race fixture did not reach the symlink skip boundary")
+        self.assertTrue(swapped["value"], "race fixture did not reach the symlink-open boundary")
         self.assertFalse(os.path.islink(staged_file))
+        self.assertEqual(size_kib, (len(payload) + 1023) // 1024)
         with open(external_file, "rb") as fp:
             self.assertEqual(
                 fp.read(),
