@@ -160,14 +160,177 @@ def generate_network_uci(profile: dict) -> str:
 
 
 def calculate_overlay_size(staging_dir: str) -> int:
-    """Calculate total size of overlay in kilobytes."""
+    """Calculate overlay size through pinned no-follow directory/file descriptors."""
+    if (
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or os.open not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+        or os.scandir not in getattr(os, "supports_fd", set())
+    ):
+        raise OSError(
+            "Safe overlay size calculation requires POSIX dir_fd, O_DIRECTORY, "
+            "O_NOFOLLOW and fd-based scandir support"
+        )
+
+    staging_root = os.path.abspath(staging_dir)
+    parent_fd = -1
+    root_fd = -1
+    pending_directories = []
     total_bytes = 0
-    for root, _, files in os.walk(staging_dir):
-        for f in files:
-            fp = os.path.join(root, f)
-            if not os.path.islink(fp):
-                total_bytes += os.path.getsize(fp)
-    return (total_bytes + 1023) // 1024
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+
+    try:
+        parent_fd, root_name = _open_parent_directory_without_symlink_parents(
+            staging_root,
+            "Staging root for overlay size",
+            "Safe overlay size calculation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staging root directory name",
+        )
+        try:
+            root_entry = os.stat(
+                root_name,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Staging directory not found: {staging_root}"
+            ) from exc
+        if not stat.S_ISDIR(root_entry.st_mode):
+            raise ValueError(
+                f"Staging root is not a real directory: {staging_root}"
+            )
+
+        try:
+            root_fd = os.open(root_name, directory_flags, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staging root changed or became a symlink while opening: {staging_root}"
+                ) from exc
+            raise
+
+        opened_root = os.fstat(root_fd)
+        if (
+            not stat.S_ISDIR(opened_root.st_mode)
+            or (root_entry.st_dev, root_entry.st_ino)
+            != (opened_root.st_dev, opened_root.st_ino)
+        ):
+            raise ValueError(
+                f"Staging root changed while opening: {staging_root}"
+            )
+
+        os.close(parent_fd)
+        parent_fd = -1
+        pending_directories.append((root_fd, "."))
+        root_fd = -1
+
+        while pending_directories:
+            directory_fd, relative_directory = pending_directories.pop()
+            try:
+                with os.scandir(directory_fd) as entries:
+                    for entry in entries:
+                        relative_entry = (
+                            entry.name
+                            if relative_directory == "."
+                            else f"{relative_directory}/{entry.name}"
+                        )
+                        try:
+                            entry_stat = os.stat(
+                                entry.name,
+                                dir_fd=directory_fd,
+                                follow_symlinks=False,
+                            )
+                        except FileNotFoundError as exc:
+                            raise ValueError(
+                                "Staged entry changed during overlay size walk: "
+                                f"{relative_entry}"
+                            ) from exc
+
+                        # Rootfs symlinks are intentional and have never been
+                        # included in the regular-file byte budget.
+                        if stat.S_ISLNK(entry_stat.st_mode):
+                            continue
+
+                        if stat.S_ISDIR(entry_stat.st_mode):
+                            try:
+                                child_fd = os.open(
+                                    entry.name,
+                                    directory_flags,
+                                    dir_fd=directory_fd,
+                                )
+                            except OSError as exc:
+                                if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                                    raise ValueError(
+                                        "Staged directory changed or became a symlink "
+                                        f"during overlay size walk: {relative_entry}"
+                                    ) from exc
+                                raise
+
+                            opened_child = os.fstat(child_fd)
+                            if (
+                                not stat.S_ISDIR(opened_child.st_mode)
+                                or (entry_stat.st_dev, entry_stat.st_ino)
+                                != (opened_child.st_dev, opened_child.st_ino)
+                            ):
+                                os.close(child_fd)
+                                raise ValueError(
+                                    "Staged directory changed while opening during "
+                                    f"overlay size walk: {relative_entry}"
+                                )
+                            pending_directories.append((child_fd, relative_entry))
+                            continue
+
+                        if stat.S_ISREG(entry_stat.st_mode):
+                            try:
+                                file_fd = os.open(
+                                    entry.name,
+                                    file_flags,
+                                    dir_fd=directory_fd,
+                                )
+                            except OSError as exc:
+                                if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                                    raise ValueError(
+                                        "Staged file changed or became a symlink "
+                                        f"during overlay size walk: {relative_entry}"
+                                    ) from exc
+                                raise
+
+                            try:
+                                opened_file = os.fstat(file_fd)
+                                if (
+                                    not stat.S_ISREG(opened_file.st_mode)
+                                    or (entry_stat.st_dev, entry_stat.st_ino)
+                                    != (opened_file.st_dev, opened_file.st_ino)
+                                ):
+                                    raise ValueError(
+                                        "Staged file changed while opening during "
+                                        f"overlay size walk: {relative_entry}"
+                                    )
+                                total_bytes += opened_file.st_size
+                            finally:
+                                os.close(file_fd)
+                            continue
+
+                        # Preserve the prior treatment of non-regular special
+                        # entries without opening a FIFO/device or following it.
+                        total_bytes += entry_stat.st_size
+            finally:
+                os.close(directory_fd)
+
+        return (total_bytes + 1023) // 1024
+    finally:
+        if root_fd >= 0:
+            os.close(root_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+        while pending_directories:
+            directory_fd, _ = pending_directories.pop()
+            os.close(directory_fd)
 
 
 def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool = False) -> str:
