@@ -2363,6 +2363,17 @@ void setup() {
     if(!requireAdmin())return;
     if(!server.hasArg("save")) {reject("Save flag missing");return;}
     if(timerRunning) {reject("Do not change settings during paid time",409);return;}
+    // Settings save clears queued IRQ state. Never erase physical coin pulses
+    // or change the peer transport with an outstanding paid event.
+    bool liveCoinEdges=false;
+    noInterrupts();
+    liveCoinEdges=(coinQueued>0 || coinPulseStartUs!=0);
+    interrupts();
+    if(interconLocalCoinsAllowed() || liveCoinEdges ||
+       (interconPref.role==INTERCON_MASTER && interconJournalHealthy() &&
+        interconRecovered.snapshot.master.pendingSequence)){
+      reject("Disable coin slot, finish all pulse bursts and settle pending Master grants before saving settings",409);return;
+    }
     // Separate INTERCON config file preserves the legacy 512-byte EEPROM map.
     if(!server.hasArg("interconRole")) {reject("Missing station role",400);return;}
     const String roleValue=server.arg("interconRole");
@@ -2479,7 +2490,7 @@ void setup() {
     interrupts();
     writeCsEnable();
     if(mapChanged || polarChanged){
-      if (powerPulseActive || pcShutdownPending) {reject("Cannot remap power pins while PWR_SW is active/pending",409);return;}
+      // All interlocks were checked BEFORE config was persisted.
       detachInterrupt(digitalPinToInterrupt(coinPin));
       setRelays(false);stopChime();
       // Disconnect old outputs before configuring new relay pins.
