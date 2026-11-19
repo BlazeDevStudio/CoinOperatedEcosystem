@@ -489,9 +489,17 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         # The size walk must pin the parent and open the same regular inode
         # without following a symlink inserted after the entry was classified.
-        with mock.patch.object(packager.os, "open", side_effect=open_then_swap_final_file):
-            with self.assertRaisesRegex(ValueError, "symlink|changed"):
-                packager.calculate_overlay_size(staging_dir)
+        supported_dir_fd = set(os.supports_dir_fd)
+        with mock.patch.object(
+            packager.os, "open", side_effect=open_then_swap_final_file
+        ) as patched_open:
+            # The production capability check uses function identity. Preserve
+            # the real capability while substituting the open call for this
+            # deterministic race injection.
+            supported_dir_fd.add(patched_open)
+            with mock.patch.object(packager.os, "supports_dir_fd", supported_dir_fd):
+                with self.assertRaisesRegex(ValueError, "symlink|changed"):
+                    packager.calculate_overlay_size(staging_dir)
 
         self.assertTrue(swapped["value"], "race fixture did not reach the size-read boundary")
         self.assertTrue(os.path.islink(staged_file))
