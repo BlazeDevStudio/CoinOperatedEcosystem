@@ -168,11 +168,11 @@ def calculate_overlay_size(staging_dir: str) -> int:
         or os.open not in getattr(os, "supports_dir_fd", set())
         or os.stat not in getattr(os, "supports_dir_fd", set())
         or os.stat not in getattr(os, "supports_follow_symlinks", set())
-        or os.scandir not in getattr(os, "supports_fd", set())
+        or os.listdir not in getattr(os, "supports_fd", set())
     ):
         raise OSError(
             "Safe overlay size calculation requires POSIX dir_fd, O_DIRECTORY, "
-            "O_NOFOLLOW and fd-based scandir support"
+            "O_NOFOLLOW and fd-based directory listing support"
         )
 
     staging_root = os.path.abspath(staging_dir)
@@ -232,16 +232,15 @@ def calculate_overlay_size(staging_dir: str) -> int:
         while pending_directories:
             directory_fd, relative_directory = pending_directories.pop()
             try:
-                with os.scandir(directory_fd) as entries:
-                    for entry in entries:
-                        relative_entry = (
-                            entry.name
-                            if relative_directory == "."
-                            else f"{relative_directory}/{entry.name}"
-                        )
+                for entry_name in os.listdir(directory_fd):
+                    relative_entry = (
+                        entry_name
+                        if relative_directory == "."
+                        else f"{relative_directory}/{entry_name}"
+                    )
                         try:
                             entry_stat = os.stat(
-                                entry.name,
+                                entry_name,
                                 dir_fd=directory_fd,
                                 follow_symlinks=False,
                             )
@@ -259,7 +258,7 @@ def calculate_overlay_size(staging_dir: str) -> int:
                         if stat.S_ISDIR(entry_stat.st_mode):
                             try:
                                 child_fd = os.open(
-                                    entry.name,
+                                    entry_name,
                                     directory_flags,
                                     dir_fd=directory_fd,
                                 )
@@ -288,7 +287,7 @@ def calculate_overlay_size(staging_dir: str) -> int:
                         if stat.S_ISREG(entry_stat.st_mode):
                             try:
                                 file_fd = os.open(
-                                    entry.name,
+                                    entry_name,
                                     file_flags,
                                     dir_fd=directory_fd,
                                 )
