@@ -110,7 +110,9 @@ void remoteCsControl(){
   server.send(409,"text/plain","Replayed or out-of-order command");return;
  }
  if(!strcmp(request.kind,"OPEN")){
-  if(!request.session||request.event||request.value<5||
+  bool buffered=false;
+  noInterrupts();buffered=coinQueued>0 || coinPulseStartUs!=0;interrupts();
+  if(buffered || !request.session||request.event||request.value<5||
      request.value>60 || remoteRecord.pendingEvent || remoteHardLocked ||
      remoteFrozen || !interconMasterArmPrepared || interconMasterArmGuardFailed ||
      !csEnabled || (remoteWindowValid() && remoteWindowSession!=request.session)){
@@ -133,8 +135,14 @@ void remoteCsControl(){
    server.send(409,"text/plain","No matching remote session");return;
   }
   remoteWindowActive=false;interconRefreshCoinGate();
-  // First drain any completed physical pulse burst for THIS session.
-  remoteCsDrainCoin(true);
+  // Do NOT truncate a multi-pulse denomination on an early close request.
+  uint8_t buffered=0;uint32_t edge=0;uint32_t pulseStart=0;
+  noInterrupts();buffered=coinQueued;edge=lastAcceptedPulseUs;
+  pulseStart=coinPulseStartUs;interrupts();
+  if(pulseStart || (buffered && (uint32_t)(micros()-edge)<REMOTE_BURST_QUIET_US)){
+   server.send(409,"text/plain","Coin pulse burst settling; retry CLOS / POLL");return;
+  }
+  remoteCsDrainCoin(false);
   if(remoteHardLocked){
    server.send(503,"text/plain","Uncertain physical coin pulses");return;
   }
