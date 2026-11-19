@@ -1545,65 +1545,73 @@ Rollback is a normal revert, without force-push, in reverse order: hardlink regr
 No PR merge, production signing, tag, release publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. PRODUCTION NO-GO.
 
 
-## PHX-RELEASE 2026-11-19 UTC01 — descriptor-pinned overlay size accounting
+## PHX-RELEASE 2026-11-19 UTC01 — race-safe overlay size accounting
 
-**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / EXACT PR + PUSH SHARED CI PASS / BOTH BOARD BUILDS + ARTIFACT UPLOADS PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP SANDBOX BLOCKED / OPEN DRAFT / PRODUCTION NO-GO.
+**Disposition:** TWO-DIRECTION TEST-FIRST RED REPRODUCED / FINAL SOURCE FIX COMMITTED / EXACT PR + PUSH SHARED CI PASS / ESP32 + ESP8266 COMPILE AND UPLOAD PASS / CASE-COLLISION PASS / MANDATORY BUBBLEWRAP SANDBOX BLOCKED / OPEN DRAFT / PRODUCTION NO-GO.
 
-### Control plane and ownership
+### Control plane, ownership and live provenance
 
-Live #172, cleanup-first #266, MASTER draft #288 and its current `REPOSITORY_ROUTING.md` / `OWNERSHIP_ROUTES.json` were re-read before editing. MASTER #288 remains OPEN / DRAFT at `acebbb23276d592b3a735e9bc29b59049a27995e`; the ownership manifest is `DRAFT_REVIEW_ONLY`. PHX-MASTER owns only `coordination/phoenix/`; PHX-RELEASE's Experiments workflow route remains `reimplementation-review`, not copy authorization. This task was limited to the existing COE release-packager child PR #35 and its release-owned packager/test/handover paths. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was edited.
+Before source changes, PHX-RELEASE re-read #172, cleanup-first #266, MASTER draft #288 and its current `REPOSITORY_ROUTING.md` / `OWNERSHIP_ROUTES.json`, Experiments #242/#291 and COE #26/#31/#35/#44. The single UTC01 role lock is [#172 comment 6996553323](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/172#issuecomment-6996553323); this same comment is the final checkpoint and is updated in place.
 
-- Experiments PR #242: exact head `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) SUCCESS. Publisher/signing and GitHub Release publication were skipped.
-- Experiments PR #291: exact head `26e138acf2fbbb8890103fa1cfe2469e8efdd6ba`; BlazePwifi build [#44432976878](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44432976878) SUCCESS; Windows [#44432976880](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44432976880) FAILED in PISONET-owned `tests/ReleaseSigning/negative-selftest.ps1` because `$buildWorkflow` is uninitialized under StrictMode. Publisher was SKIPPED. PHX-PISONET owns the repair; RELEASE did not edit it.
-- COE integration #26: exact head `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero completed jobs; no integration acceptance.
+- MASTER #288: current head `acebbb23276d592b3a735e9bc29b59049a27995e`; ownership manifest remains `DRAFT_REVIEW_ONLY`. The release workflow route is `reimplementation-review`, not copy authorization. No ownership manifest, shared interface, hardware-networking contract or migration route was changed.
+- Experiments #242: exact head `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) SUCCESS. Signing and GitHub Release publication were skipped.
+- Experiments #291: exact head `26e138acf2fbbb8890103fa1cfe2469e8efdd6ba`; BlazePwifi build [#44432976878](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44432976878) SUCCESS. Windows run [#44432976880](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44432976880) FAILED in PISONET-owned `tests/ReleaseSigning/negative-selftest.ps1`: `$buildWorkflow` is uninitialized under StrictMode. Publisher was SKIPPED; PHX-RELEASE did not edit this path.
+- COE integration #26: exact head `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero completed jobs; no integration acceptance exists.
 - COE release parent #31: exact head/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
-- COE release child #35: branch `phoenix/release-build-script-publication-safety-20261117`, base #31 above; remains OPEN / DRAFT / UNMERGED.
-- COE ULA child #44: exact head `582fd5d5e83e36b36546ac28534740298ba94af4`; remains a separate child based on the earlier #35 head, not rebased onto this task. No shared-interface or ULA decision was changed.
-- Canonical private Drive project registry v11 was not returned by Library search; no Google Drive connector is exposed in this run. Historical v4-v7 snapshots were found but deliberately not substituted. No private registry content was copied to GitHub.
+- COE release child #35: branch `phoenix/release-build-script-publication-safety-20261117`, base #31 above; current source/test head `5e25e4ceab7c0615bcdad8309d50739e6b255f46`; remains OPEN / DRAFT / UNMERGED.
+- COE ULA child #44: exact head `582fd5d5e83e36b36546ac28534740298ba94af4`; still based on the earlier #35 head `1a5be48d2845781b0b07bad39a37f8440cea4d4f`, not rebased onto current #35. No ULA/site-networking or shared-interface decision was changed.
+- Canonical private Drive project registry v11 was not returned by the Library search; no Google Drive connector was exposed in this run. Historical v4-v7 snapshots appeared but were deliberately not substituted. No private registry content was copied to GitHub.
+- The branch-protection API read returned 403 to the connector; no repository settings were changed. The current MASTER control plane still reports missing protected-ref admission evidence.
 
-### Defect reproduced
+### Defect and regression coverage
 
-`calculate_overlay_size()` used path-based `os.walk()`, `os.path.islink()` and `os.path.getsize()`. A regular staged file could be replaced by a symlink after classification but before `getsize()`; the path-based read followed the new link and counted an operator-owned external target. That could corrupt the overlay/flash-budget accounting. The regression swaps a one-byte staged file to a symlink to a larger external file at the open boundary and asserts fail-closed behavior while preserving the external file bytes.
+The old `calculate_overlay_size()` used path-based `os.walk()`, `os.path.islink()` and `os.path.getsize()`. A regular staged file could be replaced by a symlink after the path check, causing the external target to be followed and counted. Conversely, a symlink could be replaced by a regular file after classification and be silently skipped, undercounting the flash budget.
+
+Two deterministic regressions now cover both directions:
+1. Regular file replaced by symlink before the no-follow open: external target is not followed or counted; external bytes remain unchanged.
+2. Symlink replaced by regular file before the no-follow open: the new staged regular file is counted, rather than being silently skipped; external target remains unchanged.
 
 ### Test-first and implementation history
 
-- Regression test commit [e200833](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e20083381cb4cf875088146b7345286e4de19ef8). Expected RED on exact source: PR [#44435063672](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435063672), shared validation FAILED with the new test's expected `ValueError not raised`; 106 tests, one expected failure, two intentional sandbox-only skips. Case-collision [#44435063616](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435063616) PASS.
-- Initial descriptor-walk implementation [5cb89e0](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5cb89e0dbb0c1dcf928042f6f8c83dbd48565680) failed its first host-capability preflight because the hosted Python runtime did not advertise fd-based `os.scandir` support. Exact PR run [#44435203597](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435203597) FAILED; no green claim.
-- The next implementation attempt [a752b99](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a752b9956fdc797e3f52d6486a0070505d0c9263) had an indentation error; exact PR run [#44435285512](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435285512) FAILED before importing the packager test module.
-- Descriptor traversal was corrected to use `os.listdir(directory_fd)` and no-follow `os.open(..., dir_fd=...)`. The first follow-up [90c3664](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/90c36645a8eafc68752979638fc694eff6cca0b1) still rejected the hosted runtime's `supports_fd` identity set; PR run [#44435343057](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435343057) FAILED at that preflight.
-- The redundant `os.listdir in supports_fd` check was removed while retaining the real fd-based listing call and no-follow descriptor checks. The next test run exposed a test-fixture issue: monkeypatching `os.open` also changed the function identity in `os.supports_dir_fd`; PR run [#44435497827](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435497827) FAILED at the capability preflight.
-- Final test fixture commit [546e1fb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/546e1fbe100eb2718e77d7fbd4b4783cfa3156c0) preserves the original fd capability set while injecting the deterministic symlink race.
-- Final source correction is [4f97799](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4f977991f58733470c2cff576b4b5e9a4ba2a633). It pins the staging root and each directory/file with no-follow descriptors, compares `st_dev/st_ino` from no-follow `stat` with `fstat` of the opened object, counts only the opened regular-file size, skips intentional rootfs symlinks, and closes all descriptors on both success and failure. No build, UCI, VLAN, financial or firmware source contract changed.
+- First regression [e200833](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e20083381cb4cf875088146b7345286e4de19ef8). Expected RED: PR [#44435063672](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435063672), shared validation FAILED with the new check-to-use regression (`ValueError not raised`); 106 tests, one expected failure, two intentional sandbox-only skips.
+- Initial descriptor-walk attempt [5cb89e0](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5cb89e0dbb0c1dcf928042f6f8c83dbd48565680) failed host capability detection because the hosted Python runtime did not advertise fd-based `os.scandir` support; PR [#44435203597](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435203597) FAILED.
+- The next attempt [a752b99](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a752b9956fdc797e3f52d6486a0070505d0c9263) had an indentation error; PR [#44435285512](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435285512) FAILED before importing the packaging tests.
+- Descriptor traversal switched to fd-based `os.listdir`; the first follow-up [90c3664](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/90c36645a8eafc68752979638fc694eff6cca0b1) still rejected the hosted runtime's `supports_fd` identity set; PR [#44435343057](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435343057) FAILED at preflight.
+- Removing that redundant capability-set check exposed a test-fixture issue: patching `os.open` changed its identity in `os.supports_dir_fd`. PR [#44435497827](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435497827) FAILED at the capability preflight. Fixture correction [546e1fb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/546e1fbe100eb2718e77d7fbd4b4783cfa3156c0) preserved the original fd capability set while injecting the race.
+- The first one-direction implementation passed at that intermediate head, but a second test was added to cover symlink-to-regular replacement. Regression commit [3513e82](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3513e82583e318fb6c8b2f37bfd50bd43e88a054) produced expected RED on PR [#44436345907](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436345907): 107 tests, one failure, two intentional skips; the old implementation skipped the replacement file before opening it.
+- Initial `O_PATH` implementation [7e04a55](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7e04a55c339958ddee33ba6b068f76275ae22b57) still compared against a pre-open path stat and rejected both replacement directions; PR [#44436424277](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436424277) FAILED with two regression failures. Test semantics were then corrected in [e3d0923](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e3d09232722b61b7c5aedcc422c00948f9765646).
+- Final source correction [5e25e4c](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5e25e4ceab7c0615bcdad8309d50739e6b255f46) opens each entry first with Linux `O_PATH|O_NOFOLLOW`, obtains metadata from `fstat()`, then verifies the directory entry still refers to that opened inode using `stat(..., dir_fd=..., follow_symlinks=False)`. Symlinks are skipped only after their own inode is pinned; regular file size comes from the opened object; directories are separately opened with `O_DIRECTORY|O_NOFOLLOW` and compared to the pinned inode. All descriptors are closed on success and failure. The function fails closed when required Linux/POSIX descriptor primitives are unavailable.
 
 ### Final exact source/test-head CI
 
-Source/test HEAD: `546e1fbe100eb2718e77d7fbd4b4783cfa3156c0`.
+Source/test HEAD: `5e25e4ceab7c0615bcdad8309d50739e6b255f46`.
 
 PR-triggered:
-- Shared/firmware [#44435590482](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435590482): SUCCESS. Packager/tool suite **106 tests, two intentional sandbox-only skips**; firmware/shared contract checks **18/18 PASS**; all appliance profiles **10/10 PASS**.
-- ESP32 job 135263622891: SUCCESS; compile and artifact upload PASS. Artifact ID 14488762675; uploaded ZIP SHA-256 `b0c1572ae25dd900ccc9e5116635dd007eae964be6f7dd8b35ec5468264849c0`.
-- ESP8266 job 135263622913: SUCCESS; compile and artifact upload PASS. Artifact ID 14488108219; uploaded ZIP SHA-256 `963480bdf1f524e908c6db894291eca32eda88dfd9e1984a344ccc0493b74330`.
-- Case-collision [#44435590501](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435590501): SUCCESS.
-- Mandatory sandbox [#44435590528](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435590528): FAILED CLOSED after 13/13 host-preflight tests because Bubblewrap is not installed; namespace and actual sandbox packaging regressions were not run.
+- Shared/firmware [#44436769990](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436769990): SUCCESS. Packager/tool suite **107 tests, two intentional sandbox-only skips**; firmware/shared-contract checks **18/18 PASS**; appliance profiles **10/10 PASS**.
+- ESP32 job 135267565544: SUCCESS; compile and artifact upload PASS. Artifact ID 14488078924; artifact ZIP SHA-256 `61439eff5fd8e49f1f8449f76a37a5169155c5b2ff3fbf582a5e83b3bb5ddb04`.
+- ESP8266 job 135267565362: SUCCESS; compile and artifact upload PASS. Artifact ID 14489492095; artifact ZIP SHA-256 `e2f3dd9c12714fd214347cbfbbc355c10ccab8cbc8ff0619112b582a375b3857`.
+- Case-collision [#44436769921](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436769921): SUCCESS.
 
 Push-triggered:
-- Shared/firmware [#44435583815](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435583815): SUCCESS with the same 106 tests / two intentional skips, 18 shared checks and 10/10 profiles.
-- ESP32 job 135263556341: SUCCESS; compile and artifact upload PASS. Artifact ID 14487833327; uploaded ZIP SHA-256 `9d52a819ebdea412c2be0beaa446a38b30ed082ae46164da130e43acb67f219f`.
-- ESP8266 job 135263556342: SUCCESS; compile and artifact upload PASS. Artifact ID 14488098252; uploaded ZIP SHA-256 `37a251ed0f218cd3b4d3e51b2a1ebb1ed43a1e9c4e296c692337ebd832a36839`.
-- Mandatory sandbox [#44435583784](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44435583784): FAILED CLOSED because Bubblewrap is absent; no unsandboxed fallback.
-  
-These SHA-256 values are GitHub Actions artifact-ZIP digests, **not independent per-firmware binary checksums**. PR and push ZIP digests differ; do not claim byte-reproducible firmware from these runs. These are hosted CI compile artifacts, not approved production target binaries or physical hardware evidence.
+- Shared/firmware [#44436760346](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436760346): SUCCESS with the same 107 tests / two intentional skips, 18 checks and 10/10 profiles.
+- ESP32 job 135267520344: SUCCESS; compile and artifact upload PASS. Artifact ID 14488603152; artifact ZIP SHA-256 `59ac9e895efccd84daaa7ff6fccc883be404bdb36c37fe0989f8725e33d50c22`.
+- ESP8266 job 135267520367: SUCCESS; compile and artifact upload PASS. Artifact ID 14487804361; artifact ZIP SHA-256 `437b8e463d576ecf7ad6de357029761ccba60c70f2576889e5d453d40400d61a`.
+
+Mandatory sandbox remains blocked, not passed:
+- PR [#44436769949](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436769949) and push [#44436760369](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44436760369): host preflight 13/13 PASS; Bubblewrap is absent; both fail closed with exit 125. Namespace/identity and actual Bubblewrap packaging regressions were SKIPPED. No unsandboxed fallback was used.
+
+The listed SHA-256 values are **GitHub Actions artifact-ZIP digests**, not per-firmware binary checksums. PR and push ZIP digests differ (including ESP32 artifact sizes differing by six bytes); no byte-reproducible firmware claim is made. These are hosted CI compile artifacts, not approved production target binaries or physical hardware evidence. CI also emitted upstream ESP8266 `elf2bin.py` invalid-escape warnings and Node `punycode`/`url.parse` deprecation warnings; these did not fail the builds.
 
 ### Rollback, review and next owners
 
-Rollback is a normal revert on PR #35 only, in reverse order: test fixture 546e1fb, source correction 4f97799, implementation iteration commits 90c3664 / a752b99 / 5cb89e0, and regression test e200833. Do not force-push or merge.
+Rollback is by normal revert on PR #35 only, in reverse order: source correction 5e25e4c, test semantics e3d0923, initial O_PATH attempt 7e04a55, reverse-race regression 3513e82, earlier source/test iterations 90c3664 / a752b99 / 5cb89e0 / 4f97799 / 546e1fb / e200833. Do not force-push or merge.
 
-- PHX-QA: independently review exact source/test head `546e1fbe100eb2718e77d7fbd4b4783cfa3156c0`, especially descriptor pinning, inode comparisons, symlink skip semantics and flash-budget accounting.
-- PHX-INFRA: provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and functioning unprivileged user namespaces; rerun mandatory sandbox validation at the exact candidate.
-- PHX-PISONET: repair `$buildWorkflow` initialization in #291's `tests/ReleaseSigning/negative-selftest.ps1`; RELEASE did not touch this owner path.
-- PHX-MASTER: reconcile current #35/#44 ancestry and keep migration/ownership routes review-only; no shared interface changed here.
-- COE integration owner: resolve five queued #26 workflows and per-file source/destination provenance.
+- PHX-QA: independently review exact source/test HEAD `5e25e4ceab7c0615bcdad8309d50739e6b255f46`, especially O_PATH semantics, post-open inode check, symlink accounting and flash-budget calculation.
+- PHX-INFRA: provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces; rerun mandatory sandbox validation at the exact candidate.
+- PHX-PISONET: repair `$buildWorkflow` initialization in #291's `tests/ReleaseSigning/negative-selftest.ps1`; RELEASE did not edit this owner path.
+- PHX-MASTER: reconcile current #35/#44 ancestry and keep migration/ownership routes review-only; no shared interface or hardware-networking contract changed here.
+- COE integration owner: unblock the five queued #26 exact-head workflows and establish per-file source/destination provenance.
 - Registry custodian: restore authorized read-only access to canonical private Drive registry v11.
-- Repository administrator: verify branch protection and required release checks; this run did not change repository settings.
+- Repository administrator: verify protected branch/ruleset admission and required release checks; no repository settings were changed.
 
 No PR merge, production signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
