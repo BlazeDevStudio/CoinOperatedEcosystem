@@ -1,10 +1,11 @@
-name: INTERCON Stage 4.1 reboot-safe Master arming (DRAFT / NO-GO)
+name: INTERCON Stage 4.2 V1.5 reconciliation and live GPIO map (DRAFT / NO-GO)
 
 on:
   push:
     paths:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
+      - "Hardware/tests/test_intercon_pinout_ui.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - "Hardware/tests/intercon_journal_fault_test.cpp"
@@ -15,6 +16,7 @@ on:
     paths:
       - "Hardware/esp8266/BlazePisonetUniversal/staging/**"
       - "Hardware/tests/test_intercon_stage1_contract.py"
+      - "Hardware/tests/test_intercon_pinout_ui.py"
       - "Hardware/tests/intercon_secure_wire_test.cpp"
       - "Hardware/tests/intercon_credit_ledger_test.cpp"
       - "Hardware/tests/intercon_journal_fault_test.cpp"
@@ -32,7 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify non-production role, network, coin-gate invariants
-        run: python3 Hardware/tests/test_intercon_stage1_contract.py
+        run: |
+          python3 Hardware/tests/test_intercon_stage1_contract.py
+          python3 Hardware/tests/test_intercon_pinout_ui.py
 
   signed-wire:
     runs-on: ubuntu-latest
@@ -69,15 +73,15 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp8266:esp8266@3.1.2
           arduino-cli lib install "TM1637"
-      - name: Compile INTERCON Stage 4.1 sketch (source-only, no flashing)
+      - name: Compile INTERCON Stage 4.2 reconciled sketch (source-only, no flashing)
         run: |
           arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --warnings all \
-            --output-dir /tmp/intercon-stage4-1-lab \
+            --output-dir /tmp/intercon-stage4-2-lab \
             Hardware/esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon
       - name: Publish compiled ESP8266 firmware for controlled LAB testing only
         uses: actions/upload-artifact@v4
         with:
-          name: blaze-intercon-stage4-1-ESP8266-LAB-NO-GO
+          name: blaze-intercon-stage4-2-ESP8266-LAB-NO-GO
           path: /tmp/intercon-stage4-1-lab/*.bin
           if-no-files-found: error
           retention-days: 14
