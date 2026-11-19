@@ -15,6 +15,9 @@ from unittest import mock
 import run_imagebuilder_sandbox
 import package_appliance_firmware as packager
 
+# Synthetic test-only site prefix; never a production or deployment allocation.
+TEST_ONLY_SITE_ULA_PREFIX = "fd12:3456:789a::/48"
+
 from package_appliance_firmware import (
     load_profile,
     generate_network_uci,
@@ -28,6 +31,13 @@ from package_appliance_firmware import (
 class TestPackageApplianceFirmware(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="test_appliance_")
+        self._site_ula_patch = mock.patch.object(
+            packager,
+            "APPROVED_SITE_ULA_PREFIX",
+            TEST_ONLY_SITE_ULA_PREFIX,
+            create=True,
+        )
+        self._site_ula_patch.start()
         self.profiles = [
             "ew1200g-pro",
             "r281",
@@ -42,7 +52,10 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         ]
 
     def tearDown(self):
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+        finally:
+            self._site_ula_patch.stop()
 
     def test_load_all_profiles(self):
         for pid in self.profiles:
@@ -103,6 +116,33 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertIn("option device 'br-lan.10'", uci)
         self.assertIn("option device 'br-lan.20'", uci)
         self.assertIn("option device 'wan'", uci)
+        self.assertIn(
+            f"option ula_prefix '{TEST_ONLY_SITE_ULA_PREFIX}'",
+            uci,
+        )
+
+    def test_generate_network_uci_rejects_unapproved_or_invalid_site_ula_prefix(self):
+        invalid_prefixes = [
+            None,
+            "fd00:db8:blaze::/48",
+            "fd12:3456:789a::/64",
+            "2001:db8::/48",
+            "fe80::/48",
+            "ff00::/48",
+            "::/48",
+            "fd00::/48",
+            "fdff:ffff:ffff::/48",
+        ]
+        for prefix in invalid_prefixes:
+            with self.subTest(prefix=prefix):
+                with mock.patch.object(
+                    packager, "APPROVED_SITE_ULA_PREFIX", prefix, create=True
+                ):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "approved site-scoped RFC 4193 ULA /48",
+                    ):
+                        generate_network_uci(load_profile("ew1200g-pro"))
 
     def test_generate_network_uci_uses_real_newlines_and_tabs(self):
         profile = load_profile("ew1200g-pro")
