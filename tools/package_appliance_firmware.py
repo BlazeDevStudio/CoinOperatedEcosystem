@@ -10,6 +10,7 @@ Generates validated OpenWrt rootfs overlays and ImageBuilder profiles for turnke
 import argparse
 import errno
 import hashlib
+import ipaddress
 import json
 import os
 import shutil
@@ -26,6 +27,10 @@ SHARED_PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-prof
 TRUSTED_SYSTEM_PATH = "/usr/bin:/bin"
 DEFAULT_ROOTFS = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 DEFAULT_RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
+
+# Intentionally unset until PHX-CORE/COE select a durable site-prefix authority
+# and MASTER approves the provisioning contract. Never use a vendor or per-device fallback.
+APPROVED_SITE_ULA_PREFIX = None
 
 RENTAL_PACKAGES = [
     "openssl-util",
@@ -124,8 +129,36 @@ def _validate_uci_vlan_id(value, field_name: str) -> int:
     return value
 
 
+def _validate_site_ula_prefix(value) -> str:
+    """Require an explicitly approved site-scoped RFC 4193 ULA /48."""
+    error = (
+        "An approved site-scoped RFC 4193 ULA /48 is required; "
+        "release packaging is blocked until the site-prefix authority is defined"
+    )
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(error)
+    try:
+        network = ipaddress.IPv6Network(value, strict=True)
+    except ValueError as exc:
+        raise ValueError(error) from exc
+
+    ula_space = ipaddress.IPv6Network("fd00::/8")
+    address = network.network_address
+    if (
+        network.prefixlen != 48
+        or not network.subnet_of(ula_space)
+        or address.is_multicast
+        or address.is_link_local
+        or address.is_global
+        or address.is_unspecified
+    ):
+        raise ValueError(error)
+    return network.with_prefixlen
+
+
 def generate_network_uci(profile: dict) -> str:
     """Generate OpenWrt /etc/config/network with DSA/bridge VLAN isolation."""
+    ula_prefix = _validate_site_ula_prefix(APPROVED_SITE_ULA_PREFIX)
     net = profile["networking"]
     vlan_ids = net.get("default_vlan_ids")
     if not isinstance(vlan_ids, dict):
@@ -159,7 +192,7 @@ def generate_network_uci(profile: dict) -> str:
         "\toption netmask '255.0.0.0'",
         "",
         "config globals 'globals'",
-        "\toption ula_prefix 'fd00:db8:blaze::/48'",
+        f"\toption ula_prefix '{ula_prefix}'",
         "",
         "config device 'br_lan'",
         "\toption name 'br-lan'",
