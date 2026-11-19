@@ -849,6 +849,7 @@ bool csActiveHigh = true;
 #include "InterconDiscovery.h"
 #include "InterconPeerAuth.h"
 #include "InterconFlashJournal.h"
+#include "RemoteCsJournal.h"
 #include "InterconArmGuard.h"
 volatile bool coinInputAllowed = true;
 // Relay 2 is a short, timed motherboard power-switch pulse, never latched.
@@ -1039,6 +1040,8 @@ void interconMasterReceiveCoin(uint8_t count);
 void interconMasterDrainCoin(bool force);
 void interconMasterTick();
 void interconRefreshCoinGate();
+void remoteCsDrainCoin(bool force);
+void remoteCsTick();
 // Declare functions with custom parameter types explicitly so Arduino does not
 // synthesize prototypes in an unsafe location in .ino translation units.
 void queuePattern(const std::vector<int>& freqs, const std::vector<int>& durs,
@@ -1799,7 +1802,7 @@ void playTimeEndingChime() {
 // Timer, sales, and interrupt-assisted coin pulse accounting
 // ------------------------------
 void startTimerFromSeconds(uint32_t secs) {
-  if(interconPref.role==INTERCON_MASTER)return; // Master routes, not rents
+  if(interconPref.role==INTERCON_MASTER || interconPref.role==INTERCON_REMOTE)return; // Router roles do not rent
   if (secs == 0) { resetTimer(); return; }
   if(interconPref.role==INTERCON_SLAVE &&
      !interconJournalSetBalance((uint64_t)secs*100000ULL))return;
@@ -1869,7 +1872,7 @@ bool resetTimer() {
 // Manual admin time adjustment: no coin event, no sale/count increment.
 // Called after settling elapsed countdown and pending coins from /api/time.
 bool applyManualTime(bool replace, uint32_t inputSeconds) {
-  if(interconPref.role==INTERCON_MASTER)return false;
+  if(interconPref.role==INTERCON_MASTER || interconPref.role==INTERCON_REMOTE)return false;
   uint64_t targetUnits = 0;
   if (!blazeComputeManualTarget(replace, remainingMs100, inputSeconds, targetUnits)) return false;
   // Manual grants are NOT sales; they still must be committed with the
@@ -1935,12 +1938,17 @@ void handleCoinInput() {
     interconMasterDrainCoin(false); // entire multi-pulse burst, then journal
     return;
   }
+  if(interconPref.role==INTERCON_REMOTE) {
+    remoteCsDrainCoin(false); // no local timer credit
+    return;
+  }
   uint8_t count=0;
   noInterrupts(); count=coinQueued; coinQueued=0; interrupts();
   if (!interconLocalCoinsAllowed()) return; // Slave rejects local coin pulses
   for (uint8_t n=0;n<count;n++) { addCoinTime(); incrementSales(); }
 }
 #include "InterconPaidRuntime.h"
+#include "RemoteCsRuntime.h"
 
 // ------------------------------
 // Web/API helper functions: UI is a static PROGMEM asset in WebUI.h
@@ -2103,7 +2111,7 @@ void handleFileUpload() {
 // ------------------------------
 void setup() {
   Serial.begin(115200);Serial.println();
-  Serial.println(F("[BLAZE] Stage 4.1 LAB: journal-backed Slave + Master reboot quarantine; D6 PWR_SW / D7 CS"));
+  Serial.println(F("[BLAZE] Stage 5 LAB: 4 roles incl. PisoWiFi Remote CS; D6 PWR_SW / D7 CS"));
   randomSeed(micros());
   // CRITICAL: stock LittleFSConfig defaults to autoFormat=true. Never erase
   // paid journal or paired credentials when corruption prevents mounting.
@@ -2113,6 +2121,7 @@ void setup() {
   loadInterconConfig(fsReady);
   peerLoadConfig(fsReady);
   interconJournalRecover(fsReady); // read-only; never grant time on recovery
+  remoteRecover(fsReady); // read-only; never open remote CS on recovery
   loadPersistentState();
   loadIdlePreferences();
   loadPowerAndCoinPrefs();
@@ -2184,6 +2193,58 @@ void setup() {
     server.sendHeader("Cache-Control","no-store");
     server.send(200,"text/plain",hex);
   });
+
+  server.on("/api/pisowifi/control",HTTP_POST,[](){remoteCsControl();});
+  server.on("/api/pisowifi/journal/initialize",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP() ||
+       strcmp(adminPassword,"blaze-admin")==0 ||
+       strcmp(AP_PASSWORD,"12345678")==0 ||
+       server.arg("confirm")!="initialize"){
+      reject("Remote journal setup requires local AP, private credentials and confirmation",403);return;
+    }
+    if(interconPref.role!=INTERCON_REMOTE||!peerPairReady||
+       csEnabled||timerRunning||remainingSeconds>0||
+       pcShutdownPending||powerPulseActive||
+       LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1)||
+       remoteJournalPresent){
+      reject("Remote journal needs paired, idle, CS-OFF device without old payment history",409);return;
+    }
+    bool buffered=false;
+    noInterrupts();buffered=coinQueued>0||coinPulseStartUs!=0;interrupts();
+    if(buffered){reject("Physical pulses need reconciliation",409);return;}
+    coinInputAllowed=false;writeCsEnable();
+    if(!remoteInitialize()){
+      reject("Remote two-slot journal failed; do not overwrite payment history",503);return;
+    }
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain","PisoWiFi Remote CS journal initialized. D7 remains OFF.");
+  });
+  server.on("/api/pisowifi/reconcile",HTTP_POST,[](){
+    if(!requireAdmin())return;
+    if(server.client().localIP()!=WiFi.softAPIP() ||
+       strcmp(adminPassword,"blaze-admin")==0 ||
+       strcmp(AP_PASSWORD,"12345678")==0 ||
+       server.arg("confirm")!="reconciled"){
+      reject("AP-only explicit physical coin reconciliation required",403);return;
+    }
+    bool buffered=false;
+    noInterrupts();buffered=coinQueued>0||coinPulseStartUs!=0;interrupts();
+    if(interconPref.role!=INTERCON_REMOTE || !remoteJournalHealthy ||
+       remoteRecord.pendingEvent||remoteHardLocked||remoteWindowActive||
+       csEnabled||buffered||timerRunning||remainingSeconds>0||
+       pcShutdownPending||powerPulseActive){
+      reject("Close CS, settle pending event, inspect chute, reconcile before rearming",409);return;
+    }
+    if(!interconArmGuardProvision()){
+      reject("Persistent arm marker mismatch; service required",503);return;
+    }
+    remoteFrozen=false;remoteUnresolvedPulses=0;
+    interconMasterArmPrepared=true;
+    interconRefreshCoinGate();
+    server.sendHeader("Cache-Control","no-store");
+    server.send(200,"text/plain","Reconciled this boot. D7 stays OFF until authorized controller OPEN.");
+  });
   server.on("/api/intercon/journal/initialize",HTTP_POST,[](){
     if(!requireAdmin())return;
     if(server.client().localIP()!=WiFi.softAPIP() ||
@@ -2194,7 +2255,7 @@ void setup() {
     if(server.arg("confirm")!="initialize"){
       reject("Explicit initialization confirmation required",400);return;
     }
-    if(interconPref.role==INTERCON_STANDARD || !peerPairReady ||
+    if((interconPref.role!=INTERCON_MASTER && interconPref.role!=INTERCON_SLAVE) || !peerPairReady ||
        timerRunning || remainingSeconds>0 ||
        pcShutdownPending || powerPulseActive){
       reject("Journal requires an idle, paired Master/Slave with zero remaining paid time",409);return;
@@ -2259,8 +2320,8 @@ void setup() {
     // Changing keys/peer IDs after a journal is initialized invalidates
     // acknowledgments, and must never silently reset paid-event history.
     if(interconJournalFsReady &&
-       (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1))){
-      reject("Pairing locked: an INTERCON journal exists. Reconcile it before re-keying.",409);return;
+       (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1)||remoteJournalPresent)){
+      reject("Pairing locked: a payment journal exists. Reconcile it before re-keying.",409);return;
     }
     if(strcmp(adminPassword,"blaze-admin")==0 || strcmp(AP_PASSWORD,"12345678")==0){
       reject("Change both default AP and administrator passwords before storing a peer secret",409);return;
@@ -2277,6 +2338,7 @@ void setup() {
     addrText.toCharArray(candidate.peerIp,sizeof(candidate.peerIp));
     if(!peerSaveConfig(candidate)){reject("Pairing store failed; no pairing activated",503);return;}
     interconJournalRecover(interconFileSystemReady); // allow lab init after pairing
+    remoteRecover(interconFileSystemReady);
     server.sendHeader("Cache-Control","no-store");
     server.send(200,"text/plain","Peer credentials saved. Signed PING/PONG will start when STA connects. Remote credit stays locked.");
   });
@@ -2351,7 +2413,9 @@ void setup() {
       // Honor any completed coins before physically disabling the slot.
       if(a=="csOff"){
         if(interconPref.role==INTERCON_MASTER)interconMasterDrainCoin(true);
-        else handleCoinInput();
+        else if(interconPref.role==INTERCON_REMOTE){
+          remoteWindowActive=false;interconRefreshCoinGate();remoteCsDrainCoin(false);
+        }else handleCoinInput();
       }
       // CS state is saved across ESP resets, regardless of timer state.
       setCsEnabled(a=="csOn");
@@ -2370,6 +2434,7 @@ void setup() {
     liveCoinEdges=(coinQueued>0 || coinPulseStartUs!=0);
     interrupts();
     if(interconLocalCoinsAllowed() || liveCoinEdges ||
+       (interconPref.role==INTERCON_REMOTE && (remoteWindowActive||remoteRecord.pendingEvent)) ||
        (interconPref.role==INTERCON_MASTER && interconJournalHealthy() &&
         interconRecovered.snapshot.master.pendingSequence)){
       reject("Disable coin slot, finish all pulse bursts and settle pending Master grants before saving settings",409);return;
@@ -2377,14 +2442,14 @@ void setup() {
     // Separate INTERCON config file preserves the legacy 512-byte EEPROM map.
     if(!server.hasArg("interconRole")) {reject("Missing station role",400);return;}
     const String roleValue=server.arg("interconRole");
-    if(roleValue!="0" && roleValue!="1" && roleValue!="2") {reject("Invalid station role",400);return;}
+    if(roleValue!="0" && roleValue!="1" && roleValue!="2" && roleValue!="3") {reject("Invalid station role",400);return;}
     const uint8_t nextRole=(uint8_t)roleValue.toInt();
     if(nextRole!=interconPref.role &&
        (remainingSeconds>0 || pcShutdownPending || powerPulseActive)) {
       reject("End or reconcile saved paid time and PC power before switching roles",409);return;
     }
     if(nextRole!=interconPref.role && interconJournalFsReady &&
-       (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1))) {
+       (LittleFS.exists(JOURNAL_SLOT0)||LittleFS.exists(JOURNAL_SLOT1)||remoteJournalPresent)) {
       reject("Role changes locked while a paid-event journal exists; reconcile first",409);return;
     }
     const bool nextStaEnabled=server.hasArg("staEnabled");
@@ -2537,6 +2602,7 @@ void setup() {
 void loop() {
   server.handleClient();
   handleCoinInput();
+  remoteCsTick();
   updateTimerState();
   updatePcPowerControl();
   displayUnit.update(remainingSeconds);
