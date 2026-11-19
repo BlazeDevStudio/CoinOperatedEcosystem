@@ -72,4 +72,12 @@ jobs:
       - name: Compile INTERCON Stage 4.1 sketch (source-only, no flashing)
         run: |
           arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --warnings all \
+            --output-dir /tmp/intercon-stage4-1-lab \
             Hardware/esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon
+      - name: Publish compiled ESP8266 firmware for controlled LAB testing only
+        uses: actions/upload-artifact@v4
+        with:
+          name: blaze-intercon-stage4-1-ESP8266-LAB-NO-GO
+          path: /tmp/intercon-stage4-1-lab/*.bin
+          if-no-files-found: error
+          retention-days: 14
