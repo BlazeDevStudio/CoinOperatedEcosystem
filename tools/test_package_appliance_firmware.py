@@ -52,6 +52,48 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             self.assertIn("hardware", p)
             self.assertIn("networking", p)
 
+    def test_load_profile_rejects_symlinked_profile_file(self):
+        external_dir = os.path.join(self.temp_dir, "external-profile")
+        os.makedirs(external_dir)
+        external_profile = os.path.join(external_dir, "profile.json")
+        expected_profile = load_profile("ew1200g-pro")
+        with open(external_profile, "w", encoding="utf-8") as fp:
+            json.dump(expected_profile, fp)
+
+        linked_profile = os.path.join(self.temp_dir, "profile-link.json")
+        os.symlink(external_profile, linked_profile)
+
+        with self.assertRaisesRegex(ValueError, "symlink|symbolic|no-follow"):
+            load_profile(linked_profile)
+
+        with open(external_profile, "r", encoding="utf-8") as fp:
+            self.assertEqual(json.load(fp), expected_profile)
+
+    def test_load_profile_rejects_symlinked_parent_directory(self):
+        external_dir = os.path.join(self.temp_dir, "external-profile-parent")
+        os.makedirs(external_dir)
+        external_profile = os.path.join(external_dir, "profile.json")
+        expected_profile = load_profile("ew1200g-pro")
+        with open(external_profile, "w", encoding="utf-8") as fp:
+            json.dump(expected_profile, fp)
+
+        linked_parent = os.path.join(self.temp_dir, "linked-profile-parent")
+        os.symlink(external_dir, linked_parent)
+
+        with self.assertRaisesRegex(ValueError, "symlink|symbolic|parent path"):
+            load_profile(os.path.join(linked_parent, "profile.json"))
+
+        with open(external_profile, "r", encoding="utf-8") as fp:
+            self.assertEqual(json.load(fp), expected_profile)
+
+    def test_load_profile_accepts_regular_custom_json_path(self):
+        custom_profile = os.path.join(self.temp_dir, "custom-profile.json")
+        expected_profile = load_profile("ew1200g-pro")
+        with open(custom_profile, "w", encoding="utf-8") as fp:
+            json.dump(expected_profile, fp)
+
+        self.assertEqual(load_profile(custom_profile), expected_profile)
+
     def test_generate_network_uci_ew1200g_pro(self):
         p = load_profile("ew1200g-pro")
         uci = generate_network_uci(p)
