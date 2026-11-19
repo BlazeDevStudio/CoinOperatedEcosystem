@@ -1,3 +1,57 @@
+## PHX-RELEASE UTC14 — site ULA packager fail-closed admission (2026-11-19)
+
+**Disposition:** release-owned guard implemented test-first; unit suite PASS; all-profile packaging deliberately BLOCKED until PHX-CORE/COE select and supply an approved site-scoped prefix. PR #35 remains OPEN / DRAFT / UNMERGED / PRODUCTION NO-GO.
+
+### Authority and exact source
+
+- MASTER coordination PR #288 current head at inspection: `37fd3ed542e9b4924d5a0a0c7ece976c9c23f227`; `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29`, status `DRAFT_REVIEW_ONLY`. Release workflow migration remains `reimplementation-review`; this task did not migrate or modify workflows.
+- MASTER Architecture Contracts §6.45 at head `37fd3ed542e9b4924d5a0a0c7ece976c9c23f227`, blob `0dc116bdcaea3f49a4884f75dc9cba71913b3cd8`, explicitly requires packagers to fail closed until an approved site-scoped RFC 4193 ULA /48 is supplied. Prefix authority is undecided.
+- COE child PR #35 branch `phoenix/release-build-script-publication-safety-20261117`, base parent #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Exact source/test head: `90ce4200b66ce0b55f40feaab42cc7b53fad1f2d`. Packager blob `f17b653f79ffd80177453dc98842983bcd37a116`; test blob `1dbccc8ed276d29feaaf6fefc707915bb8ca2900`.
+
+### Defect and bounded correction
+
+The packager emitted the invalid literal `fd00:db8:blaze::/48` without validation. It is not a valid IPv6 prefix. The release-owned correction:
+
+- Removes the vendor literal and leaves `APPROVED_SITE_ULA_PREFIX = None` intentionally.
+- Validates a supplied value with strict `ipaddress.IPv6Network` parsing, requires a /48 inside `fd00::/8`, and rejects multicast, link-local, global-unicast and unspecified addresses.
+- Refuses to generate network UCI when no approved site prefix is configured.
+- Does not invent a prefix, add a profile/CLI field, select a provisioning authority, alter UCI/VLAN/bridge behavior, or change CORE/COE/HARDWARE networking interfaces.
+- Existing unit tests use `fd12:3456:789a::/48` only as a synthetic test fixture. It is not an assigned site prefix and must never be used for deployment.
+
+### Test-first history
+
+- Test-only commit [`16d9c23b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/16d9c23b7ef8683ca7caca96f3a91ffcf667ad92).
+- Expected RED: [push run #44542358476](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44542358476), packaging/tool suite ran 116 tests, 10 expected failures, 2 intentional skips. The new guard failed because the old generator neither rejected missing/invalid prefixes nor emitted the test-supplied prefix. The run is a regression reproduction, not a pass.
+- Source correction [`8ea5c927`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8ea5c9276b6096fd99198f549ac0baf98801bfd4).
+- Test-vector correction [`90ce4200`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/90ce4200b66ce0b55f40feaab42cc7b53fad1f2d) keeps negatives aligned with §6.45 (missing, malformed, non-/48, non-ULA classes, and host bits); no extra restriction on otherwise syntactically valid Global ID values was invented.
+
+### Exact-source Actions at `90ce4200`
+
+- Push shared validation [#44542912289](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44542912289): **OVERALL FAILURE BY DESIGN AT PROFILE ADMISSION**. Firmware-hardening checks PASS; shared-contract suite 18/18 PASS; packager/tool suite **116 tests PASS, 2 intentional skips**. The subsequent `validate_all_profiles.py` step rejected all 10 profiles with `An approved site-scoped RFC 4193 ULA /48 is required`. ESP32 and ESP8266 jobs were skipped because profile validation failed. No appliance staging or firmware artifact was produced.
+- PR shared validation [#44542927405](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44542927405): same exact-head result; unit suites pass, all-profile staging fails closed, board jobs skipped.
+- Case-collision guard [#44542927518](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44542927518): **SUCCESS**.
+- Mandatory sandbox push [#44542912278](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44542912278) and PR [#44542927374](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44542927374): **FAILED CLOSED** because `bwrap` is not installed (exit 125). Host preflight 14/14 PASS; identity/namespace and sandbox-dependent packaging regressions SKIPPED, not passed. No privileged or unsandboxed fallback.
+
+### Cross-repository state and next owners
+
+- Experiments #291 exact head `4e3d954a89835fff54463d456c278eeb5f70b056`: ESP32 core compatibility run [#44538815283](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44538815283) PASS on both 3.3.13 and 4.0.0; BlazePwifi build [#44538815114](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44538815114) SUCCESS; Windows run [#44538815094](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44538815094) FAILS at PISONET-owned `negative-selftest.ps1` because `$buildWorkflow` is unset; Windows build/publisher do not pass.
+- Experiments #242 remains at `734b89d9e7792247e8376335c3f3685500ab3f89`; historical exact-head Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed handover/build; signing and publication were skipped.
+- COE #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`; eight workflows (five PR, three push) remain queued with no jobs returned.
+- COE parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; its previous sandbox runs failed at unprivileged UID-map setup. Child #35's current sandbox failure is specifically missing pre-provisioned Bubblewrap.
+- Canonical private Drive registry v11 was not available through the authorized Library surface; no older snapshot was substituted and no private content copied to GitHub.
+
+**Next actionable owner tasks:**
+1. PHX-CORE + COE integration owner choose and document the durable site-prefix authority and exact approved-prefix supply mechanism; preserve same-site sharing, distinct-site separation, and persistence across reboot/upgrade/backup/restore.
+2. PHX-MASTER approve the shared interface/contract before any profile schema or CLI input is introduced.
+3. PHX-QA independently verify valid/invalid prefix vectors, same-site sharing, distinct-site separation, persistence/restore, and authority-unavailable denial.
+4. PHX-INFRA provide an authorized disposable runner with pre-provisioned Bubblewrap and unprivileged namespace support.
+5. PHX-RELEASE rerun exact-head packager/profile validation only after the approved prefix mechanism exists; do not bypass the fail-closed admission.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No merge, signing, tagging, publication, hardware flashing, payment migration or customer deployment occurred. Physical 150 power cuts and 30-device/24-hour soak remain NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC02 — sandbox identity handover correction (2026-11-19)
 
 - Active draft: [COE PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
