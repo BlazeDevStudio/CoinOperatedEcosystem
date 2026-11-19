@@ -23,10 +23,18 @@ bool interconArmGuardRead(const char* path,
 bool interconArmGuardProvision(){
   // Caller MUST first prove physical CS is disabled, no pending credit and
   // explicit on-AP operator acknowledgment. Never invoke from boot/loop.
-  if(interconMasterArmGuardFailed || !interconJournalFsReady ||
-     interconPref.role!=INTERCON_MASTER)return false;
+  if(interconMasterArmGuardFailed || !interconFileSystemReady ||
+     (interconPref.role!=INTERCON_MASTER &&
+      interconPref.role!=INTERCON_REMOTE))return false;
   blaze_journal::Binding binding={};
-  if(!interconJournalBinding(binding))return false;
+  if(interconPref.role==INTERCON_REMOTE){
+    blaze_remote::Record remote={};
+    if(!remoteJournalHealthy||!remoteCsBinding(remote))return false;
+    binding.owner=remote.owner;binding.peer=remote.controller;
+    memcpy(binding.keyTag,remote.keyTag,16);
+    binding.role=blaze_journal::ROLE_MASTER; // marker codec, unique remote keyTag
+  }else if(!interconJournalFsReady ||
+           !interconJournalBinding(binding))return false;
   if(LittleFS.exists(INTERCON_ARM_FILE)){
     if(interconArmGuardRead(INTERCON_ARM_FILE,binding))return true;
     interconMasterArmGuardFailed=true; // mismatch/corrupt marker: hard lock
@@ -52,7 +60,7 @@ bool interconArmGuardProvision(){
   return true;
 }
 const char* interconArmGuardStatus(){
-  if(interconPref.role!=INTERCON_MASTER)return "not-master";
+  if(interconPref.role!=INTERCON_MASTER && interconPref.role!=INTERCON_REMOTE)return "not-coin-master";
   if(interconMasterArmGuardFailed)return "HARD LOCK: marker storage or binding failure";
   if(!interconMasterArmPrepared)return "BOOT QUARANTINE: reconcile physical coins";
   return "Operator reconciled THIS BOOT";
