@@ -1453,6 +1453,14 @@ if [ -n "$SYMLINK_ENTRY" ]; then
     exit 1
 fi
 
+# A regular file can still alias a cached payload elsewhere in the builder
+# tree. Admit only independently materialized firmware files into the manifest.
+HARDLINKED_IMAGE=$(find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -links +1 -print -quit)
+if [ -n "$HARDLINKED_IMAGE" ]; then
+    echo "RELEASE-BLOCKED: hard-linked firmware image: $HARDLINKED_IMAGE" >&2
+    exit 1
+fi
+
 EMPTY_IMAGE=$(find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -size 0 -print -quit)
 if [ -n "$EMPTY_IMAGE" ]; then
     echo "RELEASE-BLOCKED: empty firmware image: $EMPTY_IMAGE" >&2
