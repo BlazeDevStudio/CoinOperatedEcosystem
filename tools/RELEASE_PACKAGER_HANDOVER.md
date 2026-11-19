@@ -1674,7 +1674,7 @@ These are hosted synthetic CI and compile artifacts only. Artifact ZIP digests a
 
 ## PHX-RELEASE UTC05 — profile input no-follow admission
 
-**Status at source/test head `cf80b938bdc6ab06bb84a3a129b66a634222916d`: release-owned fix committed; shared validation PASS; ESP8266 PASS; ESP32 still running at this checkpoint; mandatory sandbox remains blocked.**
+**Status at source/test head `cf80b938bdc6ab06bb84a3a129b66a634222916d`: release-owned fix committed; shared validation, ESP32 and ESP8266 all completed PASS; mandatory sandbox remains blocked.**
 
 **Scope:** `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, this handover only. Existing COE child PR #35 remains OPEN / DRAFT / UNMERGED on `phoenix/release-build-script-publication-safety-20261117`, base parent #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was changed.
 
@@ -1686,7 +1686,7 @@ These are hosted synthetic CI and compile artifacts only. Artifact ZIP digests a
 - Expected RED [#44464576853](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464576853): validation failed exactly at the two new symlink assertions (`ValueError not raised`); 115 tests ran, 2 intentional skips, 2 expected failures. The regular custom JSON path control passed.
 - Case-collision [#44464576846](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464576846): SUCCESS.
 - Source correction [`cf80b938`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/cf80b938bdc6ab06bb84a3a129b66a634222916d): preserve profile-ID and explicit custom-JSON-path behavior, open via the existing descriptor-walk helper with `O_NOFOLLOW`, reject symlinked parent components, and require the opened descriptor to identify a regular file before JSON parsing.
-- Source/test-head shared run [#44464722316](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722316): validation job `135359632933` SUCCESS; 115 packaging/tool tests PASS with 2 intentional skips; 18 shared-contract checks PASS; 10 appliance profiles PASS. Both new symlink regressions and the regular custom-path control passed. ESP8266 job `135359719732` SUCCESS. ESP32 job `135359719719` was still IN_PROGRESS at handover preparation and is not credited as passed.
+- Source/test-head shared run [#44464722316](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722316): validation job `135359632933` SUCCESS; 115 packaging/tool tests PASS with 2 intentional skips; 18 shared-contract checks PASS; 10 appliance profiles PASS. Both new symlink regressions and the regular custom-path control passed. ESP8266 job `135359719732` SUCCESS; ESP32 job `135359719719` subsequently completed SUCCESS.
 - Source/test-head case-collision [#44464722413](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722413): SUCCESS.
 - Mandatory sandbox [#44464722305](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44464722305): FAILED CLOSED because Bubblewrap is not installed (exit 125) after 14/14 host-preflight tests passed. Namespace setup and sandbox-dependent packaging regressions were SKIPPED, not passed. No privileged installation or unsandboxed fallback was used.
 
@@ -1695,3 +1695,13 @@ These are hosted synthetic CI and compile artifacts only. Artifact ZIP digests a
 This is release-input path integrity evidence from hosted CI. It does not establish ImageBuilder sandbox acceptance, real OpenWrt binaries, signing, router behavior or physical acceptance. Explicit custom JSON paths remain supported when they resolve to regular files without symlink components; symlinked profile paths are intentionally rejected.
 
 **Next:** reconcile terminal ESP32 status and verify the final documentation-head Actions runs; PHX-QA independently review the no-follow profile loader and its input compatibility. PHX-INFRA still owns the approved disposable Bubblewrap-capable runner. Keep #35 draft/unmerged and production NO-GO.
+
+### UTC05 terminal documentation-head verification
+
+The earlier in-progress observation above is superseded by these terminal results; source/test SHA and implementation did not change.
+
+- Documentation head `cad128e466cec4f85a5f54475b5589a43be6d373`: [shared/firmware run #44465017354](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44465017354) completed with all three jobs SUCCESS. Validation job `135360596076` passed 115 packaging/tool tests (2 intentional skips), 18 shared-contract checks and 10/10 profile staging; ESP8266 job `135360681427` and ESP32 job `135360681558` both completed compile and artifact upload successfully.
+- Documentation-head case-collision [#44465017348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44465017348): SUCCESS.
+- Documentation-head mandatory sandbox [#44465017311](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44465017311): FAILED CLOSED with `RELEASE-BLOCKED: bubblewrap is not installed on this runner`, exit 125. Host preflight 14/14 PASS; identity/namespace and sandbox packaging regressions were SKIPPED, not passed.
+
+No real ImageBuilder sandbox execution or production image was produced.
