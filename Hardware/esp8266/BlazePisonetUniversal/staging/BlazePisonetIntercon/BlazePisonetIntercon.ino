@@ -2393,11 +2393,23 @@ void setup() {
     if(nextStaEnabled && strcmp(adminPassword,"blaze-admin")==0 && newAdmin.length()==0) {
       reject("Change default admin password before allowing access over STA LAN",409);return;
     }
-    uint8_t nc=(uint8_t)constrain(server.arg("coinPin").toInt(),0,16);
-    uint8_t nr1=(uint8_t)constrain(server.arg("relayPin").toInt(),0,16);
-    uint8_t nr2=(uint8_t)constrain(server.arg("relay2Pin").toInt(),0,16);
-    uint8_t nclk=(uint8_t)constrain(server.arg("displayClk").toInt(),0,16);
-    uint8_t ndio=(uint8_t)constrain(server.arg("displayDio").toInt(),0,16);
+    // Reject invalid GPIO values; never silently convert blanks/negatives to 0.
+    auto parseGpio = [&](const char* name,uint8_t& out)->bool {
+      if(!server.hasArg(name))return false;
+      const String val=server.arg(name);
+      if(val.length()<1 || val.length()>2)return false;
+      for(size_t i=0;i<val.length();++i)
+        if(val[i]<'0' || val[i]>'9')return false;
+      const unsigned int n=(unsigned int)val.toInt();
+      if(n>16)return false;
+      out=(uint8_t)n;return true;
+    };
+    uint8_t nc=0,nr1=0,nr2=0,nclk=0,ndio=0;
+    if(!parseGpio("coinPin",nc) || !parseGpio("relayPin",nr1) ||
+       !parseGpio("relay2Pin",nr2) || !parseGpio("displayClk",nclk) ||
+       !parseGpio("displayDio",ndio)){
+      reject("GPIO fields must be explicit integers 0 through 16",400);return;
+    }
     if(!pinSetIsUnique(nc,nr1,nr2,FIXED_BUZZER_PIN,nclk,ndio)) {reject("Unsafe GPIO assignment, duplication, or boot/flash pin conflict");return;}
     int nm=constrain(server.arg("addMinutes").toInt(),0,180);
     int ns=constrain(server.arg("addSeconds").toInt(),0,59);
@@ -2439,8 +2451,17 @@ void setup() {
     bool polarChanged=newCoinLow!=coinActiveLow || newR1Low!=relayActiveLow || newR2Low!=relay2ActiveLow || newBuzLow!=buzzerActiveLow;
     // All input validation is complete. Reject unsafe relay remaps BEFORE
     // committing the new role or network settings to LittleFS.
-    if((mapChanged || polarChanged) && (powerPulseActive || pcShutdownPending)) {
-      reject("Cannot remap power pins while PWR_SW is active/pending",409);return;
+    const bool wiringChanged=mapChanged || polarChanged || newCsHigh!=csActiveHigh;
+    bool capturedPulse=false;
+    noInterrupts();
+    capturedPulse=(coinQueued>0 || coinPulseStartUs!=0);
+    interrupts();
+    if(wiringChanged &&
+       (remainingSeconds>0 || powerPulseActive || pcShutdownPending ||
+        interconLocalCoinsAllowed() || capturedPulse ||
+        (interconPref.role==INTERCON_MASTER && interconJournalHealthy() &&
+         interconRecovered.snapshot.master.pendingSequence))){
+      reject("Wiring changes require CS CLOSED, no coin edges or pending grants, zero paid balance and idle relays",409);return;
     }
     InterconPreferences previousIntercon=interconPref;
     interconPref.role=nextRole;
