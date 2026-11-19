@@ -130,8 +130,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "fe80::/48",
             "ff00::/48",
             "::/48",
-            "fd00::/48",
-            "fdff:ffff:ffff::/48",
+            "fd00::/8",
+            "fd12:3456:789a::1/48",
         ]
         for prefix in invalid_prefixes:
             with self.subTest(prefix=prefix):
