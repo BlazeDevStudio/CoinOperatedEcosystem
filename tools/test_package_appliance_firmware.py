@@ -144,6 +144,23 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                     ):
                         generate_network_uci(load_profile("ew1200g-pro"))
 
+    def test_production_default_site_ula_remains_unconfigured_and_fails_closed(self):
+        # The class normally patches a synthetic test-only site prefix in setUp.
+        # Remove that fixture temporarily to verify the actual production default.
+        self._site_ula_patch.stop()
+        try:
+            self.assertIsNone(
+                packager.APPROVED_SITE_ULA_PREFIX,
+                "production ULA must remain unset until site-prefix authority is approved",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "approved site-scoped RFC 4193 ULA /48",
+            ):
+                generate_network_uci(load_profile("ew1200g-pro"))
+        finally:
+            self._site_ula_patch.start()
+
     def test_generate_network_uci_uses_real_newlines_and_tabs(self):
         profile = load_profile("ew1200g-pro")
         uci = generate_network_uci(profile)
