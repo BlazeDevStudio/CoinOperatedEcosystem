@@ -107,7 +107,7 @@ void peerSend(const blaze_peer::Frame& frame,const IPAddress& dest){
   interconUdp.endPacket();
 }
 void interconSecureReceived(const char* data,int len,IPAddress sourceIP) {
-  if(!peerPairReady||interconPref.role==INTERCON_STANDARD||!interconPref.staEnabled||
+  if(!peerPairReady||(interconPref.role!=INTERCON_MASTER && interconPref.role!=INTERCON_SLAVE)||!interconPref.staEnabled||
      WiFi.status()!=WL_CONNECTED||len<=0||len>=(int)blaze_peer::MAX_WIRE)return;
   IPAddress approved;
   if(!approved.fromString(peerPair.peerIp)||sourceIP!=approved)return;
@@ -141,7 +141,7 @@ void interconSecureReceived(const char* data,int len,IPAddress sourceIP) {
 }
 void interconSecureTick(){
   if(!peerPairReady||!interconPref.staEnabled||
-     interconPref.role==INTERCON_STANDARD||WiFi.status()!=WL_CONNECTED)return;
+     (interconPref.role!=INTERCON_MASTER && interconPref.role!=INTERCON_SLAVE)||WiFi.status()!=WL_CONNECTED)return;
   const uint32_t now=millis();
   if((uint32_t)(now-peerLastHello)<7000UL)return;
   peerLastHello=now;
