@@ -83,7 +83,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
             blocks = _step_blocks(self.workflow, f"Install {board} Core")
             self.assertEqual(len(blocks), 1, f"missing unique {board} install step")
             self.assertIn("arduino-cli version", blocks[0])
-            self.assertIn("Version: 1.6.0", blocks[0])
+            self.assertIn(r"Version: 1\.6\.0", blocks[0])
             self.assertIn(
                 "RELEASE-TOOLCHAIN-RED",
                 blocks[0],
