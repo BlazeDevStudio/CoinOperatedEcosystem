@@ -509,6 +509,48 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 b"KEEP-OPERATOR-OWNED-CONTENT" * 256,
             )
 
+    def test_calculate_overlay_size_rejects_symlink_replaced_with_file_before_skip(self):
+        staging_dir = os.path.join(self.temp_dir, "overlay-size-reverse-race")
+        os.makedirs(staging_dir)
+
+        staged_file = os.path.join(staging_dir, "payload.bin")
+        external_file = os.path.join(self.temp_dir, "operator-owned-target.bin")
+        with open(external_file, "wb") as fp:
+            fp.write(b"KEEP-OPERATOR-OWNED-CONTENT" * 256)
+        os.symlink(external_file, staged_file)
+
+        swapped = {"value": False}
+        original_open = os.open
+
+        def open_then_replace_symlink(path, flags, mode=0o777, *, dir_fd=None):
+            if (
+                os.fspath(path) == "payload.bin"
+                and dir_fd is not None
+                and not swapped["value"]
+            ):
+                os.unlink(staged_file)
+                with open(staged_file, "wb") as fp:
+                    fp.write(b"new-staged-file" * 256)
+                swapped["value"] = True
+            return original_open(path, flags, mode, dir_fd=dir_fd)
+
+        supported_dir_fd = set(os.supports_dir_fd)
+        with mock.patch.object(
+            packager.os, "open", side_effect=open_then_replace_symlink
+        ) as patched_open:
+            supported_dir_fd.add(patched_open)
+            with mock.patch.object(packager.os, "supports_dir_fd", supported_dir_fd):
+                with self.assertRaisesRegex(ValueError, "changed|symlink"):
+                    packager.calculate_overlay_size(staging_dir)
+
+        self.assertTrue(swapped["value"], "race fixture did not reach the symlink skip boundary")
+        self.assertFalse(os.path.islink(staged_file))
+        with open(external_file, "rb") as fp:
+            self.assertEqual(
+                fp.read(),
+                b"KEEP-OPERATOR-OWNED-CONTENT" * 256,
+            )
+
     def test_flash_overflow_guard(self):
         staging_dest = os.path.join(self.temp_dir, "staging_overflow")
         p = load_profile("ew1200g-pro")
