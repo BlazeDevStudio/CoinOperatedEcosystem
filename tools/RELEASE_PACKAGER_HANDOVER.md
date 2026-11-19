@@ -1,3 +1,50 @@
+## PHX-RELEASE UTC18 — preserve the unconfigured production site-ULA default
+
+**Disposition:** one release-owned regression guard added on the existing COE #35 draft branch. No production prefix, network configuration, profile schema, ImageBuilder behavior, or shared interface was changed. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Control plane and exact ownership
+
+- BLAZE-COMMS/1 control plane #172 remains FULL (7 roles); cleanup-first issue #266 was reread. No assignment or ownership route was changed.
+- MASTER PR #288 head at inspection: `3b910343ea25ac93ecb417c3ea29cb2d09c84f00`. `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE's workflow route remains reimplementation-review only.
+- COE PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`; parent #31/base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Exact source/test commit: `6bd286daa3f62bde48b37d5807a23bd960f03ae5`. Test file blob after the change: `174ea7133b1a8672db7c8fe66a57a6465692faba`.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; #291 current head at inspection: `a17f270ef5560e4fada4e9ef7ca4ea5ed03fbf28`. COE integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+
+### Regression guard
+
+The packager intentionally leaves `APPROVED_SITE_ULA_PREFIX = None` until CORE/COE establish a durable site-prefix authority and MASTER approves the provisioning contract. The existing test class normally patches a synthetic `fd12:3456:789a::/48` fixture so profile-generation tests can exercise UCI output.
+
+New test `test_production_default_site_ula_remains_unconfigured_and_fails_closed` temporarily stops that fixture, asserts the actual module default is still `None`, and verifies `generate_network_uci()` raises the approved-site-prefix error. The fixture is restarted in `finally`. The synthetic prefix remains test-only and is not an assigned or deployable site prefix.
+
+Commit: [`6bd286d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6bd286daa3f62bde48b37d5807a23bd960f03ae5).
+
+### Exact-source Actions at `6bd286d`
+
+- Shared/firmware [#44585692690](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44585692690): job `135777868782` **FAILED BY DESIGN AT PROFILE ADMISSION**. The packager/tool suite ran **117 tests: PASS, 2 intentional skips**. `validate_all_profiles.py` then rejected all 10 appliance profiles because no approved site-scoped RFC 4193 ULA /48 is configured. ESP32 and ESP8266 compile jobs were skipped after profile admission failed. No appliance firmware artifact was produced.
+- Case-collision [#44585692646](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44585692646): **SUCCESS**.
+- Mandatory ImageBuilder sandbox [#44585692890](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44585692890): **FAILED CLOSED** with exit 125 because Bubblewrap is not installed on the hosted runner. Host-preflight unit suite **14/14 PASS**; namespace execution and sandbox-dependent packaging regressions were skipped, not passed. No privileged or unsandboxed fallback was used.
+
+The shared run is not an overall success: the 117 unit tests passed, but the required all-profile admission gate correctly blocked every profile.
+
+### Other live release and integration CI
+
+- Experiments #291 BlazePwifi run [#44581603752](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44581603752): **SUCCESS**. ESP32 compatibility [#44581603620](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44581603620): **SUCCESS** for cores 3.3.13 and 4.0.0. Windows run [#44581603605](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44581603605): **FAILURE** in PISONET-owned `negative-selftest.ps1` because `$buildWorkflow` is uninitialized; exact .NET SDK 8.0.425 and package-parity checks passed, Windows build/publisher did not pass. No PISONET file was changed.
+- COE #26 exact head `b382d233ff06c8791b1028bed3c617cc7b670d12`: five workflows remain QUEUED with zero executed jobs; no integrated acceptance.
+- COE parent #31 exact head `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 remains stacked on it. The ULA site authority and actual Bubblewrap-capable runner remain separate blockers.
+- Canonical private Drive project registry v11 was not available through the authorized Library search/connector surface in this activation. No older snapshot was substituted; no private identifiers or contents were copied into GitHub.
+
+### Next owners and limits
+
+1. PHX-CORE / COE integration owner: define the durable site-scoped ULA authority and exact provisioning source; preserve same-site sharing, distinct-site separation, and persistence across reboot/upgrade/backup/restore.
+2. PHX-MASTER: approve the shared provisioning interface before any profile schema or CLI input is introduced.
+3. PHX-QA: independently review the default-unset regression and later verify site-prefix vectors and persistence.
+4. PHX-INFRA: provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged user namespaces.
+5. PHX-PISONET: repair the uninitialized `$buildWorkflow` in its own negative self-test; RELEASE does not edit it.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was changed. No workflow migration, merge, signing, tag, publication, hardware flashing, payment migration or customer deployment occurred. Hosted CI is synthetic evidence only. Approved production binaries, protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, 150 physical power cuts and 30-device/24-hour soak remain unproven. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC14 — site ULA packager fail-closed admission (2026-11-19)
 
 **Disposition:** release-owned guard implemented test-first; unit suite PASS; all-profile packaging deliberately BLOCKED until PHX-CORE/COE select and supply an approved site-scoped prefix. PR #35 remains OPEN / DRAFT / UNMERGED / PRODUCTION NO-GO.
