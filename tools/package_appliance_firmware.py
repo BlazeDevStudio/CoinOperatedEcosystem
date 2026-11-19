@@ -57,14 +57,57 @@ EXCLUDED_PACKAGES = [
 
 
 def load_profile(profile_id_or_path: str) -> dict:
-    if os.path.isfile(profile_id_or_path):
-        path = profile_id_or_path
+    """Load a profile through no-follow descriptors; profile paths must be regular files."""
+    try:
+        requested_path = os.fspath(profile_id_or_path)
+    except TypeError as exc:
+        raise ValueError("Router profile must be a profile ID or filesystem path") from exc
+    if not isinstance(requested_path, str) or not requested_path:
+        raise ValueError("Router profile must be a non-empty profile ID or filesystem path")
+
+    # Preserve the CLI's profile-ID or custom-JSON-path behavior. lexists()
+    # deliberately recognizes a final symlink so the descriptor open below
+    # rejects it instead of treating it as a profile ID.
+    is_explicit_path = (
+        os.path.lexists(requested_path)
+        or bool(os.path.dirname(requested_path))
+        or requested_path.lower().endswith(".json")
+    )
+    if is_explicit_path:
+        path = os.path.abspath(requested_path)
     else:
-        path = os.path.join(SHARED_PROFILES_DIR, f"{profile_id_or_path}.json")
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"Router profile not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", requested_path):
+            raise ValueError(f"Invalid router profile ID: {requested_path!r}")
+        path = os.path.join(SHARED_PROFILES_DIR, f"{requested_path}.json")
+
+    profile_fd = -1
+    try:
+        profile_fd = _open_file_without_symlink_parents(
+            path,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
+            0,
+            "Router profile",
+            "Safe profile loading requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid router profile path",
+        )
+        profile_stat = os.fstat(profile_fd)
+        if not stat.S_ISREG(profile_stat.st_mode):
+            raise ValueError(f"Router profile is not a regular file: {path}")
+
+        with os.fdopen(profile_fd, "r", encoding="utf-8") as profile_file:
+            profile_fd = -1
+            return json.load(profile_file)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Router profile not found: {path}") from exc
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError(
+                f"Refusing symlinked or non-directory router profile path: {path}"
+            ) from exc
+        raise
+    finally:
+        if profile_fd >= 0:
+            os.close(profile_fd)
 
 
 def _validate_uci_interface(value, field_name: str) -> str:
