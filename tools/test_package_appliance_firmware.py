@@ -2685,9 +2685,9 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         builder = os.path.join(self.temp_dir, "manifest-sort-failure-builder")
         os.makedirs(builder, exist_ok=True)
         recipe = (
-            "image:\\n"
-            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
-            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n"
+            "image:\n"
+            "\t@mkdir -p bin/targets/ramips/mt7621\n"
+            "\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\n"
         )
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
             fp.write(recipe)
@@ -2696,7 +2696,7 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         os.makedirs(fake_bin, exist_ok=True)
         fake_sort = os.path.join(fake_bin, "sort")
         with open(fake_sort, "w", encoding="utf-8") as fp:
-            fp.write("#!/bin/sh\\nprintf 'PARTIAL-CHECKSUM\\n'\\nexit 42\\n")
+            fp.write("#!/bin/sh\nprintf 'PARTIAL-CHECKSUM\\n'\nexit 42\n")
         os.chmod(fake_sort, 0o755)
 
         with open(wrapper, "r", encoding="utf-8") as fp:
@@ -2730,7 +2730,7 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         sorted_temp = os.path.join(builder, "RELEASE_MANIFEST.sha256.sorted.tmp")
         self.assertTrue(os.path.isfile(sorted_temp))
         with open(sorted_temp, "r", encoding="utf-8") as fp:
-            self.assertEqual(fp.read(), "PARTIAL-CHECKSUM\\n")
+            self.assertEqual(fp.read(), "PARTIAL-CHECKSUM\n")
 
 if __name__ == "__main__":
     unittest.main()
