@@ -2528,20 +2528,20 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(
-            "RELEASE-BLOCKED: checksum manifest sort failed",
-            result.stderr,
-        )
         final_manifest = os.path.join(builder, "RELEASE_MANIFEST.sha256")
         self.assertFalse(
             os.path.lexists(final_manifest),
-            "A failed sort must never publish a partial final checksum manifest",
+            "A failed sort must never publish a partial final checksum manifest; "
+            + result.stdout + result.stderr,
+        )
+        self.assertIn(
+            "RELEASE-BLOCKED: checksum manifest sort failed",
+            result.stderr,
         )
         sorted_temp = os.path.join(builder, "RELEASE_MANIFEST.sha256.sorted.tmp")
         self.assertTrue(os.path.isfile(sorted_temp))
         with open(sorted_temp, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), "PARTIAL-CHECKSUM\n")
-
 
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
