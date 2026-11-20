@@ -1899,3 +1899,18 @@ Next actions:
 3. PHX-QA: independently review the manifest publication and runner cleanup-classification changes.
 4. PHX-MASTER: reconcile child PR #35 with parent #31 and the integration route; keep both drafts unmerged pending review.
 
+
+
+### UTC21 docs-head follow-up
+
+The intermediate source-head run [#44819173752](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819173752) failed the packaging suite because the runner treated the wrapper's ordinary RELEASE-BLOCKED final-manifest collision diagnostic as a process-group cleanup failure (return code 124). The new partial-manifest regression itself passed. This was the second defect fixed by the cleanup-marker classifier change.
+
+The test-only runner-classifier RED [#44819549527](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819549527) reproduced that false classification. After the fix, the source-head packaging suite [#44819619526](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819619526) passed 120 tests with 2 skipped.
+
+The handover commit then triggered current docs-head checks:
+- PR validation [#44819874655](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819874655): packaging/tools tests PASS (120 passed, 2 skipped); all-profile staging FAIL because the approved site-scoped ULA /48 is missing.
+- Mandatory sandbox [#44819875058](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819875058): host preflight PASS; Bubblewrap availability FAIL; unprivileged identity, namespace and sandboxed packaging steps SKIPPED.
+- Case-collision guard [#44819874610](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819874610): PASS.
+
+No real ImageBuilder build was run. The only passing packaging evidence is the synthetic CI regression suite; all-profile firmware staging and the mandatory sandbox remain blocked.
+
