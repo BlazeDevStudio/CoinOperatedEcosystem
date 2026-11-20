@@ -1381,6 +1381,7 @@ fi
 BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
 OUT_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256"
 TMP_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.tmp"
+SORTED_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.sorted.tmp"
 
 # ImageBuilder writes directly below bin/targets. Never let an existing
 # symlinked target path redirect build output outside this workspace.
@@ -1394,6 +1395,10 @@ for IMAGE_COMPONENT in bin targets {target_arch.replace("/", " ")}; do
 done
 if [ -e "$TMP_MANIFEST" ] || [ -L "$TMP_MANIFEST" ]; then
     echo "RELEASE-BLOCKED: previous temporary release manifest exists: $TMP_MANIFEST; use a clean ImageBuilder workspace" >&2
+    exit 1
+fi
+if [ -e "$SORTED_MANIFEST" ] || [ -L "$SORTED_MANIFEST" ]; then
+    echo "RELEASE-BLOCKED: previous sorted temporary manifest exists: $SORTED_MANIFEST; use a clean ImageBuilder workspace" >&2
     exit 1
 fi
 if [ -e "$OUT_MANIFEST" ] || [ -L "$OUT_MANIFEST" ]; then
@@ -1472,8 +1477,17 @@ if [ ! -s "$TMP_MANIFEST" ]; then
     echo "RELEASE-BLOCKED: no firmware images found for {target_arch}" >&2
     exit 1
 fi
-LC_ALL=C sort "$TMP_MANIFEST" > "$BUILD_DIR/RELEASE_MANIFEST.sha256"
-rm -f "$TMP_MANIFEST"
+# Sort into a temporary file first. Publish the final manifest with an
+# atomic no-overwrite hard link only after sort has completed successfully.
+if ! LC_ALL=C sort "$TMP_MANIFEST" > "$SORTED_MANIFEST"; then
+    echo "RELEASE-BLOCKED: checksum manifest sort failed; final manifest was not published" >&2
+    exit 1
+fi
+if ! ln "$SORTED_MANIFEST" "$OUT_MANIFEST"; then
+    echo "RELEASE-BLOCKED: final checksum manifest path became occupied; refusing to overwrite: $OUT_MANIFEST" >&2
+    exit 1
+fi
+rm -f "$SORTED_MANIFEST" "$TMP_MANIFEST"
 echo "Release manifest written to $BUILD_DIR/RELEASE_MANIFEST.sha256 (PREVIEW ONLY)"
 cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
 echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
