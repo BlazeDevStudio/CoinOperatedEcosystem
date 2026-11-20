@@ -2675,6 +2675,63 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         self.assertEqual(result, 125)
 
 
+    def test_generated_wrapper_does_not_publish_partial_manifest_when_sort_fails(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "manifest-sort-failure-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "manifest-sort-failure-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        builder = os.path.join(self.temp_dir, "manifest-sort-failure-builder")
+        os.makedirs(builder, exist_ok=True)
+        recipe = (
+            "image:\\n"
+            "\\t@mkdir -p bin/targets/ramips/mt7621\\n"
+            "\\t@printf 'SYNTHETIC-NOT-FIRMWARE' > bin/targets/ramips/mt7621/synthetic.bin\\n"
+        )
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write(recipe)
+
+        fake_bin = os.path.join(self.temp_dir, "manifest-sort-failure-bin")
+        os.makedirs(fake_bin, exist_ok=True)
+        fake_sort = os.path.join(fake_bin, "sort")
+        with open(fake_sort, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\\nprintf 'PARTIAL-CHECKSUM\\n'\\nexit 42\\n")
+        os.chmod(fake_sort, 0o755)
+
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            wrapper_content = fp.read()
+        trusted_path = 'PATH="/usr/sbin:/usr/bin:/sbin:/bin"'
+        self.assertIn(trusted_path, wrapper_content)
+        wrapper_content = wrapper_content.replace(
+            trusted_path,
+            f'PATH="{fake_bin}:/usr/sbin:/usr/bin:/sbin:/bin"',
+            1,
+        )
+        with open(wrapper, "w", encoding="utf-8") as fp:
+            fp.write(wrapper_content)
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        result = self._run_generated_wrapper(
+            wrapper, self.temp_dir, env, timeout_seconds=60
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "RELEASE-BLOCKED: checksum manifest sort failed",
+            result.stderr,
+        )
+        final_manifest = os.path.join(builder, "RELEASE_MANIFEST.sha256")
+        self.assertFalse(
+            os.path.lexists(final_manifest),
+            "A failed sort must never publish a partial final checksum manifest",
+        )
+        sorted_temp = os.path.join(builder, "RELEASE_MANIFEST.sha256.sorted.tmp")
+        self.assertTrue(os.path.isfile(sorted_temp))
+        with open(sorted_temp, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), "PARTIAL-CHECKSUM\\n")
+
 if __name__ == "__main__":
     unittest.main()
 
