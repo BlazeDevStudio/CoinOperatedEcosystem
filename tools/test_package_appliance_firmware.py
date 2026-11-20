@@ -2676,6 +2676,38 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         )
         self.assertTrue(sleep.called, "runner must wait between process-group existence probes")
 
+    def test_communicate_normal_exit_does_not_misclassify_release_blocked_output(self):
+        class CompletedProcess:
+            pid = 41015
+
+            def communicate(self, timeout=None):
+                return "", "RELEASE-BLOCKED: final checksum manifest was not published"
+
+            def kill(self):
+                raise AssertionError("completed process must not need direct kill")
+
+        process = CompletedProcess()
+
+        def no_process_groups_remain(pgid, signum):
+            if signum == 0:
+                raise ProcessLookupError()
+
+        with mock.patch.object(
+            run_imagebuilder_sandbox.os, "killpg", side_effect=no_process_groups_remain
+        ):
+            (stdout, stderr), blocked = run_imagebuilder_sandbox._communicate_with_timeout(
+                process, timeout_seconds=10
+            )
+
+        self.assertFalse(
+            blocked,
+            "a normal wrapper failure diagnostic is not a process-group cleanup failure",
+        )
+        self.assertIn(
+            "RELEASE-BLOCKED: final checksum manifest was not published",
+            stderr,
+        )
+
     def test_communicate_fails_closed_when_detached_group_survives_kill(self):
         class CompletedProcess:
             pid = 41021
