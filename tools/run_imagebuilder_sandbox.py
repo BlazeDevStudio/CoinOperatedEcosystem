@@ -175,7 +175,16 @@ def _communicate_with_timeout(
     stdout = stdout or cleanup_stdout
     if cleanup_stderr:
         stderr = "\n".join(part for part in (_as_text(stderr), _as_text(cleanup_stderr)) if part)
-    cleanup_failed = "RELEASE-BLOCKED:" in cleanup_stderr
+    # A wrapped build may intentionally print RELEASE-BLOCKED for an ordinary
+    # nonzero result. Only diagnostics emitted by process-group cleanup make
+    # this a sandbox timeout/cleanup failure.
+    cleanup_error_markers = (
+        "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
+        "RELEASE-BLOCKED: could not signal sandbox process group",
+        "could not kill bubblewrap process:",
+        "bubblewrap process did not exit after SIGKILL",
+    )
+    cleanup_failed = any(marker in cleanup_stderr for marker in cleanup_error_markers)
     return (stdout, stderr), cleanup_failed
 
 
