@@ -1,4 +1,4 @@
-name: INTERCON Stage 5 PisoWiFi Remote CS (DRAFT / NO-GO)
+name: INTERCON Stage 5.1 PisoWiFi signed router bridge (DRAFT / NO-GO)
 
 on:
   push:
@@ -117,6 +117,7 @@ jobs:
           cp "$stage/STAGE5_SOURCE_PACKAGE_README.md" "$bundle/README_START_HERE.md"
           cp "$stage/REMOTE_CS_PISOWIFI_STAGE5.md" "$bundle/Docs/"
           cp "$stage/REMOTE_CS_BLAZEPWIFI_BRIDGE_CONTRACT.md" "$bundle/Docs/"
+          cp "$stage/REMOTE_CS_BLAZEPWIFI_STAGE5_1_ADAPTER.md" "$bundle/Docs/"
           cp "$stage/V15_RECONCILIATION_STAGE4_2.md" "$bundle/Docs/"
           cp "Hardware/tools/remote_cs_client.py" "$bundle/Tools/"
           cp "Hardware/tools/remote_cs_router_bridge.py" "$bundle/Tools/"
@@ -135,7 +136,7 @@ jobs:
           includes=re.findall(r'^\s*#include\s+"([^"]+)"',text,re.MULTILINE)
           assert includes and all((d/x).is_file() for x in includes), "missing local header dependency"
           assert (p/"README_START_HERE.md").is_file()
-          assert len(list((p/"Docs").glob("*.md")))==3
+          assert len(list((p/"Docs").glob("*.md")))==4
           assert len(list((p/"Tools").glob("*.py")))==2
           assert len(list((p/"Tests").glob("*.py")))==1
           for f in p.rglob("*"):
@@ -147,7 +148,7 @@ jobs:
       - name: Upload ready-to-extract source ZIP (not a binary build)
         uses: actions/upload-artifact@v4
         with:
-          name: BLAZE_INTERCON_STAGE5_FULL_ARDUINO_SOURCE_NO_BIN
+          name: BLAZE_INTERCON_STAGE5_1_FULL_ARDUINO_SOURCE_NO_BIN
           path: /tmp/blaze-stage5-source/
           if-no-files-found: error
           retention-days: 14
