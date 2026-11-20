@@ -93,3 +93,50 @@ jobs:
           path: /tmp/intercon-stage5-lab/*.bin
           if-no-files-found: error
           retention-days: 14
+
+  source-package:
+    name: Package complete Arduino IDE source (NO BIN)
+    runs-on: ubuntu-latest
+    needs: [compile-esp8266]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble .ino, every local header, setup documentation, and controller transport source
+        run: |
+          set -euo pipefail
+          sketch="Hardware/esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon"
+          stage="Hardware/esp8266/BlazePisonetUniversal/staging"
+          bundle="/tmp/blaze-stage5-source"
+          mkdir -p "$bundle/BlazePisonetIntercon" "$bundle/Docs" "$bundle/Tools"
+          cp "$sketch"/*.ino "$sketch"/*.h "$bundle/BlazePisonetIntercon/"
+          cp "$stage/STAGE5_SOURCE_PACKAGE_README.md" "$bundle/README_START_HERE.md"
+          cp "$stage/REMOTE_CS_PISOWIFI_STAGE5.md" "$bundle/Docs/"
+          cp "$stage/REMOTE_CS_BLAZEPWIFI_BRIDGE_CONTRACT.md" "$bundle/Docs/"
+          cp "$stage/V15_RECONCILIATION_STAGE4_2.md" "$bundle/Docs/"
+          cp "Hardware/tools/remote_cs_client.py" "$bundle/Tools/"
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          p=Path("/tmp/blaze-stage5-source")
+          d=p/"BlazePisonetIntercon"
+          ino=list(d.glob("*.ino"))
+          headers=list(d.glob("*.h"))
+          assert len(ino)==1 and ino[0].stem==d.name, "Arduino sketch folder/filename mismatch"
+          assert len(headers)==13, f"expected all 13 companion headers; found {len(headers)}"
+          text=ino[0].read_text(encoding="utf-8")
+          includes=re.findall(r'^\s*#include\s+"([^"]+)"',text,re.MULTILINE)
+          assert includes and all((d/x).is_file() for x in includes), "missing local header dependency"
+          assert (p/"README_START_HERE.md").is_file()
+          assert len(list((p/"Docs").glob("*.md")))==3
+          for f in p.rglob("*"):
+              if f.is_file():
+                  assert f.suffix.lower() not in (".bin",".elf",".hex",".o",".a",".map"), str(f)
+          print("PASS: complete Stage 5 Arduino source, local includes, guides; NO BIN")
+          PY
+          (cd "$bundle" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+      - name: Upload ready-to-extract source ZIP (not a binary build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLAZE_INTERCON_STAGE5_FULL_ARDUINO_SOURCE_NO_BIN
+          path: /tmp/blaze-stage5-source/
+          if-no-files-found: error
+          retention-days: 14
