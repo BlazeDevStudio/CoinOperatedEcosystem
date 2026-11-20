@@ -26,8 +26,15 @@ bool remoteCsGateReady(){
 }
 void remoteCsTick(){
  if(interconPref.role!=INTERCON_REMOTE)return;
- if(remoteWindowActive && !remoteWindowValid()){
-  remoteWindowActive=false; // stop hardware immediately; session retained for buffered pulse
+ // A lost Wi-Fi association, unhealthy journal, peer revocation or power
+ // quarantine TERMINATES the lease. Rejoining Wi-Fi must NOT reopen D7
+ // unless the router sends a fresh signed OPEN on the recovered connection.
+ if(remoteWindowActive &&
+    (!remoteWindowValid() || !interconPref.staEnabled ||
+     WiFi.status()!=WL_CONNECTED || !remoteJournalHealthy ||
+     remoteJournalWriteFailed || !peerPairReady || remoteFrozen ||
+     remoteHardLocked || !interconMasterArmPrepared)){
+  remoteWindowActive=false; // stop hardware immediately; never auto-resume after Wi-Fi loss
   interconRefreshCoinGate();
  }
 }
@@ -68,7 +75,7 @@ void remoteCsSendReply(const char* kind){
  response.source=ESP.getChipId();response.destination=peerPair.peerChip;
  response.command=remoteRecord.lastCommand;
  response.session=remoteRecord.pendingEvent?remoteRecord.pendingSession:
-    (remoteWindowActive?remoteWindowSession:0ULL);
+    (remoteCsGateReady()?remoteWindowSession:0ULL); // EMPT proves D7 is actually authorized, not merely a stale lease
  response.event=remoteRecord.pendingEvent;
  response.value=(uint16_t)remoteRecord.pendingPulses;
  char buf[blaze_remote::WIRE_MAX]={};

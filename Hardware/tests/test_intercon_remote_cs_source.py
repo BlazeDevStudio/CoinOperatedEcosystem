@@ -24,6 +24,7 @@ checks={
  "original pinout preserved": all(x in source for x in ['uint8_t relayPin = 16;','uint8_t relay2Pin = 12;','CS_ENABLE_PIN = 13;']),
  "window bounded to 5-60s": 'request.value<5' in runtime and 'request.value>60' in runtime,
  "expiry closed": 'remoteCsTick();' in source and 'remoteWindowActive=false; // stop hardware immediately' in runtime,
+ "reconnect needs fresh signed OPEN": 'WiFi.status()!=WL_CONNECTED || !remoteJournalHealthy' in runtime and 'remoteCsGateReady()?remoteWindowSession:0ULL' in runtime,
  "CS mode selectable": '<option value="3">Remote CS' in source,
 }
 for name,valid in checks.items():
