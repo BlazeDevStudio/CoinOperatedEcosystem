@@ -24,6 +24,17 @@ Source: `Hardware/esp8266/BlazePisonetUniversal/staging/BlazePisonetIntercon/`
 - `InterconArmGuard.h`, `InterconArmGuardCodec.h` — every-boot Master/Remote CS paid-coin quarantine.
 - `RemoteCsCodec.h`, `RemoteCsJournal.h`, `RemoteCsRuntime.h` — fourth PisoWiFi Remote CS mode, signed controller commands and durable pulse receipts.
 
+## PisoWiFi router-side source (Stage 5.1)
+
+The source ZIP also provides:
+
+- `Tools/remote_cs_client.py` — shared HMAC-authenticated ESP command transport.
+- `Tools/remote_cs_router_bridge.py` — **working Python 3.10+ local-network bridge** to the existing BLAZE OpenWrt `/cgi-bin/vendo` v1 poll/coin API. It requires `remote_cs_client.py` alongside it. It reuses the router's current coin windows/rates/receipts; it does not supply a new billing engine.
+- `Tests/test_remote_cs_router_bridge.py` — SQLite-backed lost reply, duplicate, expiry, forged-signature and session fault tests. Run `python3 Tests/test_remote_cs_router_bridge.py` from a normal extracted folder; the test automatically inserts its bundled `Tools/` parent when run from this ZIP.
+- `Docs/REMOTE_CS_BLAZEPWIFI_STAGE5_1_ADAPTER.md` — precise OpenWrt v1 endpoint/signature mapping, sidecar example, safety limitations and release gates.
+
+**By default, the bridge runs in read-only inspection mode.** It cannot open D7 or acknowledge paid events without the explicit `--enable-paid-lab` flag, correct independent environment secrets and an isolated bench. The existing OpenWrt backend is itself **not production released**, its `poll` response cannot establish financial health under every failure, and Python is not guaranteed on all OpenWrt appliances. Do not use this source package on occupied paid equipment.
+
 ## Hardware and integration limits
 
 Modes: Standard, Master, Slave, Remote CS. Stage 5 Remote CS physically controls the coin acceptor but **does not** credit a PisoWiFi account by itself. See `Docs/REMOTE_CS_PISOWIFI_STAGE5.md` and `Docs/REMOTE_CS_BLAZEPWIFI_BRIDGE_CONTRACT.md`.
