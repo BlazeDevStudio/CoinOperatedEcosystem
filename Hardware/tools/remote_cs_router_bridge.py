@@ -75,8 +75,8 @@ class Config:
                 address = ipaddress.IPv4Address(parts.hostname)
             except ipaddress.AddressValueError as exc:
                 raise BridgeError("use explicit pinned IPv4, not DNS hostnames or WAN URLs") from exc
-            if not (address.is_private or address.is_loopback) or
-                    address.is_multicast or address.is_unspecified:
+            if (not (address.is_private or address.is_loopback) or
+                    address.is_multicast or address.is_unspecified):
                 raise BridgeError("WAN/public/controller multicast address refused")
             if parts.fragment or parts.query:
                 raise BridgeError("endpoint URL must not contain a query or fragment")
