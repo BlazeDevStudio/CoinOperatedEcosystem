@@ -1852,3 +1852,50 @@ The earlier in-progress observation above is superseded by these terminal result
 - Documentation-head mandatory sandbox [#44465017311](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44465017311): FAILED CLOSED with `RELEASE-BLOCKED: bubblewrap is not installed on this runner`, exit 125. Host preflight 14/14 PASS; identity/namespace and sandbox packaging regressions were SKIPPED, not passed.
 
 No real ImageBuilder sandbox execution or production image was produced.
+
+
+## PHX-RELEASE UTC21 — Atomic checksum-manifest publication
+
+**Scope:** Release-packager child draft PR #35, based on release-packager parent PR #31 at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b. No merge or publication.
+
+### Defect and correction
+
+The generated ImageBuilder wrapper previously redirected sort output directly to RELEASE_MANIFEST.sha256. If sort emitted partial output and then failed, the wrapper exited nonzero but left a partial file at the final manifest path.
+
+The wrapper now:
+- writes sorted output to RELEASE_MANIFEST.sha256.sorted.tmp;
+- refuses a pre-existing temporary sorted manifest;
+- creates the final manifest only after successful sorting, using a same-directory no-overwrite hard link;
+- leaves a failed temporary file for diagnosis and refuses an unsafe retry until the operator uses a clean ImageBuilder workspace.
+
+A synthetic failing sort regression writes PARTIAL-CHECKSUM and exits 42. It proves the final manifest is absent on failure.
+
+The regression also exposed a runner-status defect: _communicate_with_timeout previously treated any normal stderr containing RELEASE-BLOCKED: as a sandbox cleanup failure. It now recognizes only process-group cleanup diagnostics. This preserves ordinary fail-closed wrapper exit status while retaining the detached-process-group kill checks.
+
+### Source and test commits
+
+- Test-first manifest regression: 9655317f21d318b205c5200feb5017a442374831
+- Atomic manifest publication: 28df88c2053af77a42b8023bf8888d59ac78e9df
+- Runner diagnostic-classification regression: 5f1c9a5ff5f54a8e539ca41e469c90a222c594f5
+- Cleanup-diagnostic classification fix: e1f5a57ba76cb0032ecf3250ae5204e9bb30d72c
+
+### Exact-source CI evidence
+
+- Expected RED, test-only head 9655317f: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44818832035. test_generated_wrapper_does_not_publish_partial_manifest_when_sort_fails failed because the partial final manifest existed.
+- Intermediate implementation run https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44818972955: new manifest regression passed; an existing final-manifest symlink assertion needed to be updated for the new hard-link refusal diagnostic.
+- Runner-classifier RED, test-only head 5f1c9a5: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819549527. The new test proved ordinary RELEASE-BLOCKED stderr was incorrectly classified as cleanup failure.
+- Final source head e1f5a57: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819619526. Packaging/tools suite: 120 tests passed, 2 skipped. Both new regressions and the existing final-manifest symlink test passed.
+- PR exact-head validation: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819630196. Overall workflow failed later at all-profile staging because an approved site-scoped RFC 4193 ULA /48 is not defined. This is a MASTER/network-authority blocker, not a packaging-test failure.
+- Mandatory sandbox: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819629850. Host preflight passed; Bubblewrap was unavailable in trusted system directories, so identity mapping, namespace preflight and sandboxed packaging were skipped. No unsandboxed fallback was used.
+- Case-collision guard: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44819630026 — PASS.
+
+### Evidence boundary and next owners
+
+All packaging regression execution above is hosted CI with synthetic ImageBuilder output and a fake sort; it is not a real firmware build, hardware test, production binary, or release acceptance.
+
+Next actions:
+1. PHX-INFRA: provide an approved runner with Bubblewrap available in a trusted system directory and unprivileged user namespaces enabled.
+2. PHX-MASTER / network authority owner: define and approve the site-scoped ULA /48 contract before all-profile staging can pass.
+3. PHX-QA: independently review the manifest publication and runner cleanup-classification changes.
+4. PHX-MASTER: reconcile child PR #35 with parent #31 and the integration route; keep both drafts unmerged pending review.
+
