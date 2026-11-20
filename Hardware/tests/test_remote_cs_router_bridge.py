@@ -13,7 +13,9 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
+_root=Path(__file__).resolve().parents[1]
+_tools=(_root/"Tools") if (_root/"Tools"/"remote_cs_client.py").is_file() else (_root/"tools")
+sys.path.insert(0,str(_tools))
 from remote_cs_router_bridge import (
     Bridge, BridgeError, Config, DurableState, RouterV1,
     event_backend_nonce, session_token, sha256_join,
@@ -236,6 +238,32 @@ class BridgeFixture(unittest.TestCase):
                 out=super()._request(*args);out["response_sig"]="0"*64;return out
         with self.assertRaisesRegex(BridgeError,"router poll signature"):
             Forged(self.cfg).poll()
+
+    def test_unverified_controller_flags_refuse_open(self):
+        class Forged(RouterV1):
+            def _request(self,action,nonce,*_):
+                target="A1B2C3D4E5F67890";expiry=self.expected_expiry
+                return {"ok":True,"insert":1,"target_nonce":target,
+                    "expires":expiry,
+                    "controller":{"enabled":1,"coin_enabled":0},
+                    "response_sig":vendo_poll_signature(self.cfg.vendo_key,
+                              self.cfg.vendo_id,nonce,1,target,expiry)}
+        router=Forged(self.cfg);router.expected_expiry=self.router.expires
+        with self.assertRaisesRegex(BridgeError,"coin enable is not authorized"):
+            router.poll()
+
+    def test_rejected_signature_cannot_persist_credit_or_ack(self):
+        self.open()
+        self.esp.emit(pulses=3,event=12)
+        class InvalidPaid(FakeRouter):
+            def coin(self,*_):
+                raise BridgeError("invalid or absent signed router paid receipt")
+        bad=InvalidPaid();bad.target=self.router.target;bad.expires=self.router.expires
+        bridge=Bridge(self.cfg,self.db,bad,self.esp)
+        with self.assertRaisesRegex(BridgeError,"signed router paid receipt"):
+            bridge.tick(now=self.router.expires-20)
+        self.assertEqual(self.db.pending(self.cfg.esp_id)[0][-1],"seen")
+        self.assertFalse(any(x[0]=="ACKN" for x in self.esp.history))
 
     def test_v1_exact_shell_signature_vectors(self):
         secret="KEY-SECURE-1234567890"
