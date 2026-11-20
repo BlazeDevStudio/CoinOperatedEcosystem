@@ -2266,7 +2266,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
 
         self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertIn("cannot create", (result.stderr + result.stdout).lower())
+        self.assertNotEqual(result.returncode, 124, "manifest collision must fail promptly, not time out: " + result.stderr + result.stdout)
+        self.assertIn("final checksum manifest path became occupied", (result.stderr + result.stdout).lower())
         self.assertTrue(os.path.islink(
             os.path.join(builder, "RELEASE_MANIFEST.sha256")
         ))
