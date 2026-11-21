@@ -192,7 +192,13 @@ def _is_within_trusted_system_directories(path: str) -> bool:
     candidate = os.path.abspath(path)
     if os.path.dirname(candidate) not in ("/usr/bin", "/bin"):
         return False
-    return os.path.isfile(candidate) and os.access(candidate, os.X_OK)
+    try:
+        mode = os.lstat(candidate).st_mode
+    except OSError:
+        return False
+    # isfile() follows a final symlink. Inspect the directory entry itself so
+    # a trusted-looking /usr/bin/bwrap link cannot redirect execution elsewhere.
+    return stat.S_ISREG(mode) and os.access(candidate, os.X_OK)
 
 
 def _has_single_id_mapping(path: str) -> bool:

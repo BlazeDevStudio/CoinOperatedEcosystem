@@ -2,6 +2,7 @@
 """Fail-fast capability probe for the release-owned ImageBuilder sandbox host."""
 import os
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -30,7 +31,11 @@ def _find_trusted_bwrap() -> str | None:
     resolved = os.path.abspath(candidate)
     if os.path.dirname(resolved) not in ("/usr/bin", "/bin"):
         return None
-    if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+    try:
+        mode = os.lstat(resolved).st_mode
+    except OSError:
+        return None
+    if not stat.S_ISREG(mode) or not os.access(resolved, os.X_OK):
         return None
     return resolved
 
