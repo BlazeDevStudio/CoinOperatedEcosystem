@@ -548,5 +548,93 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                     )
 
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_real_successful_leader_exit_terminates_detached_child_group(self):
+        runner = load_runner()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pid_path = os.path.join(temp_dir, "child.pid")
+            ready_path = os.path.join(temp_dir, "child.ready")
+            child_code = (
+                "import signal, sys, time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "open(sys.argv[1], 'w', encoding='ascii').write('ready'); "
+                "time.sleep(60)"
+            )
+            outer_code = "\\n".join(
+                [
+                    "import os, subprocess, sys, time",
+                    "pid_path, ready_path, child_code = sys.argv[1:]",
+                    "child = subprocess.Popen(",
+                    "    [sys.executable, '-c', child_code, ready_path],",
+                    "    start_new_session=True,",
+                    "    stdout=subprocess.DEVNULL,",
+                    "    stderr=subprocess.DEVNULL,",
+                    ")",
+                    "with open(pid_path, 'w', encoding='ascii') as fp:",
+                    "    fp.write(str(child.pid))",
+                    "deadline = time.monotonic() + 5",
+                    "while not os.path.exists(ready_path) and time.monotonic() < deadline:",
+                    "    time.sleep(0.01)",
+                    "if not os.path.exists(ready_path):",
+                    "    raise SystemExit(3)",
+                    "print('outer-exit', flush=True)",
+                ]
+            )
+            process = runner.subprocess.Popen(
+                [
+                    runner.sys.executable,
+                    "-c",
+                    outer_code,
+                    pid_path,
+                    ready_path,
+                    child_code,
+                ],
+                start_new_session=True,
+                stdout=runner.subprocess.PIPE,
+                stderr=runner.subprocess.PIPE,
+                text=True,
+            )
+            child_pgid = None
+            cleanup_attempted = False
+            try:
+                deadline = runner.time.monotonic() + 5
+                while not os.path.exists(pid_path) and runner.time.monotonic() < deadline:
+                    runner.time.sleep(0.01)
+                self.assertTrue(
+                    os.path.exists(pid_path),
+                    "outer process did not publish the detached child process-group ID",
+                )
+                with open(pid_path, "r", encoding="ascii") as fp:
+                    child_pgid = int(fp.read())
+                self.assertGreater(child_pgid, 0)
+
+                while not os.path.exists(ready_path) and runner.time.monotonic() < deadline:
+                    runner.time.sleep(0.01)
+                self.assertTrue(
+                    os.path.exists(ready_path),
+                    "detached child did not install its SIGTERM-ignore handler",
+                )
+                self.assertEqual(runner.os.getpgid(child_pgid), child_pgid)
+
+                (stdout, stderr), cleanup_failed = runner._communicate_with_timeout(
+                    process, timeout_seconds=5, child_pgid=child_pgid
+                )
+                self.assertFalse(cleanup_failed)
+                self.assertEqual(process.returncode, 0)
+                self.assertEqual(stdout.strip(), "outer-exit")
+                self.assertEqual(stderr, "")
+                with self.assertRaises(ProcessLookupError):
+                    runner.os.killpg(child_pgid, 0)
+                cleanup_attempted = True
+            finally:
+                if not cleanup_attempted:
+                    if child_pgid is None and os.path.exists(pid_path):
+                        with open(pid_path, "r", encoding="ascii") as fp:
+                            child_pgid = int(fp.read())
+                    runner._terminate_process_groups(
+                        process, child_pgid=child_pgid, grace_seconds=2.0
+                    )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
