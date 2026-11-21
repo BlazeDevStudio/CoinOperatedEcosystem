@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from write_firmware_artifact_manifest import (
@@ -129,6 +130,16 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         (self.artifact_dir / "firmware.bin").unlink()
         with self.assertRaisesRegex(ManifestError, "at least one non-empty .bin"):
             build_artifact_manifest_payloads(**self.kwargs())
+
+    def test_rejects_unreadable_directory_during_artifact_walk(self):
+        def fail_walk(_path, **kwargs):
+            self.assertIn("onerror", kwargs)
+            kwargs["onerror"](PermissionError("permission denied"))
+            return iter(())
+
+        with mock.patch("write_firmware_artifact_manifest.os.walk", side_effect=fail_walk):
+            with self.assertRaisesRegex(ManifestError, "could not enumerate artifact directory"):
+                build_artifact_manifest_payloads(**self.kwargs())
 
     def test_rejects_symlinked_artifact_file(self):
         target = Path(self.temp.name) / "outside.bin"
