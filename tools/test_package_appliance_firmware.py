@@ -2611,6 +2611,112 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(sorted_temp, "r", encoding="utf-8") as fp:
             self.assertEqual(fp.read(), "PARTIAL-CHECKSUM\n")
 
+    def _manifest_sync_script(self, wrapper):
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            content = fp.read()
+        begin_marker = "# PHX-MANIFEST-DURABILITY-BEGIN"
+        end_marker = "# PHX-MANIFEST-DURABILITY-END"
+        self.assertIn(begin_marker, content)
+        self.assertIn(end_marker, content)
+        publish = content.index('if ! ln "$SORTED_MANIFEST" "$OUT_MANIFEST"; then')
+        begin = content.index(begin_marker)
+        end = content.index(end_marker, begin) + len(end_marker)
+        self.assertLess(publish, begin, "Manifest durability must follow atomic hard-link publication")
+        self.assertLess(end, content.index('echo "Release manifest written to'))
+        self.assertNotIn('rm -f "$SORTED_MANIFEST" "$TMP_MANIFEST"', content)
+        return content[begin:end]
+
+    def test_generated_wrapper_fsyncs_manifest_before_temporary_cleanup(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "manifest-durability-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "manifest-durability-build.sh")
+        generate_build_script(manifest, wrapper)
+        sync_script = self._manifest_sync_script(wrapper)
+
+        builder = os.path.join(self.temp_dir, "manifest-durability-builder")
+        os.makedirs(builder)
+        final_name = "RELEASE_MANIFEST.sha256"
+        sorted_name = "RELEASE_MANIFEST.sha256.sorted.tmp"
+        temporary_name = "RELEASE_MANIFEST.sha256.tmp"
+        final_path = os.path.join(builder, final_name)
+        sorted_path = os.path.join(builder, sorted_name)
+        temporary_path = os.path.join(builder, temporary_name)
+        expected = "0123456789abcdef  bin/targets/ramips/mt7621/synthetic.bin\\n"
+        with open(final_path, "w", encoding="utf-8") as fp:
+            fp.write(expected)
+        os.link(final_path, sorted_path)
+        with open(temporary_path, "w", encoding="utf-8") as fp:
+            fp.write("unsorted checksum input\\n")
+
+        events = []
+        original_fsync = os.fsync
+
+        def record_fsync(file_descriptor):
+            mode = os.fstat(file_descriptor).st_mode
+            events.append("directory" if stat.S_ISDIR(mode) else "file")
+            return original_fsync(file_descriptor)
+
+        with mock.patch.object(packager.os, "fsync", side_effect=record_fsync):
+            with mock.patch.object(
+                sys,
+                "argv",
+                ["manifest-finalize", builder, final_name, sorted_name, temporary_name],
+            ):
+                exec(sync_script, {"__name__": "__main__"})
+
+        self.assertEqual(
+            events,
+            ["file", "directory", "directory"],
+            "Manifest bytes must sync before the published directory entry, then cleanup must sync",
+        )
+        self.assertTrue(os.path.isfile(final_path))
+        with open(final_path, "r", encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), expected)
+        self.assertFalse(os.path.lexists(sorted_path))
+        self.assertFalse(os.path.lexists(temporary_path))
+
+    def test_generated_wrapper_keeps_temporary_manifests_when_durability_sync_fails(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "manifest-durability-failure-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "manifest-durability-failure-build.sh")
+        generate_build_script(manifest, wrapper)
+        sync_script = self._manifest_sync_script(wrapper)
+
+        builder = os.path.join(self.temp_dir, "manifest-durability-failure-builder")
+        os.makedirs(builder)
+        final_name = "RELEASE_MANIFEST.sha256"
+        sorted_name = "RELEASE_MANIFEST.sha256.sorted.tmp"
+        temporary_name = "RELEASE_MANIFEST.sha256.tmp"
+        final_path = os.path.join(builder, final_name)
+        sorted_path = os.path.join(builder, sorted_name)
+        temporary_path = os.path.join(builder, temporary_name)
+        with open(final_path, "w", encoding="utf-8") as fp:
+            fp.write("0123456789abcdef  image.bin\\n")
+        os.link(final_path, sorted_path)
+        with open(temporary_path, "w", encoding="utf-8") as fp:
+            fp.write("temporary checksum input\\n")
+
+        with mock.patch.object(
+            packager.os, "fsync", side_effect=OSError("simulated manifest durability failure")
+        ):
+            with mock.patch.object(
+                sys,
+                "argv",
+                ["manifest-finalize", builder, final_name, sorted_name, temporary_name],
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "RELEASE-BLOCKED: checksum manifest durability finalization failed",
+                ):
+                    exec(sync_script, {"__name__": "__main__"})
+
+        self.assertTrue(os.path.isfile(final_path))
+        self.assertTrue(os.path.isfile(sorted_path))
+        self.assertTrue(os.path.isfile(temporary_path))
+
+
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
         with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
