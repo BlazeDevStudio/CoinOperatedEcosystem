@@ -331,5 +331,141 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         )
 
 
+def load_runner():
+    spec = importlib.util.spec_from_file_location(
+        "run_imagebuilder_sandbox", os.path.join(TOOLS_DIR, "run_imagebuilder_sandbox.py")
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load release ImageBuilder sandbox runner")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
+    def test_timeout_escalates_and_waits_for_outer_and_child_process_groups(self):
+        runner = load_runner()
+        process = mock.Mock()
+        process.pid = 101
+        process.stdout = None
+        process.stderr = None
+        process.communicate.side_effect = [
+            runner.subprocess.TimeoutExpired(
+                cmd=["bwrap"], timeout=0.01,
+                output="partial stdout", stderr="partial stderr",
+            ),
+            ("final stdout", "final stderr"),
+        ]
+
+        with mock.patch.object(runner.os, "killpg") as killpg, mock.patch.object(
+            runner, "_wait_for_process_groups_exit", return_value=[]
+        ) as wait_groups:
+            stdout, stderr = runner._terminate_process_groups(
+                process, child_pgid=202, grace_seconds=0.01
+            )
+
+        self.assertEqual(stdout, "final stdout")
+        self.assertEqual(stderr, "final stderr")
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                mock.call(101, runner.signal.SIGTERM),
+                mock.call(202, runner.signal.SIGTERM),
+                mock.call(101, runner.signal.SIGKILL),
+                mock.call(202, runner.signal.SIGKILL),
+            ],
+            "timeout cleanup must escalate both the outer bwrap and --new-session child groups",
+        )
+        wait_groups.assert_called_once_with([101, 202], 0.01)
+        self.assertEqual(process.communicate.call_count, 2)
+
+    def test_successful_leader_exit_still_kills_detached_child_group(self):
+        runner = load_runner()
+        process = mock.Mock()
+        process.pid = 301
+        process.stdout = None
+        process.stderr = None
+        process.communicate.return_value = ("build output", "")
+
+        with mock.patch.object(runner.os, "killpg") as killpg, mock.patch.object(
+            runner, "_wait_for_process_groups_exit", return_value=[]
+        ) as wait_groups:
+            stdout, stderr = runner._terminate_process_groups(
+                process, child_pgid=402, grace_seconds=0.01
+            )
+
+        self.assertEqual((stdout, stderr), ("build output", ""))
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                mock.call(301, runner.signal.SIGTERM),
+                mock.call(402, runner.signal.SIGTERM),
+                mock.call(301, runner.signal.SIGKILL),
+                mock.call(402, runner.signal.SIGKILL),
+            ],
+            "a successful wrapper leader must not leave a detached sandbox child running",
+        )
+        wait_groups.assert_called_once_with([301, 402], 0.01)
+
+    def test_timeout_result_preserves_partial_output_and_cleanup_diagnostics(self):
+        runner = load_runner()
+        process = mock.Mock()
+        process.communicate.side_effect = runner.subprocess.TimeoutExpired(
+            cmd=["bwrap"], timeout=1, output="partial build", stderr="partial error"
+        )
+
+        with mock.patch.object(
+            runner,
+            "_terminate_process_groups",
+            return_value=("captured build output", "cleanup diagnostic"),
+        ):
+            (stdout, stderr), timed_out = runner._communicate_with_timeout(
+                process, timeout_seconds=1, child_pgid=502
+            )
+
+        self.assertTrue(timed_out)
+        self.assertEqual(stdout, "captured build output")
+        self.assertIn("cleanup diagnostic", stderr)
+        self.assertIn("partial error", stderr)
+
+    def test_ordinary_release_blocked_output_is_not_misclassified_as_cleanup_failure(self):
+        runner = load_runner()
+        process = mock.Mock()
+        process.communicate.return_value = (
+            "wrapper output",
+            "RELEASE-BLOCKED: approved site ULA /48 is not configured",
+        )
+
+        with mock.patch.object(
+            runner, "_terminate_process_groups", return_value=("", "")
+        ):
+            (stdout, stderr), cleanup_failed = runner._communicate_with_timeout(
+                process, timeout_seconds=1, child_pgid=602
+            )
+
+        self.assertFalse(cleanup_failed)
+        self.assertEqual(stdout, "wrapper output")
+        self.assertIn("approved site ULA /48", stderr)
+
+    def test_unreaped_child_group_cleanup_error_fails_closed_after_successful_leader(self):
+        runner = load_runner()
+        process = mock.Mock()
+        process.communicate.return_value = ("build output", "")
+
+        cleanup_error = (
+            "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL: 702"
+        )
+        with mock.patch.object(
+            runner, "_terminate_process_groups", return_value=("", cleanup_error)
+        ):
+            (stdout, stderr), cleanup_failed = runner._communicate_with_timeout(
+                process, timeout_seconds=1, child_pgid=702
+            )
+
+        self.assertTrue(cleanup_failed)
+        self.assertEqual(stdout, "build output")
+        self.assertIn("did not exit after SIGKILL", stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
