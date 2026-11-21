@@ -812,7 +812,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         original_fchmod = os.fchmod
 
         def record_fsync(file_descriptor):
-            events.append("fsync")
+            if not stat.S_ISDIR(os.fstat(file_descriptor).st_mode):
+                events.append("fsync")
             return original_fsync(file_descriptor)
 
         def record_fchmod(file_descriptor, mode):
