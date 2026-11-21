@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 import os
 import re
 import tempfile
@@ -16,6 +18,7 @@ from write_firmware_artifact_manifest import (
     MANIFEST_FILENAME,
     ManifestError,
     build_artifact_manifest_payloads,
+    main,
     write_artifact_manifest,
 )
 
@@ -175,6 +178,32 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         kwargs["source_sha"] = "not-a-git-sha"
         with self.assertRaisesRegex(ManifestError, "40-character Git SHA"):
             build_artifact_manifest_payloads(**kwargs)
+
+    def test_cli_publishes_manifest_and_checksums_with_exact_provenance(self):
+        output = StringIO()
+        kwargs = self.kwargs()
+        arguments = [
+            "--artifact-dir", kwargs["artifact_dir"],
+            "--repository", kwargs["repository"],
+            "--source-sha", kwargs["source_sha"],
+            "--event-sha", kwargs["event_sha"],
+            "--pr-head-sha", kwargs["pr_head_sha"],
+            "--pr-base-sha", kwargs["pr_base_sha"],
+            "--product", kwargs["product"],
+            "--board", kwargs["board"],
+            "--fqbn", kwargs["fqbn"],
+            "--arduino-cli-version", kwargs["arduino_cli_version"],
+            "--core-id", kwargs["core_id"],
+            "--core-version", kwargs["core_version"],
+        ]
+        with redirect_stdout(output):
+            result = main(arguments)
+
+        self.assertEqual(result, 0)
+        self.assertIn("FIRMWARE-ARTIFACT-MANIFEST-PASS", output.getvalue())
+        self.assertIn("FIRMWARE-SHA256SUMS-PASS", output.getvalue())
+        self.assertTrue((self.artifact_dir / MANIFEST_FILENAME).is_file())
+        self.assertTrue((self.artifact_dir / CHECKSUMS_FILENAME).is_file())
 
     def test_workflow_writes_board_manifests_before_artifact_upload(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
