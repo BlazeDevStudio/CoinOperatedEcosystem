@@ -3002,6 +3002,51 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
                     "a trusted-directory symlink must not redirect execution outside that directory",
                 )
 
+    def test_runner_rejects_setid_bubblewrap_in_trusted_directory(self):
+        for mode in (0o4755, 0o2755):
+            with self.subTest(mode=oct(mode)):
+                with tempfile.TemporaryDirectory() as directory:
+                    target = os.path.join(directory, "bwrap")
+                    with open(target, "w", encoding="utf-8") as fp:
+                        fp.write("#!/bin/sh\\nexit 0\\n")
+                    os.chmod(target, mode)
+                    with mock.patch.object(
+                        run_imagebuilder_sandbox.os.path, "dirname", return_value="/usr/bin"
+                    ):
+                        self.assertFalse(
+                            run_imagebuilder_sandbox._is_within_trusted_system_directories(target),
+                            "setuid/setgid Bubblewrap is not the approved unprivileged userns mode",
+                        )
+
+    def test_runner_rejects_group_or_world_writable_bubblewrap(self):
+        for mode in (0o775, 0o757):
+            with self.subTest(mode=oct(mode)):
+                with tempfile.TemporaryDirectory() as directory:
+                    target = os.path.join(directory, "bwrap")
+                    with open(target, "w", encoding="utf-8") as fp:
+                        fp.write("#!/bin/sh\\nexit 0\\n")
+                    os.chmod(target, mode)
+                    with mock.patch.object(
+                        run_imagebuilder_sandbox.os.path, "dirname", return_value="/usr/bin"
+                    ):
+                        self.assertFalse(
+                            run_imagebuilder_sandbox._is_within_trusted_system_directories(target),
+                            "group/world-writable Bubblewrap must not be trusted",
+                        )
+
+    def test_runner_accepts_regular_unprivileged_bubblewrap_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = os.path.join(directory, "bwrap")
+            with open(target, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\\nexit 0\\n")
+            os.chmod(target, 0o755)
+            with mock.patch.object(
+                run_imagebuilder_sandbox.os.path, "dirname", return_value="/usr/bin"
+            ):
+                self.assertTrue(
+                    run_imagebuilder_sandbox._is_within_trusted_system_directories(target)
+                )
+
     def test_runner_rejects_unbounded_build_timeout(self):
         with mock.patch.object(
             sys,
