@@ -651,7 +651,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                 "open(sys.argv[1], 'w', encoding='ascii').write('ready'); "
                 "time.sleep(60)"
             )
-            outer_code = "\\n".join(
+            outer_code = "\n".join(
                 [
                     "import os, signal, subprocess, sys, time",
                     "signal.signal(signal.SIGTERM, signal.SIG_IGN)",
