@@ -2658,3 +2658,74 @@ The new regression itself passed at `47a4fcd8`: `test_generated_wrapper_rejects_
 5. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC20 — centralize duplicated Bubblewrap trust policy (2026-11-21)
+
+**Disposition:** one behavior-preserving, release-owned cleanup was committed on the existing COE #35 child draft. The host preflight and runtime runner now delegate their identical trusted-directory/executable predicate to one shared helper. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+The release host preflight (`tools/check_imagebuilder_sandbox_host.py`) and runtime runner (`tools/run_imagebuilder_sandbox.py`) independently implemented the same Bubblewrap trust rules:
+
+- every canonical `/usr/bin` or `/bin` directory component must be root-owned and not group/world writable;
+- the executable's parent is resolved while the final component is checked with `lstat`;
+- the executable must be a regular root-owned file;
+- setuid/setgid and group/world-writable executable bits are rejected;
+- executable permission is required;
+- the merged-usr `/bin` alias remains accepted when its canonical parent resolves to `/usr/bin`.
+
+Duplicated security predicates can drift. The new release-owned `tools/imagebuilder_bwrap_trust.py` contains the shared `is_trusted_system_directory` and `is_trusted_executable` functions. The preflight and runtime modules retain their existing private wrapper functions for compatibility, but delegate to the shared predicate. No trust rule was relaxed or broadened.
+
+A new parity regression proves both host preflight and runtime wrappers consult the same shared functions. Existing negative cases for untrusted parents, non-root ownership, writable directories, set-ID bits, symlinked executables and the supported merged-usr alias remain in place. This is a code-structure cleanup, not a newly discovered runtime bypass or a real Bubblewrap execution.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- Child PR #35: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35 — OPEN / DRAFT / UNMERGED.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first commit: [`aec5ba37`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/aec5ba37289ecdcb5633f62ab3cab3e767056ac4).
+- Shared helper and delegation: [`d8d051fc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d8d051fc14263ed097d94b6f343aad30af30ec08).
+- Import-only cleanup: [`cda3b52c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/cda3b52c040aa04e4bfca222bd1737881787a146).
+- Exact source/test SHA: `d8d051fc14263ed097d94b6f343aad30af30ec08`.
+- Exact source after import cleanup: `cda3b52c040aa04e4bfca222bd1737881787a146`.
+- Changed paths: `tools/imagebuilder_bwrap_trust.py`, `tools/check_imagebuilder_sandbox_host.py`, `tools/run_imagebuilder_sandbox.py`, `tools/test_imagebuilder_sandbox_host.py`; this handover is the only documentation path changed for the task.
+- No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER path was changed.
+
+### Test-first RED
+
+- Sandbox PR [#44945866910](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44945866910), exact test-only SHA `aec5ba37`: host preflight suite **31 tests, one expected error**. The new parity regression failed because `imagebuilder_bwrap_trust` did not yet exist; all other host preflight and process-cleanup tests passed.
+- Shared/firmware PR [#44945866855](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44945866855), same exact test-only SHA: tool suite **152 tests, one expected error, two intentional skips**. Firmware syntax and shared-contract checks passed; the packaging/tool step failed only at the new missing-helper import. All-profile admission and board compilation were skipped after the test failure.
+- Case-collision guard [#44945866917](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44945866917): **PASS**.
+
+The expected RED is retained; it is not counted as a passing test.
+
+### Corrected exact-source Actions at `cda3b52c`
+
+- Shared/firmware PR [#44946117563](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44946117563), exact head `cda3b52c`: firmware syntax and shared contracts **PASS**; packaging/tool suite **152 tests PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`. The next all-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Sandbox PR [#44946117667](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44946117667), exact head `cda3b52c`: host preflight **31/31 PASS**. Bubblewrap availability **FAILED CLOSED** because the hosted runner does not have Bubblewrap installed (exit 125); unprivileged identity, namespace preflight and mandatory sandbox/ImageBuilder regressions were **SKIPPED**, not passed.
+- Case-collision guard [#44946117568](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44946117568): **PASS**.
+
+The same source-level outcomes were observed on the push runs [shared #44946113976](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44946113976) and [sandbox #44946114020](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44946114020). These are hosted CI results. No real Bubblewrap namespace or ImageBuilder firmware artifact was produced.
+
+### Live ownership, handovers and integration snapshot
+
+- MASTER PR #288 live head: `46cbcd0eac6312d029fd8904e20d362db7dca7db`. Its `coordination/phoenix/OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`; the PHX-RELEASE workflow route remains `reimplementation-review`. No migration or ownership promotion is authorized.
+- Experiments RELEASE #242 live head: `734b89d9e7792247e8376335c3f3685500ab3f89`. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) is completed success. Signing and publication remain unproven/skipped. Its inherited BlazePwifi project handover was read but is not a RELEASE-owned target for this task.
+- Experiments RELEASE #291 live head: `42797e2f3d65c30a1070caf49c93aebec149d897`; its `.github/PHX_RELEASE_HANDOVER.md` was read. Compatibility matrix [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) **PASS**. Full build [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) **FAIL** at the CORE-owned handover freshness gate. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) **FAIL** at the shared freshness gate; Windows build and publisher skipped. Its 26-path PR remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no path in #291 was modified.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows are queued with zero executed jobs.
+- COE parent #31 remains the unchanged base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 now has source/test head `d8d051fc` and documentation head `cda3b52c`.
+- Cleanup-first #266 remains OPEN, 0/7 checked. This bounded RELEASE cleanup does not complete the wider seven-role cleanup.
+- Issue #172's embedded PR-head index remains stale relative to the live #288/#291/#35 heads; PHX-MASTER owns that index correction. RELEASE did not edit the control-plane body.
+- Authorized Library search did not surface the canonical private Drive registry v11 file or its newer corrections. Historical registry snapshots were not substituted; no private file contents, Drive identifiers or links were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the shared helper and parity regression at exact source/test SHA `d8d051fc14263ed097d94b6f343aad30af30ec08`; no independent review is recorded by RELEASE.
+2. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale #172 PR-head references and preserve the draft-only ownership routes.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
