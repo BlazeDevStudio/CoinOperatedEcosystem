@@ -108,6 +108,33 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(load_profile(custom_profile), expected_profile)
 
+    def test_load_profile_rejects_duplicate_json_object_keys(self):
+        duplicate_documents = [
+            (
+                "top-level",
+                '{"profile_id": "ew1200g-pro", "profile_id": "r281"}',
+                "profile_id",
+            ),
+            (
+                "nested",
+                '{"profile_id": "ew1200g-pro", "networking": {"default_vlan_ids": {"lan": 10, "lan": 20}}}',
+                "lan",
+            ),
+        ]
+        for label, document, duplicate_key in duplicate_documents:
+            with self.subTest(label=label):
+                custom_profile = os.path.join(
+                    self.temp_dir, f"duplicate-{label}.json"
+                )
+                with open(custom_profile, "w", encoding="utf-8") as fp:
+                    fp.write(document)
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"Duplicate JSON object key: '{duplicate_key}'",
+                ):
+                    load_profile(custom_profile)
+
     def test_generate_network_uci_ew1200g_pro(self):
         p = load_profile("ew1200g-pro")
         uci = generate_network_uci(p)
