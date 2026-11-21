@@ -1276,19 +1276,19 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
     sha256sum_candidate = shutil.which("sha256sum", path=TRUSTED_SYSTEM_PATH)
     if not sha256sum_candidate:
         raise OSError("Safe ImageBuilder wrapper requires sha256sum in trusted system directories")
-    # Resolve system-managed aliases once, then pin the exact executable bytes.
-    # The wrapper must not trust a path that can be replaced after generation.
-    sha256sum_path = os.path.realpath(sha256sum_candidate)
+    # Preserve the trusted system PATH entry: some distributions expose
+    # sha256sum through a system-managed symlink outside the directory itself.
+    # Pin the bytes reached through that entry and re-check them before use.
+    sha256sum_path = os.path.abspath(sha256sum_candidate)
     if (
         os.path.dirname(sha256sum_path) not in ("/usr/bin", "/bin")
         or not os.path.isfile(sha256sum_path)
         or not os.access(sha256sum_path, os.X_OK)
-        or not hasattr(os, "O_NOFOLLOW")
     ):
         raise OSError("Safe ImageBuilder wrapper requires a regular trusted-system sha256sum executable")
     sha256sum_fd = -1
     try:
-        sha256sum_fd = os.open(sha256sum_path, os.O_RDONLY | os.O_NOFOLLOW)
+        sha256sum_fd = os.open(sha256sum_path, os.O_RDONLY)
         sha256sum_stat = os.fstat(sha256sum_fd)
         if (
             not stat.S_ISREG(sha256sum_stat.st_mode)
@@ -1338,9 +1338,7 @@ import sys
 path, expected = sys.argv[1:]
 fd = -1
 try:
-    if os.path.islink(path):
-        raise OSError("checksum utility path became a symlink")
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY)
     metadata = os.fstat(fd)
     if not stat.S_ISREG(metadata.st_mode) or not (
         metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
