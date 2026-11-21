@@ -2,8 +2,11 @@
 """Synthetic tests for the release-owned ImageBuilder host preflight."""
 import importlib.util
 import os
+import stat
 import tempfile
 import unittest
+from contextlib import ExitStack
+from types import SimpleNamespace
 from unittest import mock
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +27,44 @@ def load_helper():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def trusted_bwrap_metadata_patches(
+    module,
+    candidate,
+    *,
+    parent_path="/usr/bin",
+    parent_mode=0o755,
+    parent_uid=0,
+    file_mode=0o755,
+    file_uid=0,
+):
+    """Model trusted root-owned system directories and the Bubblewrap inode."""
+    original_lstat = module.os.lstat
+
+    def fake_lstat(path):
+        value = os.fspath(path)
+        if value == candidate:
+            return SimpleNamespace(st_mode=stat.S_IFREG | file_mode, st_uid=file_uid)
+        if value == "/":
+            return SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        if value == "/usr":
+            return SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        if value == parent_path:
+            return SimpleNamespace(
+                st_mode=stat.S_IFDIR | parent_mode,
+                st_uid=parent_uid,
+            )
+        return original_lstat(path)
+
+    stack = ExitStack()
+    stack.enter_context(
+        mock.patch.object(module.os.path, "realpath", return_value=parent_path)
+    )
+    stack.enter_context(
+        mock.patch.object(module.os, "lstat", side_effect=fake_lstat)
+    )
+    return stack
 
 
 class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
@@ -196,14 +237,14 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for mode in (0o4755, 0o2755):
                 with self.subTest(mode=oct(mode)):
-                    path = self.make_fake_bwrap(directory, "exit 0\\n")
-                    os.chmod(path, mode)
+                    path = self.make_fake_bwrap(directory, "exit 0\n")
                     with mock.patch.object(helper.shutil, "which", return_value=path):
                         with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
-                            self.assertIsNone(
-                                helper._find_trusted_bwrap(),
-                                "setuid/setgid Bubblewrap is not the approved unprivileged userns mode",
-                            )
+                            with trusted_bwrap_metadata_patches(helper, path, file_mode=mode):
+                                self.assertIsNone(
+                                    helper._find_trusted_bwrap(),
+                                    "setuid/setgid Bubblewrap is not the approved unprivileged userns mode",
+                                )
                     os.unlink(path)
 
     def test_probe_rejects_group_or_world_writable_bubblewrap(self):
@@ -211,24 +252,77 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for mode in (0o775, 0o757):
                 with self.subTest(mode=oct(mode)):
-                    path = self.make_fake_bwrap(directory, "exit 0\\n")
-                    os.chmod(path, mode)
+                    path = self.make_fake_bwrap(directory, "exit 0\n")
                     with mock.patch.object(helper.shutil, "which", return_value=path):
                         with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
-                            self.assertIsNone(
-                                helper._find_trusted_bwrap(),
-                                "group/world-writable Bubblewrap must not be trusted",
-                            )
+                            with trusted_bwrap_metadata_patches(helper, path, file_mode=mode):
+                                self.assertIsNone(
+                                    helper._find_trusted_bwrap(),
+                                    "group/world-writable Bubblewrap must not be trusted",
+                                )
                     os.unlink(path)
+
+    def test_probe_rejects_symlinked_parent_redirect_outside_trusted_directory(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.make_fake_bwrap(directory, "exit 0\n")
+            with mock.patch.object(helper.shutil, "which", return_value=path):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    with mock.patch.object(
+                        helper.os.path, "realpath", return_value="/tmp/untrusted/bin"
+                    ):
+                        self.assertIsNone(
+                            helper._find_trusted_bwrap(),
+                            "a trusted-looking /usr/bin path must not resolve through an untrusted parent",
+                        )
+
+    def test_probe_rejects_untrusted_trusted_parent_directory(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.make_fake_bwrap(directory, "exit 0\n")
+            with mock.patch.object(helper.shutil, "which", return_value=path):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    for mode, uid in ((0o777, 0), (0o755, 1000)):
+                        with self.subTest(mode=oct(mode), uid=uid):
+                            with trusted_bwrap_metadata_patches(
+                                helper, path, parent_mode=mode, parent_uid=uid
+                            ):
+                                self.assertIsNone(
+                                    helper._find_trusted_bwrap(),
+                                    "trusted executable directories must be root-owned and not group/world writable",
+                                )
+
+    def test_probe_rejects_non_root_owned_bubblewrap(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.make_fake_bwrap(directory, "exit 0\n")
+            with mock.patch.object(helper.shutil, "which", return_value=path):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    with trusted_bwrap_metadata_patches(helper, path, file_uid=1000):
+                        self.assertIsNone(
+                            helper._find_trusted_bwrap(),
+                            "a Bubblewrap executable not owned by root is not trusted",
+                        )
 
     def test_probe_accepts_regular_unprivileged_bubblewrap_mode(self):
         helper = self.helper_or_skip()
         with tempfile.TemporaryDirectory() as directory:
-            path = self.make_fake_bwrap(directory, "exit 0\\n")
-            os.chmod(path, 0o755)
+            path = self.make_fake_bwrap(directory, "exit 0\n")
             with mock.patch.object(helper.shutil, "which", return_value=path):
                 with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
-                    self.assertEqual(helper._find_trusted_bwrap(), path)
+                    with trusted_bwrap_metadata_patches(helper, path):
+                        self.assertEqual(helper._find_trusted_bwrap(), path)
+
+    def test_probe_accepts_bin_alias_resolving_to_trusted_usr_bin(self):
+        helper = self.helper_or_skip()
+        candidate = "/bin/bwrap"
+        with mock.patch.object(helper.shutil, "which", return_value=candidate):
+            with mock.patch.object(helper.os.path, "dirname", return_value="/bin"):
+                with mock.patch.object(helper.os, "access", return_value=True):
+                    with trusted_bwrap_metadata_patches(
+                        helper, candidate, parent_path="/usr/bin"
+                    ):
+                        self.assertEqual(helper._find_trusted_bwrap(), candidate)
 
     def test_probe_blocks_when_bubblewrap_is_missing(self):
         helper = self.helper_or_skip()
