@@ -1511,7 +1511,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.makedirs(builder)
         make_marker = os.path.join(self.temp_dir, "checksum-tool-make-ran")
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
-            fp.write("image:\n\\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\n")
+            fp.write("image:\n\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\n")
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
