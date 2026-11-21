@@ -531,13 +531,13 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                 _, stderr = runner._terminate_process_groups(
                     process, child_pgid=child_pgid, grace_seconds=2.0
                 )
-                cleanup_attempted = True
                 self.assertEqual(stderr, "")
                 self.assertEqual(process.returncode, -runner.signal.SIGKILL)
                 with self.assertRaises(ProcessLookupError):
                     os.killpg(child_pgid, 0)
                 with self.assertRaises(ProcessLookupError):
                     os.killpg(process.pid, 0)
+                cleanup_attempted = True
             finally:
                 if child_pgid is None and os.path.exists(pid_path):
                     with open(pid_path, "r", encoding="ascii") as fp:
