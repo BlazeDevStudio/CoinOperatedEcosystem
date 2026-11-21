@@ -1453,6 +1453,86 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertFalse(os.path.exists(bwrap_marker), "caller PATH must not choose the sandbox executable")
         self.assertFalse(os.path.exists(os.path.join(builder, "RELEASE_MANIFEST.sha256")))
 
+    def test_generated_wrapper_rejects_checksum_utility_changed_after_generation(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging_checksum_tool")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "checksum-tool-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            content = fp.read()
+        self.assertRegex(
+            content,
+            r"(?m)^SHA256SUM_SHA256=[0-9a-f]{64}$",
+            "generated wrapper must pin the checksum utility bytes, not only its path",
+        )
+
+        tool_marker = os.path.join(self.temp_dir, "checksum-tool-executed")
+        fake_tool = os.path.join(self.temp_dir, "pinned-sha256sum")
+        original_tool = (
+            "#!/bin/sh\\n"
+            f"printf trusted-tool-used > {shlex.quote(tool_marker)}\\n"
+            "exit 0\\n"
+        ).encode("utf-8")
+        with open(fake_tool, "wb") as fp:
+            fp.write(original_tool)
+        os.chmod(fake_tool, 0o755)
+        expected_tool_sha256 = hashlib.sha256(original_tool).hexdigest()
+
+        wrapper_lines = content.splitlines()
+        path_assignments = 0
+        digest_assignments = 0
+        for index, line in enumerate(wrapper_lines):
+            if line.startswith("SHA256SUM_PATH="):
+                wrapper_lines[index] = "SHA256SUM_PATH=" + shlex.quote(fake_tool)
+                path_assignments += 1
+            elif line.startswith("SHA256SUM_SHA256="):
+                wrapper_lines[index] = "SHA256SUM_SHA256=" + expected_tool_sha256
+                digest_assignments += 1
+        self.assertEqual(path_assignments, 1)
+        self.assertEqual(digest_assignments, 1)
+        with open(wrapper, "w", encoding="utf-8") as fp:
+            fp.write("\\n".join(wrapper_lines) + "\\n")
+        os.chmod(wrapper, 0o755)
+
+        # Simulate replacement after wrapper generation but before operator execution.
+        with open(fake_tool, "wb") as fp:
+            fp.write(
+                (
+                    "#!/bin/sh\\n"
+                    f"printf tampered-tool-used > {shlex.quote(tool_marker)}\\n"
+                    "exit 0\\n"
+                ).encode("utf-8")
+            )
+        os.chmod(fake_tool, 0o755)
+
+        builder = os.path.join(self.temp_dir, "checksum-tool-imagebuilder")
+        os.makedirs(builder)
+        make_marker = os.path.join(self.temp_dir, "checksum-tool-make-ran")
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\\n\\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\\n")
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
+        env.pop("PHX_BWRAP_OWNER_PROBE", None)
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "pinned sha256sum executable SHA-256 differs",
+            result.stderr,
+        )
+        self.assertFalse(
+            os.path.exists(tool_marker),
+            "a replaced checksum utility must be rejected before it is executed",
+        )
+        self.assertFalse(
+            os.path.exists(make_marker),
+            "ImageBuilder Makefile must not run after checksum utility pin failure",
+        )
+
     def test_generated_wrapper_does_not_accept_forged_sandbox_environment(self):
         profile = load_profile("gl-mt1300")
         staging = os.path.join(self.temp_dir, "staging_forged_sandbox")
