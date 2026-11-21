@@ -12,6 +12,7 @@ HELPER_PATH = os.path.join(TOOLS_DIR, "check_imagebuilder_sandbox_host.py")
 WORKFLOW_PATH = os.path.join(
     REPO_ROOT, ".github", "workflows", "release-imagebuilder-sandbox.yml"
 )
+HANDOVER_PATH = os.path.join(TOOLS_DIR, "RELEASE_PACKAGER_HANDOVER.md")
 
 
 def load_helper():
@@ -91,6 +92,50 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertNotIn("newuidmap", lowered)
         self.assertNotIn("newgidmap", lowered)
 
+    def test_probe_command_hides_host_credential_and_external_mount_paths(self):
+        helper = self.helper_or_skip()
+        command = helper.build_probe_command("/usr/bin/bwrap")
+        tmpfs_paths = {
+            command[index + 1]
+            for index, token in enumerate(command[:-1])
+            if token == "--tmpfs"
+        }
+        self.assertEqual(
+            tmpfs_paths,
+            {"/tmp", "/home", "/root", "/run", "/mnt", "/media", "/srv"},
+        )
+
+    def test_handover_describes_the_current_unprivileged_user_namespace(self):
+        with open(HANDOVER_PATH, "r", encoding="utf-8") as fp:
+            handover = fp.read()
+        marker = "- Current candidate implementation:"
+        self.assertIn(marker, handover, "release handover must retain a current implementation section")
+        section = handover.split(marker, 1)[1].split("- Current exact-head Actions:", 1)[0]
+        normalized = " ".join(section.split()).replace("**", "")
+        self.assertIn(
+            "single-ID user namespace",
+            normalized,
+            "handover must describe the runner's actual single-ID user namespace",
+        )
+        self.assertIn(
+            "does not invoke `sudo`, `newuidmap`, or `newgidmap`",
+            normalized,
+            "handover must not claim external privileged mapping helpers",
+        )
+        self.assertNotIn(
+            "starts privileged bubblewrap",
+            normalized.lower(),
+            "handover must not describe the current unprivileged runner as privileged",
+        )
+        self.assertNotIn(
+            "blocks until `newuidmap`/`newgidmap`",
+            normalized,
+            "handover must not claim mapping helpers are used",
+        )
+        self.assertIn("`--share-net` is deliberate", normalized)
+        self.assertIn("network isolation is not claimed", normalized.lower())
+
+
     def test_probe_accepts_a_supported_fake_host(self):
         helper = self.helper_or_skip()
         with tempfile.TemporaryDirectory() as directory:
@@ -119,12 +164,92 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertFalse(ready)
         self.assertIn("timed out", detail.lower())
 
+    def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
+        helper = self.helper_or_skip()
+        with mock.patch.object(helper.shutil, "which", return_value=None) as which:
+            ready, detail = helper.check_host(timeout_seconds=1)
+        self.assertFalse(ready)
+        self.assertIn("not found", detail.lower())
+        which.assert_called_once_with("bwrap", path="/usr/bin:/bin")
+
+
+    def test_probe_rejects_symlinked_bubblewrap_in_trusted_directory(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            target = os.path.join(directory, "real-bwrap")
+            link = os.path.join(directory, "bwrap")
+            with open(target, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\\nexit 0\\n")
+            os.chmod(target, 0o755)
+            os.symlink(target, link)
+
+            with mock.patch.object(helper.shutil, "which", return_value=link):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    self.assertIsNone(
+                        helper._find_trusted_bwrap(),
+                        "a trusted-directory symlink must not redirect execution outside that directory",
+                    )
+
+
+    def test_probe_rejects_setid_bubblewrap_in_trusted_directory(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in (0o4755, 0o2755):
+                with self.subTest(mode=oct(mode)):
+                    path = self.make_fake_bwrap(directory, "exit 0\\n")
+                    os.chmod(path, mode)
+                    with mock.patch.object(helper.shutil, "which", return_value=path):
+                        with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                            self.assertIsNone(
+                                helper._find_trusted_bwrap(),
+                                "setuid/setgid Bubblewrap is not the approved unprivileged userns mode",
+                            )
+                    os.unlink(path)
+
+    def test_probe_rejects_group_or_world_writable_bubblewrap(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in (0o775, 0o757):
+                with self.subTest(mode=oct(mode)):
+                    path = self.make_fake_bwrap(directory, "exit 0\\n")
+                    os.chmod(path, mode)
+                    with mock.patch.object(helper.shutil, "which", return_value=path):
+                        with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                            self.assertIsNone(
+                                helper._find_trusted_bwrap(),
+                                "group/world-writable Bubblewrap must not be trusted",
+                            )
+                    os.unlink(path)
+
+    def test_probe_accepts_regular_unprivileged_bubblewrap_mode(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.make_fake_bwrap(directory, "exit 0\\n")
+            os.chmod(path, 0o755)
+            with mock.patch.object(helper.shutil, "which", return_value=path):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    self.assertEqual(helper._find_trusted_bwrap(), path)
+
     def test_probe_blocks_when_bubblewrap_is_missing(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None):
             ready, detail = helper.check_host(timeout_seconds=1)
         self.assertFalse(ready)
         self.assertIn("not found", detail.lower())
+
+
+    def test_workflow_runs_host_unit_tests_before_bwrap_availability_gate(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        tests_position = workflow.find("Run sandbox host preflight unit tests")
+        availability_position = workflow.find("Verify bubblewrap availability (no privileged install)")
+        self.assertGreater(tests_position, -1)
+        self.assertGreater(availability_position, -1)
+        self.assertLess(
+            tests_position,
+            availability_position,
+            "pure host-preflight unit tests must run before the real-host Bubblewrap availability gate",
+        )
 
 
     def test_workflow_triggers_for_release_child_branch(self):
@@ -141,6 +266,68 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             "      - phoenix/release-build-script-publication-safety-20261117",
             push_section,
             "the mandatory sandbox must run on the release child branch after reconciliation",
+        )
+
+
+    def test_workflow_requires_existing_bubblewrap_without_privileged_install(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        bootstrap_section = workflow.split(
+            "      - name: Verify bubblewrap availability (no privileged install)", 1
+        )[1].split("      - name: Verify unprivileged single-ID runner identity", 1)[0]
+        self.assertIn(
+            "command -v bwrap",
+            bootstrap_section,
+            "sandbox workflow must fail closed when bubblewrap is unavailable",
+        )
+        self.assertIn("bwrap --version", bootstrap_section)
+        self.assertIn(
+            "RELEASE-BLOCKED: bubblewrap is not installed on this runner",
+            bootstrap_section,
+            "missing Bubblewrap must report the boundary block explicitly",
+        )
+        self.assertIn(
+            "exit 125",
+            bootstrap_section,
+            "missing Bubblewrap must use the standard release-blocked exit code",
+        )
+        self.assertNotRegex(
+            bootstrap_section,
+            r"\\bsudo\\s+apt-get\\b",
+            "sandbox workflow must not install runtime dependencies with sudo",
+        )
+        self.assertNotIn(
+            "apt-get install",
+            bootstrap_section,
+            "sandbox workflow must not mutate the hosted runner before the NO-GO preflight",
+        )
+
+
+    def test_workflow_uses_immutable_node24_checkout_action(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+        checkout_step = workflow.split(
+            "      - name: Checkout exact PR head", 1
+        )[1].split("      - name: Install bubblewrap", 1)[0]
+        self.assertIn(
+            "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            checkout_step,
+            "sandbox checkout must use the reviewed immutable Node24 action commit",
+        )
+        self.assertIn(
+            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+            checkout_step,
+            "sandbox must continue checking out the exact triggering PR/push SHA",
+        )
+        self.assertIn(
+            "persist-credentials: false",
+            checkout_step,
+            "sandbox checkout must not persist the workflow token in Git config",
+        )
+        self.assertNotRegex(
+            checkout_step,
+            r"uses:\s*actions/checkout@v",
+            "sandbox checkout must not use a mutable version tag",
         )
 
 

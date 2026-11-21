@@ -10,6 +10,7 @@ Generates validated OpenWrt rootfs overlays and ImageBuilder profiles for turnke
 import argparse
 import errno
 import hashlib
+import ipaddress
 import json
 import os
 import shutil
@@ -17,11 +18,19 @@ import shlex
 import stat
 import sys
 import re
+import secrets
+
+from run_imagebuilder_sandbox import DEFAULT_BUILD_TIMEOUT_SECONDS
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHARED_PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-profile", "profiles")
+TRUSTED_SYSTEM_PATH = "/usr/bin:/bin"
 DEFAULT_ROOTFS = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 DEFAULT_RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
+
+# Intentionally unset until PHX-CORE/COE select a durable site-prefix authority
+# and MASTER approves the provisioning contract. Never use a vendor or per-device fallback.
+APPROVED_SITE_ULA_PREFIX = None
 
 RENTAL_PACKAGES = [
     "openssl-util",
@@ -52,15 +61,71 @@ EXCLUDED_PACKAGES = [
 ]
 
 
+def _reject_duplicate_json_object_keys(pairs):
+    """Reject ambiguous JSON objects instead of silently keeping the last duplicate key."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
 def load_profile(profile_id_or_path: str) -> dict:
-    if os.path.isfile(profile_id_or_path):
-        path = profile_id_or_path
+    """Load a profile through no-follow descriptors; profile paths must be regular files."""
+    try:
+        requested_path = os.fspath(profile_id_or_path)
+    except TypeError as exc:
+        raise ValueError("Router profile must be a profile ID or filesystem path") from exc
+    if not isinstance(requested_path, str) or not requested_path:
+        raise ValueError("Router profile must be a non-empty profile ID or filesystem path")
+
+    # Preserve the CLI's profile-ID or custom-JSON-path behavior. lexists()
+    # deliberately recognizes a final symlink so the descriptor open below
+    # rejects it instead of treating it as a profile ID.
+    is_explicit_path = (
+        os.path.lexists(requested_path)
+        or bool(os.path.dirname(requested_path))
+        or requested_path.lower().endswith(".json")
+    )
+    if is_explicit_path:
+        path = os.path.abspath(requested_path)
     else:
-        path = os.path.join(SHARED_PROFILES_DIR, f"{profile_id_or_path}.json")
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"Router profile not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", requested_path):
+            raise ValueError(f"Invalid router profile ID: {requested_path!r}")
+        path = os.path.join(SHARED_PROFILES_DIR, f"{requested_path}.json")
+
+    profile_fd = -1
+    try:
+        profile_fd = _open_file_without_symlink_parents(
+            path,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
+            0,
+            "Router profile",
+            "Safe profile loading requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid router profile path",
+        )
+        profile_stat = os.fstat(profile_fd)
+        if not stat.S_ISREG(profile_stat.st_mode):
+            raise ValueError(f"Router profile is not a regular file: {path}")
+
+        with os.fdopen(profile_fd, "r", encoding="utf-8") as profile_file:
+            profile_fd = -1
+            return json.load(
+                profile_file,
+                object_pairs_hook=_reject_duplicate_json_object_keys,
+            )
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Router profile not found: {path}") from exc
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise ValueError(
+                f"Refusing symlinked or non-directory router profile path: {path}"
+            ) from exc
+        raise
+    finally:
+        if profile_fd >= 0:
+            os.close(profile_fd)
 
 
 def _validate_uci_interface(value, field_name: str) -> str:
@@ -77,8 +142,36 @@ def _validate_uci_vlan_id(value, field_name: str) -> int:
     return value
 
 
+def _validate_site_ula_prefix(value) -> str:
+    """Require an explicitly approved site-scoped RFC 4193 ULA /48."""
+    error = (
+        "An approved site-scoped RFC 4193 ULA /48 is required; "
+        "release packaging is blocked until the site-prefix authority is defined"
+    )
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(error)
+    try:
+        network = ipaddress.IPv6Network(value, strict=True)
+    except ValueError as exc:
+        raise ValueError(error) from exc
+
+    ula_space = ipaddress.IPv6Network("fd00::/8")
+    address = network.network_address
+    if (
+        network.prefixlen != 48
+        or not network.subnet_of(ula_space)
+        or address.is_multicast
+        or address.is_link_local
+        or address.is_global
+        or address.is_unspecified
+    ):
+        raise ValueError(error)
+    return network.with_prefixlen
+
+
 def generate_network_uci(profile: dict) -> str:
     """Generate OpenWrt /etc/config/network with DSA/bridge VLAN isolation."""
+    ula_prefix = _validate_site_ula_prefix(APPROVED_SITE_ULA_PREFIX)
     net = profile["networking"]
     vlan_ids = net.get("default_vlan_ids")
     if not isinstance(vlan_ids, dict):
@@ -87,6 +180,8 @@ def generate_network_uci(profile: dict) -> str:
     lan_vlan = _validate_uci_vlan_id(vlan_ids.get("lan"), "lan")
     guest_vlan = _validate_uci_vlan_id(vlan_ids.get("guest"), "guest")
     vendo_vlan = _validate_uci_vlan_id(vlan_ids.get("vendo"), "vendo")
+    if len({lan_vlan, guest_vlan, vendo_vlan}) != 3:
+        raise ValueError("LAN, guest, and vendo VLAN IDs must be distinct")
     wan_interface = _validate_uci_interface(net.get("wan_interface"), "wan_interface")
 
     raw_ports = net.get("ports")
@@ -110,7 +205,7 @@ def generate_network_uci(profile: dict) -> str:
         "\toption netmask '255.0.0.0'",
         "",
         "config globals 'globals'",
-        "\toption ula_prefix 'fd00:db8:blaze::/48'",
+        f"\toption ula_prefix '{ula_prefix}'",
         "",
         "config device 'br_lan'",
         "\toption name 'br-lan'",
@@ -154,14 +249,172 @@ def generate_network_uci(profile: dict) -> str:
 
 
 def calculate_overlay_size(staging_dir: str) -> int:
-    """Calculate total size of overlay in kilobytes."""
+    """Calculate overlay size through pinned no-follow directory/entry descriptors."""
+    if (
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or not hasattr(os, "O_PATH")
+        or os.open not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+    ):
+        raise OSError(
+            "Safe overlay size calculation requires Linux O_PATH and POSIX "
+            "dir_fd, O_DIRECTORY and O_NOFOLLOW support"
+        )
+
+    staging_root = os.path.abspath(staging_dir)
+    parent_fd = -1
+    root_fd = -1
+    pending_directories = []
     total_bytes = 0
-    for root, _, files in os.walk(staging_dir):
-        for f in files:
-            fp = os.path.join(root, f)
-            if not os.path.islink(fp):
-                total_bytes += os.path.getsize(fp)
-    return (total_bytes + 1023) // 1024
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    entry_flags = os.O_PATH | os.O_NOFOLLOW
+
+    try:
+        parent_fd, root_name = _open_parent_directory_without_symlink_parents(
+            staging_root,
+            "Staging root for overlay size",
+            "Safe overlay size calculation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staging root directory name",
+        )
+        try:
+            root_entry = os.stat(
+                root_name,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Staging directory not found: {staging_root}"
+            ) from exc
+        if not stat.S_ISDIR(root_entry.st_mode):
+            raise ValueError(
+                f"Staging root is not a real directory: {staging_root}"
+            )
+
+        try:
+            root_fd = os.open(root_name, directory_flags, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staging root changed or became a symlink while opening: {staging_root}"
+                ) from exc
+            raise
+
+        opened_root = os.fstat(root_fd)
+        if (
+            not stat.S_ISDIR(opened_root.st_mode)
+            or (root_entry.st_dev, root_entry.st_ino)
+            != (opened_root.st_dev, opened_root.st_ino)
+        ):
+            raise ValueError(
+                f"Staging root changed while opening: {staging_root}"
+            )
+
+        os.close(parent_fd)
+        parent_fd = -1
+        pending_directories.append((root_fd, "."))
+        root_fd = -1
+
+        while pending_directories:
+            directory_fd, relative_directory = pending_directories.pop()
+            try:
+                for entry_name in os.listdir(directory_fd):
+                    relative_entry = (
+                        entry_name
+                        if relative_directory == "."
+                        else f"{relative_directory}/{entry_name}"
+                    )
+                    try:
+                        entry_fd = os.open(
+                            entry_name,
+                            entry_flags,
+                            dir_fd=directory_fd,
+                        )
+                    except OSError as exc:
+                        if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                            raise ValueError(
+                                "Staged entry changed while opening during overlay "
+                                f"size walk: {relative_entry}"
+                            ) from exc
+                        raise
+
+                    try:
+                        opened_entry = os.fstat(entry_fd)
+                        try:
+                            current_entry = os.stat(
+                                entry_name,
+                                dir_fd=directory_fd,
+                                follow_symlinks=False,
+                            )
+                        except FileNotFoundError as exc:
+                            raise ValueError(
+                                "Staged entry changed during overlay size walk: "
+                                f"{relative_entry}"
+                            ) from exc
+                        if (
+                            (current_entry.st_dev, current_entry.st_ino)
+                            != (opened_entry.st_dev, opened_entry.st_ino)
+                        ):
+                            raise ValueError(
+                                "Staged entry changed while opening during overlay "
+                                f"size walk: {relative_entry}"
+                            )
+
+                        # Rootfs symlinks are intentional and excluded from the
+                        # byte budget, but O_PATH pins the link itself so a
+                        # symlink-to-file replacement cannot be silently skipped.
+                        if stat.S_ISLNK(opened_entry.st_mode):
+                            continue
+
+                        if stat.S_ISDIR(opened_entry.st_mode):
+                            try:
+                                child_fd = os.open(
+                                    entry_name,
+                                    directory_flags,
+                                    dir_fd=directory_fd,
+                                )
+                            except OSError as exc:
+                                if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                                    raise ValueError(
+                                        "Staged directory changed or became a symlink "
+                                        f"during overlay size walk: {relative_entry}"
+                                    ) from exc
+                                raise
+
+                            opened_child = os.fstat(child_fd)
+                            if (
+                                not stat.S_ISDIR(opened_child.st_mode)
+                                or (opened_entry.st_dev, opened_entry.st_ino)
+                                != (opened_child.st_dev, opened_child.st_ino)
+                            ):
+                                os.close(child_fd)
+                                raise ValueError(
+                                    "Staged directory changed while opening during "
+                                    f"overlay size walk: {relative_entry}"
+                                )
+                            pending_directories.append((child_fd, relative_entry))
+                            continue
+
+                        # O_PATH gives a stable metadata handle without requiring
+                        # file read permission or opening a FIFO/device.
+                        total_bytes += opened_entry.st_size
+                    finally:
+                        os.close(entry_fd)
+            finally:
+                os.close(directory_fd)
+
+        return (total_bytes + 1023) // 1024
+    finally:
+        if root_fd >= 0:
+            os.close(root_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+        while pending_directories:
+            directory_fd, _ = pending_directories.pop()
+            os.close(directory_fd)
 
 
 def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool = False) -> str:
@@ -181,26 +434,102 @@ def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool =
 
 
 def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
-    """Create a real directory chain beneath staging without traversing copied symlinks."""
-    current = staging_dir
-    for component in relative_path.split("/"):
+    """Create staging directories through pinned descriptors without following links."""
+    components = relative_path.split("/")
+    for component in components:
         if component in ("", ".", ".."):
             raise ValueError(f"Invalid staged directory component: {component!r}")
-        current = os.path.join(current, component)
+
+    if (
+        os.mkdir not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+    ):
+        raise OSError(
+            "Safe staged directory creation requires POSIX dir_fd mkdir/stat support"
+        )
+
+    staging_root = os.path.abspath(staging_dir)
+    root_parent_fd = -1
+    current_fd = -1
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        root_parent_fd, root_name = _open_parent_directory_without_symlink_parents(
+            staging_root,
+            "Staging root",
+            "Safe staged directory creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staging root directory name",
+        )
         try:
-            os.mkdir(current)
-        except FileExistsError:
-            pass
-        mode = os.lstat(current).st_mode
-        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-            raise ValueError(
-                f"Refusing symlink or non-directory in staged configuration path: {current}"
-            )
-    return current
+            current_fd = os.open(root_name, directory_flags, dir_fd=root_parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staging root path contains a symlink or non-directory: {staging_root}"
+                ) from exc
+            raise
+
+        root_entry = os.stat(root_name, dir_fd=root_parent_fd, follow_symlinks=False)
+        root_opened = os.fstat(current_fd)
+        if not stat.S_ISDIR(root_entry.st_mode) or (
+            root_entry.st_dev,
+            root_entry.st_ino,
+        ) != (root_opened.st_dev, root_opened.st_ino):
+            raise ValueError(f"Staging root path changed while opening: {staging_root}")
+
+        os.close(root_parent_fd)
+        root_parent_fd = -1
+        current_path = staging_root
+
+        for component in components:
+            try:
+                os.mkdir(component, 0o755, dir_fd=current_fd)
+            except FileExistsError:
+                pass
+
+            try:
+                next_fd = os.open(component, directory_flags, dir_fd=current_fd)
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise ValueError(
+                        "Refusing symlink or non-directory in staged configuration path: "
+                        f"{os.path.join(current_path, component)}"
+                    ) from exc
+                raise
+
+            try:
+                entry_stat = os.stat(
+                    component,
+                    dir_fd=current_fd,
+                    follow_symlinks=False,
+                )
+                opened_stat = os.fstat(next_fd)
+                if not stat.S_ISDIR(entry_stat.st_mode) or (
+                    entry_stat.st_dev,
+                    entry_stat.st_ino,
+                ) != (opened_stat.st_dev, opened_stat.st_ino):
+                    raise ValueError(
+                        "Staging directory path changed while opening: "
+                        f"{os.path.join(current_path, component)}"
+                    )
+            except Exception:
+                os.close(next_fd)
+                raise
+
+            os.close(current_fd)
+            current_fd = next_fd
+            current_path = os.path.join(current_path, component)
+
+        return current_path
+    finally:
+        if current_fd >= 0:
+            os.close(current_fd)
+        if root_parent_fd >= 0:
+            os.close(root_parent_fd)
 
 
-def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
-    """Write a staged file without following a copied final-component symlink."""
+def _write_staging_bytes(directory: str, filename: str, content: bytes, mode: int = 0o644) -> None:
+    """Atomically replace one staged file without following links or writing through hardlinks."""
     path = os.path.join(directory, filename)
     try:
         existing_mode = os.lstat(path).st_mode
@@ -211,11 +540,226 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes) -> None:
             f"Refusing symlink or non-regular staged file destination: {path}"
         )
 
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-    flags |= getattr(os, "O_NOFOLLOW", 0)
-    file_fd = os.open(path, flags, 0o644)
-    with os.fdopen(file_fd, "wb") as staged_file:
-        staged_file.write(content)
+    if (
+        os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+        or os.rename not in getattr(os, "supports_dir_fd", set())
+        or os.unlink not in getattr(os, "supports_dir_fd", set())
+    ):
+        raise OSError(
+            "Safe staged file replacement requires dir_fd stat, rename and unlink support"
+        )
+
+    directory_fd = -1
+    temporary_name = None
+    file_fd = -1
+    try:
+        directory_fd, destination_name = _open_parent_directory_without_symlink_parents(
+            path,
+            "Staged file destination",
+            "Safe staged file writes require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staged file destination filename",
+        )
+
+        try:
+            current_stat = os.stat(
+                destination_name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            current_stat = None
+        if current_stat is not None and not stat.S_ISREG(current_stat.st_mode):
+            raise ValueError(
+                f"Refusing symlink or non-regular staged file destination: {path}"
+            )
+
+        # Never truncate the destination inode: it may be a hardlink to an
+        # operator-owned file. Write a fresh inode in the same directory and
+        # atomically replace the directory entry only after the full write.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        for _ in range(16):
+            temporary_name = f".phx-staging-{os.getpid()}-{secrets.token_hex(8)}"
+            try:
+                file_fd = os.open(
+                    temporary_name,
+                    flags,
+                    0o600,
+                    dir_fd=directory_fd,
+                )
+                break
+            except FileExistsError:
+                temporary_name = None
+        else:
+            raise FileExistsError(
+                "Unable to allocate a unique staged-file temporary name"
+            )
+
+        try:
+            with os.fdopen(file_fd, "wb") as staged_file:
+                file_fd = -1
+                staged_file.write(content)
+                staged_file.flush()
+                # Set the final mode on the private temporary inode before
+                # publishing it; never chmod a destination that may be a hardlink.
+                os.fchmod(staged_file.fileno(), mode)
+                os.fsync(staged_file.fileno())
+
+            os.rename(
+                temporary_name,
+                destination_name,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+            )
+            temporary_name = None
+            os.fsync(directory_fd)
+        finally:
+            if file_fd >= 0:
+                os.close(file_fd)
+    finally:
+        if temporary_name is not None and directory_fd >= 0:
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        if directory_fd >= 0:
+            os.close(directory_fd)
+
+
+
+def _normalize_staging_directory_mode(path: str, mode: int) -> bool:
+    """Set a staged directory mode through a pinned no-follow descriptor."""
+    if (
+        os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+        or not hasattr(os, "fchmod")
+    ):
+        raise OSError(
+            "Safe staged directory permissions require dir_fd stat and fchmod support"
+        )
+
+    parent_fd = -1
+    directory_fd = -1
+    try:
+        parent_fd, name = _open_parent_directory_without_symlink_parents(
+            path,
+            "Staged directory permission target",
+            "Safe staged directory permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staged directory permission target",
+        )
+        try:
+            entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError(f"Staged directory disappeared before permission normalization: {path}") from exc
+
+        if stat.S_ISLNK(entry_stat.st_mode):
+            return False
+        if not stat.S_ISDIR(entry_stat.st_mode):
+            raise ValueError(f"Refusing non-directory staged permission target: {path}")
+
+        try:
+            directory_fd = os.open(
+                name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staged directory changed to a symlink or non-directory: {path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(directory_fd)
+        if not stat.S_ISDIR(opened_stat.st_mode) or (
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+        ) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise ValueError(f"Staged directory changed while opening: {path}")
+
+        if stat.S_IMODE(opened_stat.st_mode) != mode:
+            os.fchmod(directory_fd, mode)
+        return True
+    finally:
+        if directory_fd >= 0:
+            os.close(directory_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+
+
+def _normalize_staging_file_mode(path: str, mode: int) -> bool:
+    """Normalize one regular staged file without chmodding a symlink or hardlink target."""
+    if (
+        os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
+    ):
+        raise OSError(
+            "Safe staged file permissions require dir_fd stat and no-follow support"
+        )
+
+    parent_fd = -1
+    file_fd = -1
+    content = None
+    absolute_path = os.path.abspath(path)
+    try:
+        parent_fd, name = _open_parent_directory_without_symlink_parents(
+            absolute_path,
+            "Staged file permission target",
+            "Safe staged file permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+            "Invalid staged file permission target",
+        )
+        try:
+            entry_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise ValueError(f"Staged file disappeared before permission normalization: {path}") from exc
+
+        if stat.S_ISLNK(entry_stat.st_mode):
+            return False
+        if not stat.S_ISREG(entry_stat.st_mode):
+            raise ValueError(f"Refusing non-regular staged permission target: {path}")
+
+        try:
+            file_fd = os.open(
+                name,
+                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0),
+                dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staged file changed to a symlink or non-regular entry: {path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(file_fd)
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+        ) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise ValueError(f"Staged file changed while opening: {path}")
+
+        if stat.S_IMODE(opened_stat.st_mode) == mode:
+            return True
+
+        # A hardlink can expose the same inode outside staging. Read the
+        # pinned source, then atomically replace the staging entry with a new
+        # private inode whose final mode is set before publication.
+        with os.fdopen(file_fd, "rb") as staged_file:
+            file_fd = -1
+            content = staged_file.read()
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+        if parent_fd >= 0:
+            os.close(parent_fd)
+
+    _write_staging_bytes(
+        os.path.dirname(absolute_path),
+        os.path.basename(absolute_path),
+        content,
+        mode=mode,
+    )
+    return True
 
 
 def _write_staging_file(directory: str, filename: str, content: str) -> None:
@@ -223,14 +767,53 @@ def _write_staging_file(directory: str, filename: str, content: str) -> None:
     _write_staging_bytes(directory, filename, content.encode("utf-8"))
 
 
-def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
-    """Copy a regular source file into a verified staging directory safely."""
-    source_mode = os.lstat(source_path).st_mode
-    if not stat.S_ISREG(source_mode):
-        raise ValueError(f"Refusing symlink or non-regular rental source file: {source_path}")
-    with open(source_path, "rb") as source_file:
-        _write_staging_bytes(directory, filename, source_file.read())
 
+def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
+    """Copy one regular rental source file without following symlinked path components."""
+    source_stat = os.lstat(source_path)
+    if not stat.S_ISREG(source_stat.st_mode):
+        raise ValueError(f"Refusing symlink or non-regular rental source file: {source_path}")
+
+    source_fd = -1
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+        try:
+            source_fd = _open_file_without_symlink_parents(
+                source_path,
+                flags,
+                0,
+                "Rental source file",
+                "Safe rental source copying requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+                "Invalid rental source file filename",
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                raise ValueError(
+                    f"Refusing symlinked or unavailable rental source file: {source_path}"
+                ) from exc
+            raise
+
+        opened_stat = os.fstat(source_fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise ValueError(
+                f"Refusing non-regular rental source file after open: {source_path}"
+            )
+        if (opened_stat.st_dev, opened_stat.st_ino) != (
+            source_stat.st_dev,
+            source_stat.st_ino,
+        ):
+            raise ValueError(
+                f"Rental source file changed while opening: {source_path}"
+            )
+
+        with os.fdopen(source_fd, "rb") as source_file:
+            source_fd = -1
+            content = source_file.read()
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+
+    _write_staging_bytes(directory, filename, content)
 
 def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_rental: bool = False, rental_source_dir: str = DEFAULT_RENTAL_DIR) -> dict:
     """Stage the rootfs into a fresh, isolated destination without deleting existing data."""
@@ -260,7 +843,7 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
         raise ValueError(
             "Staging destination must be separate from and outside the source rootfs"
         )
-    shutil.copytree(source_rootfs, staging_dir, symlinks=True)
+    _copy_rootfs_to_new_staging_directory(source_rootfs, staging_dir)
 
     # Inject generated configuration only through real directories and regular files.
     # copytree preserves symlinks; following one here could overwrite data outside staging.
@@ -314,40 +897,37 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
             f"for profile '{profile['profile_id']}'"
         )
 
-    # Set strict filesystem permissions
+    # Normalize through pinned descriptors. A path-based islink()+chmod()
+    # sequence can follow a symlink inserted between the check and chmod.
     for root, dirs, files in os.walk(staging_dir):
         for d in dirs:
             directory_path = os.path.join(root, d)
-            # os.walk lists directory symlinks in dirs even when it will not
-            # recurse into them. chmod follows symlinks by default, so skip
-            # them to avoid changing permissions outside the staging tree.
-            if not os.path.islink(directory_path):
-                # Keep the optional Rental configuration directory private.
-                # Apply this mode during final normalization so the general
-                # directory mode pass cannot overwrite the intended 0700.
-                directory_mode = (
-                    0o700
-                    if rental_etc is not None
-                    and os.path.abspath(directory_path) == os.path.abspath(rental_etc)
-                    else 0o755
-                )
-                os.chmod(directory_path, directory_mode)
+            # Keep the optional Rental configuration directory private.
+            # Apply this mode during final normalization so the general
+            # directory mode pass cannot overwrite the intended 0700.
+            directory_mode = (
+                0o700
+                if rental_etc is not None
+                and os.path.abspath(directory_path) == os.path.abspath(rental_etc)
+                else 0o755
+            )
+            _normalize_staging_directory_mode(directory_path, directory_mode)
         for f in files:
             fp = os.path.join(root, f)
-            if not os.path.islink(fp):
-                # Classify executable paths inside the overlay, never by the
-                # operator-selected absolute staging directory.
-                relative_path = os.path.relpath(fp, staging_dir).replace(os.sep, "/")
-                relative_path_with_root = f"/{relative_path}/"
-                if (
-                    "/cgi-bin/" in relative_path_with_root
-                    or "/init.d/" in relative_path_with_root
-                    or "/usr/sbin/" in relative_path_with_root
-                    or relative_path.endswith(".sh")
-                ):
-                    os.chmod(fp, 0o755)
-                else:
-                    os.chmod(fp, 0o644)
+            # Classify executable paths inside the overlay, never by the
+            # operator-selected absolute staging directory.
+            relative_path = os.path.relpath(fp, staging_dir).replace(os.sep, "/")
+            relative_path_with_root = f"/{relative_path}/"
+            if (
+                "/cgi-bin/" in relative_path_with_root
+                or "/init.d/" in relative_path_with_root
+                or "/usr/sbin/" in relative_path_with_root
+                or relative_path.endswith(".sh")
+            ):
+                file_mode = 0o755
+            else:
+                file_mode = 0o644
+            _normalize_staging_file_mode(fp, file_mode)
 
     return {
         "profile_id": profile["profile_id"],
@@ -361,27 +941,31 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
 
 
 
-def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> int:
-    """Create a new file through a descriptor chain that never follows parent symlinks."""
+
+def _open_parent_directory_without_symlink_parents(
+    path: str,
+    purpose: str,
+    unsupported_message: str,
+    invalid_filename_message: str,
+) -> tuple[int, str]:
+    """Open a file's parent directory through a no-symlink descriptor walk."""
     if (
         os.name != "posix"
         or not hasattr(os, "O_DIRECTORY")
         or not hasattr(os, "O_NOFOLLOW")
         or os.open not in getattr(os, "supports_dir_fd", set())
     ):
-        raise OSError(
-            "Safe build-script creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support"
-        )
+        raise OSError(unsupported_message)
 
     absolute_path = os.path.abspath(path)
     parent_path, filename = os.path.split(absolute_path)
     if filename in ("", ".", ".."):
-        raise ValueError("Invalid build-script output filename")
+        raise ValueError(invalid_filename_message)
 
     directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
     try:
         # Walk from the filesystem root one component at a time. O_NOFOLLOW
-        # protects every parent component, not only the final output filename.
+        # protects every parent component, not only the final filename.
         for component in parent_path.split(os.sep):
             if not component:
                 continue
@@ -394,12 +978,211 @@ def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> 
             except OSError as exc:
                 if exc.errno in (errno.ELOOP, errno.ENOTDIR):
                     raise ValueError(
-                        f"Build script parent path contains a symlink or non-directory: {parent_path}"
+                        f"{purpose} parent path contains a symlink or non-directory: {parent_path}"
                     ) from exc
                 raise
             os.close(directory_fd)
             directory_fd = next_fd
+        return directory_fd, filename
+    except Exception:
+        os.close(directory_fd)
+        raise
 
+
+def _open_or_create_directory_without_symlink_parents(
+    path: str,
+    purpose: str,
+    unsupported_message: str,
+) -> int:
+    """Open or create a directory path one no-follow component at a time."""
+    if (
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or os.open not in getattr(os, "supports_dir_fd", set())
+        or os.mkdir not in getattr(os, "supports_dir_fd", set())
+    ):
+        raise OSError(unsupported_message)
+
+    absolute_path = os.path.abspath(path)
+    directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in absolute_path.split(os.sep):
+            if not component:
+                continue
+            try:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_fd,
+                )
+            except FileNotFoundError:
+                try:
+                    os.mkdir(component, 0o755, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+                try:
+                    next_fd = os.open(
+                        component,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=directory_fd,
+                    )
+                except OSError as exc:
+                    if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                        raise ValueError(
+                            f"{purpose} path contains a symlink or non-directory: {absolute_path}"
+                        ) from exc
+                    raise
+            except OSError as exc:
+                if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                    raise ValueError(
+                        f"{purpose} path contains a symlink or non-directory: {absolute_path}"
+                    ) from exc
+                raise
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return directory_fd
+    except Exception:
+        os.close(directory_fd)
+        raise
+
+
+def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) -> None:
+    """Copy the rootfs into a pinned new staging directory, never a replaced parent path."""
+    absolute_staging = os.path.abspath(staging_dir)
+    parent_path, staging_name = os.path.split(absolute_staging)
+    if staging_name in ("", ".", ".."):
+        raise ValueError(f"Invalid staging destination filename: {absolute_staging}")
+
+    unsupported = (
+        "Safe rootfs staging requires POSIX dir_fd, O_DIRECTORY, O_NOFOLLOW "
+        "and /proc/self/fd support"
+    )
+    parent_fd = _open_or_create_directory_without_symlink_parents(
+        parent_path,
+        "Staging destination parent",
+        unsupported,
+    )
+    staging_fd = -1
+    staging_created = False
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        try:
+            os.mkdir(staging_name, 0o755, dir_fd=parent_fd)
+        except FileExistsError:
+            raise FileExistsError(
+                f"Staging destination already exists; refusing to overwrite or delete: {absolute_staging}"
+            ) from None
+        staging_created = True
+
+        try:
+            staging_fd = os.open(staging_name, directory_flags, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    f"Staging destination changed while opening: {absolute_staging}"
+                ) from exc
+            raise
+
+        entry_stat = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+        opened_stat = os.fstat(staging_fd)
+        if not stat.S_ISDIR(entry_stat.st_mode) or (
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+        ) != (opened_stat.st_dev, opened_stat.st_ino):
+            raise ValueError(
+                f"Staging destination changed while opening: {absolute_staging}"
+            )
+
+        pinned_staging_path = f"/proc/self/fd/{staging_fd}"
+        if not os.path.isdir(pinned_staging_path):
+            raise OSError(unsupported)
+
+        # copytree follows only the pinned descriptor path. Replacing the
+        # operator-visible parent with a symlink cannot redirect these writes.
+        shutil.copytree(
+            source_rootfs,
+            pinned_staging_path,
+            symlinks=True,
+            dirs_exist_ok=True,
+        )
+
+        try:
+            current_parent_fd, current_name = _open_parent_directory_without_symlink_parents(
+                absolute_staging,
+                "Staging destination",
+                unsupported,
+                "Invalid staging destination filename",
+            )
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"Staging destination parent path changed during rootfs copy: {parent_path}"
+            ) from exc
+        try:
+            original_parent_stat = os.fstat(parent_fd)
+            current_parent_stat = os.fstat(current_parent_fd)
+            if current_name != staging_name or (
+                original_parent_stat.st_dev,
+                original_parent_stat.st_ino,
+            ) != (current_parent_stat.st_dev, current_parent_stat.st_ino):
+                raise ValueError(
+                    f"Staging destination parent path changed during rootfs copy: {parent_path}"
+                )
+        finally:
+            os.close(current_parent_fd)
+
+        final_entry = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
+        final_opened = os.fstat(staging_fd)
+        if not stat.S_ISDIR(final_entry.st_mode) or (
+            final_entry.st_dev,
+            final_entry.st_ino,
+        ) != (final_opened.st_dev, final_opened.st_ino):
+            raise ValueError(
+                f"Staging destination changed during rootfs copy: {absolute_staging}"
+            )
+    except Exception:
+        # Remove only the directory still pinned by our descriptor. Never
+        # follow or delete a replacement symlink or another directory entry.
+        if staging_created and staging_fd >= 0:
+            try:
+                current_entry = os.stat(
+                    staging_name,
+                    dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+                opened_entry = os.fstat(staging_fd)
+                if stat.S_ISDIR(current_entry.st_mode) and (
+                    current_entry.st_dev,
+                    current_entry.st_ino,
+                ) == (opened_entry.st_dev, opened_entry.st_ino):
+                    shutil.rmtree(
+                        os.path.join(f"/proc/self/fd/{parent_fd}", staging_name)
+                    )
+            except OSError:
+                pass
+        raise
+    finally:
+        if staging_fd >= 0:
+            os.close(staging_fd)
+        os.close(parent_fd)
+
+
+def _open_file_without_symlink_parents(
+    path: str,
+    flags: int,
+    mode: int,
+    purpose: str,
+    unsupported_message: str,
+    invalid_filename_message: str,
+) -> int:
+    """Open a file through directory descriptors without following any symlink component."""
+    directory_fd, filename = _open_parent_directory_without_symlink_parents(
+        path,
+        purpose,
+        unsupported_message,
+        invalid_filename_message,
+    )
+    try:
         return os.open(
             filename,
             flags | os.O_NOFOLLOW,
@@ -409,6 +1192,26 @@ def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> 
     finally:
         os.close(directory_fd)
 
+
+def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> tuple[int, int]:
+    """Create a build script and retain its parent descriptor for durable publication."""
+    directory_fd, filename = _open_parent_directory_without_symlink_parents(
+        path,
+        "Build script",
+        "Safe build-script creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+        "Invalid build-script output filename",
+    )
+    try:
+        file_fd = os.open(
+            filename,
+            flags | os.O_NOFOLLOW,
+            mode,
+            dir_fd=directory_fd,
+        )
+        return file_fd, directory_fd
+    except Exception:
+        os.close(directory_fd)
+        raise
 
 def generate_build_script(manifest: dict, script_path: str) -> None:
     """Emit an executable shell script to run ImageBuilder and generate SHA-256 release checksums."""
@@ -456,9 +1259,37 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
 
     runner_path = runner_candidate
 
+    # Pin the interpreter that generated this host-specific wrapper. Never
+    # resolve python3 from an operator-controlled PATH at execution time.
+    python_path = os.path.realpath(sys.executable)
+    if (
+        not os.path.isabs(python_path)
+        or os.path.islink(python_path)
+        or not os.path.isfile(python_path)
+        or not os.access(python_path, os.X_OK)
+        or not stat.S_ISREG(os.stat(python_path).st_mode)
+    ):
+        raise OSError("Safe ImageBuilder wrapper requires a stable executable Python interpreter")
+    with open(python_path, "rb") as python_file:
+        python_sha256 = hashlib.sha256(python_file.read()).hexdigest()
+
+    sha256sum_candidate = shutil.which("sha256sum", path=TRUSTED_SYSTEM_PATH)
+    if not sha256sum_candidate:
+        raise OSError("Safe ImageBuilder wrapper requires sha256sum in trusted system directories")
+    sha256sum_path = os.path.abspath(sha256sum_candidate)
+    if (
+        os.path.dirname(sha256sum_path) not in ("/usr/bin", "/bin")
+        or not os.path.isfile(sha256sum_path)
+        or not os.access(sha256sum_path, os.X_OK)
+        or not stat.S_ISREG(os.stat(sha256sum_path).st_mode)
+    ):
+        raise OSError("Safe ImageBuilder wrapper requires a regular trusted-system sha256sum executable")
+
     # This absolute path remains valid after the wrapper changes into ImageBuilder.
     stage_arg = shlex.quote(staging_dir)
     runner_arg = shlex.quote(runner_path)
+    python_arg = shlex.quote(python_path)
+    sha256sum_arg = shlex.quote(sha256sum_path)
 
     content = f"""#!/bin/sh
 # Auto-generated nonproduction ImageBuilder wrapper for {profile_id} ({target_arch})
@@ -466,13 +1297,33 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
 # Host root is read-only and only ImageBuilder is writable; network is shared, not isolated.
 set -eu
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "RELEASE-BLOCKED: python3 is required to verify and enter the ImageBuilder boundary" >&2
+PYTHON_PATH={python_arg}
+PYTHON_SHA256={python_sha256}
+SHA256SUM_PATH={sha256sum_arg}
+RUNNER_PATH={runner_arg}
+RUNNER_SHA256={runner_sha256}
+
+if [ ! -f "$SHA256SUM_PATH" ] || [ ! -x "$SHA256SUM_PATH" ]; then
+    echo "RELEASE-BLOCKED: pinned sha256sum executable is missing or unsafe" >&2
+    exit 1
+fi
+if [ ! -f "$PYTHON_PATH" ] || [ -L "$PYTHON_PATH" ] || [ ! -x "$PYTHON_PATH" ]; then
+    echo "RELEASE-BLOCKED: pinned Python interpreter is missing or unsafe" >&2
+    exit 1
+fi
+PYTHON_DIGEST_LINE="$("$SHA256SUM_PATH" "$PYTHON_PATH")"
+ACTUAL_PYTHON_SHA256="${{PYTHON_DIGEST_LINE%% *}}"
+if [ "$ACTUAL_PYTHON_SHA256" != "$PYTHON_SHA256" ]; then
+    echo "RELEASE-BLOCKED: pinned Python interpreter SHA-256 differs from the generated wrapper" >&2
     exit 1
 fi
 
+# Resolve remaining shell utilities and ImageBuilder tools only from trusted system paths.
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
 BUILD_DIR="${{OPENWRT_IMAGEBUILDER_DIR:-$PWD}}"
-BUILD_DIR="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$BUILD_DIR")"
+BUILD_DIR="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$BUILD_DIR")"
 if [ ! -d "$BUILD_DIR" ]; then
     echo "RELEASE-BLOCKED: ImageBuilder directory not found: $BUILD_DIR" >&2
     exit 1
@@ -483,43 +1334,34 @@ if [ "$BUILD_DIR_REAL" != "$BUILD_DIR" ]; then
     exit 1
 fi
 
-SCRIPT_PATH="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$0")"
-SCRIPT_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SCRIPT_PATH")"
+SCRIPT_PATH="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$0")"
+SCRIPT_REAL="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SCRIPT_PATH")"
 if [ "$SCRIPT_REAL" != "$SCRIPT_PATH" ]; then
     echo "RELEASE-BLOCKED: generated build script path contains a symlink: $SCRIPT_PATH" >&2
     exit 1
 fi
 
-RUNNER_PATH={runner_arg}
-RUNNER_SHA256={runner_sha256}
-RUNNER_REALPATH="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_PATH")"
+RUNNER_REALPATH="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNNER_PATH")"
 if [ "$RUNNER_REALPATH" != "$RUNNER_PATH" ] || [ ! -f "$RUNNER_PATH" ] || [ -L "$RUNNER_PATH" ]; then
     echo "RELEASE-BLOCKED: sandbox runner path contains a symlink or changed target: $RUNNER_PATH" >&2
     exit 1
 fi
-command -v sha256sum >/dev/null 2>&1 || {{
-    echo "RELEASE-BLOCKED: sha256sum is required to verify the sandbox runner" >&2
-    exit 1
-}}
-RUNNER_DIGEST_LINE="$(sha256sum "$RUNNER_PATH")"
+RUNNER_DIGEST_LINE="$("$SHA256SUM_PATH" "$RUNNER_PATH")"
 ACTUAL_RUNNER_SHA256="${{RUNNER_DIGEST_LINE%% *}}"
 if [ "$ACTUAL_RUNNER_SHA256" != "$RUNNER_SHA256" ]; then
     echo "RELEASE-BLOCKED: sandbox runner SHA-256 differs from the generated wrapper" >&2
     exit 1
 fi
 
-# The runner creates a per-invocation ownership probe inside the writable
-# ImageBuilder bind. Direct operator invocation re-enters as the same
-# unprivileged host user; it never elevates through sudo.
-PHX_PROBE_VALID=0
-case "${{PHX_BWRAP_OWNER_PROBE:-}}" in
-    .phx-bwrap-owner-probe-[0-9]*|.phx-test-owner-probe) PHX_PROBE_VALID=1 ;;
-esac
-if [ "${{PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}}" != "1" ] ||
-   [ "$PHX_PROBE_VALID" != "1" ] ||
-   [ ! -f "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ] ||
-   [ -L "$BUILD_DIR/$PHX_BWRAP_OWNER_PROBE" ]; then
-    SANDBOX_ROOT="$(python3 - "$BUILD_DIR" "$SCRIPT_PATH" <<'PY'
+# Environment markers and a writable probe are not proof of a namespace.
+# Ask the pinned runner to verify the single-ID maps and mount boundaries before
+# allowing Makefile execution. A direct operator invocation always enters bwrap.
+if [ "${{PHX_IMAGEBUILDER_SANDBOX_ACTIVE:-}}" = "1" ] &&
+   [ -n "${{PHX_BWRAP_OWNER_PROBE:-}}" ]; then
+    echo "RELEASE-BOUNDARY: verifying active ImageBuilder sandbox context." >&2
+    "$PYTHON_PATH" "$RUNNER_PATH" --verify-context --builder "$BUILD_DIR" --probe "$PHX_BWRAP_OWNER_PROBE"
+else
+    SANDBOX_ROOT="$("$PYTHON_PATH" - "$BUILD_DIR" "$SCRIPT_PATH" <<'PY'
 import os, sys
 try:
     print(os.path.commonpath((os.path.dirname(sys.argv[1]), sys.argv[2])))
@@ -532,9 +1374,10 @@ PY
         exit 1
     fi
     echo "RELEASE-BOUNDARY: entering unprivileged bubblewrap; only the ImageBuilder directory is writable; network isolation is not claimed." >&2
-    exec python3 "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH"
+    # Operators may bound this invocation without editing the generated wrapper.
+    # The runner validates the value against its 1..14400 second limit.
+    exec "$PYTHON_PATH" "$RUNNER_PATH" --cwd "$SANDBOX_ROOT" --builder "$BUILD_DIR" --wrapper "$SCRIPT_PATH" --timeout-seconds "${{PHX_IMAGEBUILDER_TIMEOUT_SECONDS:-{DEFAULT_BUILD_TIMEOUT_SECONDS}}}"
 fi
-
 # Refuse shell redirections to paths created after the preflight checks.
 # This protects both checksum-manifest paths from symlink substitution by the builder.
 set -C
@@ -548,6 +1391,11 @@ if [ ! -d "$STAGING_DIR" ]; then
     echo "RELEASE-BLOCKED: staged rootfs not found: $STAGING_DIR" >&2
     exit 1
 fi
+STAGING_DIR_REAL="$("$PYTHON_PATH" -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$STAGING_DIR")"
+if [ "$STAGING_DIR_REAL" != "$STAGING_DIR" ] || [ -L "$STAGING_DIR" ]; then
+    echo "RELEASE-BLOCKED: staged rootfs path contains a symlink: $STAGING_DIR" >&2
+    exit 1
+fi
 
 # A reused ImageBuilder may report success without writing a new binary.
 # Never certify files or a checksum manifest left by an earlier invocation.
@@ -555,6 +1403,7 @@ fi
 BIN_DIR="$BUILD_DIR/bin/targets/{target_arch}"
 OUT_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256"
 TMP_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.tmp"
+SORTED_MANIFEST="$BUILD_DIR/RELEASE_MANIFEST.sha256.sorted.tmp"
 
 # ImageBuilder writes directly below bin/targets. Never let an existing
 # symlinked target path redirect build output outside this workspace.
@@ -568,6 +1417,10 @@ for IMAGE_COMPONENT in bin targets {target_arch.replace("/", " ")}; do
 done
 if [ -e "$TMP_MANIFEST" ] || [ -L "$TMP_MANIFEST" ]; then
     echo "RELEASE-BLOCKED: previous temporary release manifest exists: $TMP_MANIFEST; use a clean ImageBuilder workspace" >&2
+    exit 1
+fi
+if [ -e "$SORTED_MANIFEST" ] || [ -L "$SORTED_MANIFEST" ]; then
+    echo "RELEASE-BLOCKED: previous sorted temporary manifest exists: $SORTED_MANIFEST; use a clean ImageBuilder workspace" >&2
     exit 1
 fi
 if [ -e "$OUT_MANIFEST" ] || [ -L "$OUT_MANIFEST" ]; then
@@ -599,6 +1452,18 @@ echo "=== Building Appliance Firmware for {profile_id} ==="
 cd "$BUILD_DIR"
 {cmd}
 
+# The pre-build check rejects existing symlinks, but Makefile execution can
+# replace a previously absent output ancestor with a symlink. Revalidate
+# every target/subtarget path component before the manifest scan.
+IMAGE_PATH="$BUILD_DIR"
+for IMAGE_COMPONENT in bin targets {target_arch.replace("/", " ")}; do
+    IMAGE_PATH="$IMAGE_PATH/$IMAGE_COMPONENT"
+    if [ -L "$IMAGE_PATH" ]; then
+        echo "RELEASE-BLOCKED: symlinked ImageBuilder output directory after build: $IMAGE_PATH" >&2
+        exit 1
+    fi
+done
+
 echo "=== Verifying Built Firmware Binaries & Generating Manifest ==="
 IMAGE_REL_DIR="bin/targets/{target_arch}"
 if [ ! -d "$IMAGE_REL_DIR" ]; then
@@ -615,40 +1480,139 @@ if [ -n "$SYMLINK_ENTRY" ]; then
     exit 1
 fi
 
+# A regular file can still alias a cached payload elsewhere in the builder
+# tree. Admit only independently materialized firmware files into the manifest.
+HARDLINKED_IMAGE=$(find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -links +1 -print -quit)
+if [ -n "$HARDLINKED_IMAGE" ]; then
+    echo "RELEASE-BLOCKED: hard-linked firmware image: $HARDLINKED_IMAGE" >&2
+    exit 1
+fi
+
 EMPTY_IMAGE=$(find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -size 0 -print -quit)
 if [ -n "$EMPTY_IMAGE" ]; then
     echo "RELEASE-BLOCKED: empty firmware image: $EMPTY_IMAGE" >&2
     exit 1
 fi
-find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec sha256sum {{}} + > "$TMP_MANIFEST"
+find "$IMAGE_REL_DIR" -type f \\( -name "*.bin" -o -name "*.img.gz" \\) -exec "$SHA256SUM_PATH" {{}} + > "$TMP_MANIFEST"
 if [ ! -s "$TMP_MANIFEST" ]; then
     rm -f "$TMP_MANIFEST"
     echo "RELEASE-BLOCKED: no firmware images found for {target_arch}" >&2
     exit 1
 fi
-LC_ALL=C sort "$TMP_MANIFEST" > "$BUILD_DIR/RELEASE_MANIFEST.sha256"
-rm -f "$TMP_MANIFEST"
+# Sort into a temporary file first. Publish the final manifest with an
+# atomic no-overwrite hard link only after sort has completed successfully.
+if ! LC_ALL=C sort "$TMP_MANIFEST" > "$SORTED_MANIFEST"; then
+    echo "RELEASE-BLOCKED: checksum manifest sort failed; final manifest was not published" >&2
+    exit 1
+fi
+if ! ln "$SORTED_MANIFEST" "$OUT_MANIFEST"; then
+    echo "RELEASE-BLOCKED: final checksum manifest path became occupied; refusing to overwrite: $OUT_MANIFEST" >&2
+    exit 1
+fi
+"$PYTHON_PATH" - "$BUILD_DIR" "RELEASE_MANIFEST.sha256" "RELEASE_MANIFEST.sha256.sorted.tmp" "RELEASE_MANIFEST.sha256.tmp" <<'PHX_MANIFEST_SYNC'
+# PHX-MANIFEST-DURABILITY-BEGIN
+import os
+import stat
+import sys
+
+build_dir, final_name, sorted_name, temporary_name = sys.argv[1:]
+directory_fd = -1
+try:
+    directory_fd = os.open(
+        build_dir,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+    )
+    final_fd = os.open(
+        final_name,
+        os.O_WRONLY | os.O_NOFOLLOW,
+        dir_fd=directory_fd,
+    )
+    try:
+        final_stat = os.fstat(final_fd)
+        sorted_stat = os.stat(
+            sorted_name,
+            dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        temporary_stat = os.stat(
+            temporary_name,
+            dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        if not stat.S_ISREG(final_stat.st_mode):
+            raise RuntimeError("final manifest is not a regular file")
+        if not stat.S_ISREG(sorted_stat.st_mode):
+            raise RuntimeError("sorted temporary manifest is not a regular file")
+        if not stat.S_ISREG(temporary_stat.st_mode):
+            raise RuntimeError("temporary checksum input is not a regular file")
+        if (final_stat.st_dev, final_stat.st_ino) != (sorted_stat.st_dev, sorted_stat.st_ino):
+            raise RuntimeError("final manifest is not the published sorted inode")
+        if final_stat.st_nlink != 2:
+            raise RuntimeError("published manifest has an unexpected hard-link count")
+        if temporary_stat.st_nlink != 1 or (
+            temporary_stat.st_dev,
+            temporary_stat.st_ino,
+        ) == (final_stat.st_dev, final_stat.st_ino):
+            raise RuntimeError("temporary checksum input has an unexpected inode alias")
+        os.fsync(final_fd)
+    finally:
+        os.close(final_fd)
+
+    # Persist the final manifest inode and its published directory entry
+    # before deleting either temporary name.
+    os.fsync(directory_fd)
+
+    os.unlink(sorted_name, dir_fd=directory_fd)
+    os.unlink(temporary_name, dir_fd=directory_fd)
+
+    # Persist temporary-name cleanup while retaining the final manifest link.
+    os.fsync(directory_fd)
+except (OSError, RuntimeError) as exc:
+    raise SystemExit(
+        "RELEASE-BLOCKED: checksum manifest durability finalization failed: " + str(exc)
+    )
+finally:
+    if directory_fd >= 0:
+        os.close(directory_fd)
+
+print("PHX-MANIFEST-DURABILITY-PASS")
+# PHX-MANIFEST-DURABILITY-END
+PHX_MANIFEST_SYNC
 echo "Release manifest written to $BUILD_DIR/RELEASE_MANIFEST.sha256 (PREVIEW ONLY)"
 cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
 echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
 """
 
-    # Create exclusively: never truncate an operator-owned file or follow a
-    # final-component symlink when the requested output path already exists.
+    # Create exclusively and non-executable. Publish execute permission only
+    # after the complete script has been written and durably flushed through
+    # the same descriptor, so a failed write leaves a fail-closed partial file.
+    if not hasattr(os, "fchmod"):
+        raise OSError("Safe build-script publication requires fchmod support")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     try:
-        script_fd = _open_new_file_without_symlink_parents(script_path, flags, 0o755)
+        script_fd, parent_directory_fd = _open_new_file_without_symlink_parents(
+            script_path,
+            flags,
+            0o600,
+        )
     except FileExistsError:
         raise FileExistsError(
             f"Build script destination already exists; refusing to overwrite: {script_path}"
         ) from None
 
-    with os.fdopen(script_fd, "w", encoding="utf-8") as f:
-        if hasattr(os, "fchmod"):
+    try:
+        with os.fdopen(script_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+            # Persist the new directory entry while the file is still 0600.
+            # If directory sync fails, the wrapper never becomes executable.
+            os.fsync(parent_directory_fd)
             os.fchmod(f.fileno(), 0o755)
-        f.write(content)
-    if not hasattr(os, "fchmod"):
-        os.chmod(script_path, 0o755)
+            # Persist the executable inode metadata after the mode change.
+            os.fsync(f.fileno())
+    finally:
+        os.close(parent_directory_fd)
 
 
 def main():
