@@ -87,6 +87,11 @@ def _validate_metadata(
     }
 
 
+def _raise_walk_error(error: OSError) -> None:
+    """Do not publish a partial manifest when directory enumeration is incomplete."""
+    raise ManifestError(f"could not enumerate artifact directory: {error}") from error
+
+
 def _scan_artifact_files(artifact_dir: str) -> list[dict]:
     root = os.path.abspath(os.fspath(artifact_dir))
     try:
@@ -100,7 +105,12 @@ def _scan_artifact_files(artifact_dir: str) -> list[dict]:
         raise ManifestError("safe artifact hashing requires O_NOFOLLOW support")
 
     records: list[dict] = []
-    for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
+    for current, directories, filenames in os.walk(
+        root,
+        topdown=True,
+        onerror=_raise_walk_error,
+        followlinks=False,
+    ):
         directories.sort()
         filenames.sort()
 
