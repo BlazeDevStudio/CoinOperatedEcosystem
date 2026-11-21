@@ -764,6 +764,35 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             msg=f"Generated ImageBuilder wrapper is not valid POSIX shell: {result.stderr}"
         )
 
+    def test_generate_build_script_fsyncs_executable_mode_after_chmod(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "durable-mode-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        script_path = os.path.join(self.temp_dir, "durable-mode-build.sh")
+
+        events = []
+        original_fsync = os.fsync
+        original_fchmod = os.fchmod
+
+        def record_fsync(file_descriptor):
+            events.append("fsync")
+            return original_fsync(file_descriptor)
+
+        def record_fchmod(file_descriptor, mode):
+            events.append("fchmod")
+            return original_fchmod(file_descriptor, mode)
+
+        with mock.patch.object(packager.os, "fsync", side_effect=record_fsync):
+            with mock.patch.object(packager.os, "fchmod", side_effect=record_fchmod):
+                generate_build_script(manifest, script_path)
+
+        self.assertEqual(
+            events,
+            ["fsync", "fchmod", "fsync"],
+            "The executable mode must be fsynced after fchmod, not only the script bytes before it",
+        )
+        self.assertEqual(os.stat(script_path).st_mode & 0o777, 0o755)
+
     def test_generate_build_script_failed_write_never_publishes_executable_partial_file(self):
         profile = load_profile("gl-mt1300")
         staging = os.path.join(self.temp_dir, "partial-write-staging")
