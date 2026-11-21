@@ -1471,9 +1471,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         tool_marker = os.path.join(self.temp_dir, "checksum-tool-executed")
         fake_tool = os.path.join(self.temp_dir, "pinned-sha256sum")
         original_tool = (
-            "#!/bin/sh\\n"
-            f"printf trusted-tool-used > {shlex.quote(tool_marker)}\\n"
-            "exit 0\\n"
+            "#!/bin/sh\n"
+            f"printf trusted-tool-used > {shlex.quote(tool_marker)}\n"
+            "exit 0\n"
         ).encode("utf-8")
         with open(fake_tool, "wb") as fp:
             fp.write(original_tool)
@@ -1493,16 +1493,16 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(path_assignments, 1)
         self.assertEqual(digest_assignments, 1)
         with open(wrapper, "w", encoding="utf-8") as fp:
-            fp.write("\\n".join(wrapper_lines) + "\\n")
+            fp.write("\n".join(wrapper_lines) + "\n")
         os.chmod(wrapper, 0o755)
 
         # Simulate replacement after wrapper generation but before operator execution.
         with open(fake_tool, "wb") as fp:
             fp.write(
                 (
-                    "#!/bin/sh\\n"
-                    f"printf tampered-tool-used > {shlex.quote(tool_marker)}\\n"
-                    "exit 0\\n"
+                    "#!/bin/sh\n"
+                    f"printf tampered-tool-used > {shlex.quote(tool_marker)}\n"
+                    "exit 0\n"
                 ).encode("utf-8")
             )
         os.chmod(fake_tool, 0o755)
@@ -1511,7 +1511,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.makedirs(builder)
         make_marker = os.path.join(self.temp_dir, "checksum-tool-make-ran")
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
-            fp.write("image:\\n\\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\\n")
+            fp.write("image:\n\\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\n")
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
