@@ -188,20 +188,47 @@ def _communicate_with_timeout(
     return (stdout, stderr), cleanup_failed
 
 
+def _is_trusted_system_directory(path: str) -> bool:
+    """Require every canonical directory component to be root-owned and non-writable."""
+    if path not in ("/usr/bin", "/bin"):
+        return False
+
+    current = os.sep
+    for component in path.strip(os.sep).split(os.sep):
+        if not component:
+            continue
+        current = os.path.join(current, component)
+        try:
+            entry = os.lstat(current)
+        except OSError:
+            return False
+        if (
+            not stat.S_ISDIR(entry.st_mode)
+            or entry.st_uid != 0
+            or entry.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            return False
+    return True
+
+
 def _is_within_trusted_system_directories(path: str) -> bool:
     candidate = os.path.abspath(path)
-    if os.path.dirname(candidate) not in ("/usr/bin", "/bin"):
+    # Resolve the parent, not the final component: /bin -> /usr/bin is a
+    # supported merged-usr alias, but a redirect outside trusted system paths is not.
+    trusted_parent = os.path.realpath(os.path.dirname(candidate))
+    if not _is_trusted_system_directory(trusted_parent):
         return False
     try:
-        mode = os.lstat(candidate).st_mode
+        entry = os.lstat(candidate)
     except OSError:
         return False
-    # Reject privilege bits and writable-by-group/other modes: this runner
-    # requires Bubblewrap's unprivileged user-namespace model, not set-ID mode.
+    # Require a root-owned executable and reject privilege bits or group/other
+    # writes: the runner uses only the unprivileged single-ID user-namespace model.
     forbidden_mode_bits = stat.S_ISUID | stat.S_ISGID | stat.S_IWGRP | stat.S_IWOTH
     return (
-        stat.S_ISREG(mode)
-        and not (mode & forbidden_mode_bits)
+        stat.S_ISREG(entry.st_mode)
+        and entry.st_uid == 0
+        and not (entry.st_mode & forbidden_mode_bits)
         and os.access(candidate, os.X_OK)
     )
 

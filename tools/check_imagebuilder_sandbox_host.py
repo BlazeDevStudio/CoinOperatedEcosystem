@@ -24,21 +24,48 @@ def _private_host_mount_args() -> list[str]:
     return [argument for path in PRIVATE_HOST_PATHS for argument in ("--tmpfs", path)]
 
 
+def _is_trusted_system_directory(path: str) -> bool:
+    """Require every canonical directory component to be root-owned and non-writable."""
+    if path not in ("/usr/bin", "/bin"):
+        return False
+
+    current = os.sep
+    for component in path.strip(os.sep).split(os.sep):
+        if not component:
+            continue
+        current = os.path.join(current, component)
+        try:
+            entry = os.lstat(current)
+        except OSError:
+            return False
+        if (
+            not stat.S_ISDIR(entry.st_mode)
+            or entry.st_uid != 0
+            or entry.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            return False
+    return True
+
+
 def _find_trusted_bwrap() -> str | None:
     candidate = shutil.which("bwrap", path=TRUSTED_BWRAP_PATH)
     if not candidate:
         return None
     resolved = os.path.abspath(candidate)
-    if os.path.dirname(resolved) not in ("/usr/bin", "/bin"):
+    # Resolve the parent, not the final component: /bin -> /usr/bin is a
+    # supported merged-usr alias, but a redirect outside trusted system paths is not.
+    trusted_parent = os.path.realpath(os.path.dirname(resolved))
+    if not _is_trusted_system_directory(trusted_parent):
         return None
     try:
-        mode = os.lstat(resolved).st_mode
+        entry = os.lstat(resolved)
     except OSError:
         return None
     forbidden_mode_bits = stat.S_ISUID | stat.S_ISGID | stat.S_IWGRP | stat.S_IWOTH
     if (
-        not stat.S_ISREG(mode)
-        or mode & forbidden_mode_bits
+        not stat.S_ISREG(entry.st_mode)
+        or entry.st_uid != 0
+        or entry.st_mode & forbidden_mode_bits
         or not os.access(resolved, os.X_OK)
     ):
         return None
