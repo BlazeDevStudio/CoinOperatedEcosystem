@@ -2,11 +2,10 @@
 """Fail-fast capability probe for the release-owned ImageBuilder sandbox host."""
 import os
 import shutil
-import stat
-
-import imagebuilder_bwrap_trust
 import subprocess
 import sys
+
+import imagebuilder_bwrap_trust
 
 PROBE_TIMEOUT_SECONDS = 10
 PROBE_SCRIPT = (
