@@ -1955,3 +1955,54 @@ The new regression and source correction are hosted CI evidence for filesystem c
 5. Registry custodian: restore authorized access to private Drive registry v11; no older snapshot was substituted.
 
 No real OpenWrt ImageBuilder appliance image, signer-positive result, hardware flash, payment migration, or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
+
+## PHX-RELEASE UTC05 — persist generated build-script directory entry (2026-11-21)
+
+**Disposition:** one release-owned crash-durability defect reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Defect and correction
+
+The generated ImageBuilder wrapper was created with `O_CREAT | O_EXCL` through a no-follow parent-directory walk. The file bytes and executable mode were fsynced, but `_open_file_without_symlink_parents()` closed the parent directory descriptor immediately after `openat()`. The generator therefore never fsynced the parent directory entry. After a crash, the newly created script name could be lost even though generation had returned success.
+
+The RELEASE-owned helper now retains both the new file descriptor and its already-verified parent directory descriptor. Publication order is:
+
+1. Write and flush complete script bytes.
+2. `fsync(file_fd)` for content.
+3. `fsync(parent_directory_fd)` while the new file is still mode `0600`.
+4. `fchmod(file_fd, 0755)`.
+5. `fsync(file_fd)` to persist executable inode metadata.
+6. Close the retained parent directory descriptor.
+
+If parent-directory sync fails, the function raises before granting execute permission. No path is reopened by name for the directory sync; the descriptor came from the existing component-by-component `O_DIRECTORY | O_NOFOLLOW` walk. Existing exclusive-create and no-overwrite behavior remains.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`
+- Parent #31/base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`
+- Child #35 branch: `phoenix/release-build-script-publication-safety-20261117`
+- Test-first regression: [`4802cd26`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4802cd264c564ae2b5fbd0327647ac1412dc3f1f)
+- Source correction: [`eb858d2e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/eb858d2eae39c639310682e05bd1109c26ab4e32)
+- Existing file-mode assertion adjusted to distinguish file and directory fsync events: [`609fe214`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/609fe214867f88be82b2e9e46b5642c074b1389c)
+- Current source/test PR head before this handover update: `609fe214867f88be82b2e9e46b5642c074b1389c`.
+
+Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this RELEASE-owned handover changed for this task. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or shared interface implementation changed.
+
+### Exact-source CI
+
+- Expected RED at test-only head [#44870390309](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870390309): the new regression failed exactly because observed events were file `fsync → fchmod → fsync` and the required parent-directory `fsync` was absent. The packaging suite ran 122 tests, with one expected failure and two intentional skips. Case-collision [#44870390301](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870390301): PASS.
+- Intermediate source head [#44870504597](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870504597): packaging suite failed only because the pre-existing file-mode test counted the newly added directory fsync as an extra file fsync. The new parent-directory regression itself passed. The test-only correction at `609fe214` now classifies descriptors by `fstat()` mode and keeps the two assertions independent.
+- Final source/test PR validation [#44870585855](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870585855) and push validation [#44870582419](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870582419): packaging/tools suite **122 PASS / 2 intentional skips**. Both the new directory-entry ordering regression and the existing executable-mode regression passed. Overall validation then **FAILED CLOSED** at all-profile staging: all 10 profiles require approved site-scoped RFC 4193 ULA /48 authority, which is not defined. ESP32/ESP8266 compile jobs were skipped after admission failed; no board build is claimed.
+- Exact-head case-collision [#44870585740](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870585740): PASS.
+- Mandatory sandbox PR [#44870585766](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870585766) and push [#44870582449](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44870582449): **FAILED CLOSED** because `bwrap` is not installed (exit 125). Host preflight 14/14 PASS; unprivileged identity, namespace probe and sandbox-dependent packaging tests were SKIPPED, not passed. No privileged install or unsandboxed fallback.
+
+### Evidence boundary and next owners
+
+This is hosted CI evidence for filesystem call ordering and descriptor-based durability sequencing. It is not a real OpenWrt ImageBuilder build, production appliance image, physical power-cut test or hardware acceptance. No firmware was signed or published.
+
+1. PHX-QA: independently review the exact test/source sequence at `609fe214`, including the fail-before-chmod behavior when parent-directory fsync fails.
+2. PHX-INFRA: provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged namespaces; mandatory sandbox remains closed until then.
+3. PHX-CORE / PHX-MASTER / COE integration owner: supply and approve the site-scoped ULA /48 authority and persistence contract; RELEASE will not invent or substitute a prefix.
+4. PHX-MASTER: reconcile child #35 with parent #31 and frozen integration #26; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY` and the RELEASE workflow route remains reimplementation-review only.
+5. Registry custodian: restore authorized access to canonical private Drive registry v11. This activation's exact-title Library search returned older v3-v7 snapshots only; none was substituted.
+
+No real ImageBuilder sandbox execution, approved production binary, signer-positive result, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
