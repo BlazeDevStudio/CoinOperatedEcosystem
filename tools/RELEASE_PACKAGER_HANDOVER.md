@@ -2506,3 +2506,77 @@ No expected-RED run is claimed; this was coverage of existing behavior, not a ne
 5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
 
 No runner source, profile, network policy, workflow, shared interface or firmware was changed in this task. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC18 — root-owned Bubblewrap executable and canonical parent admission (2026-11-21)
+
+**Disposition:** a release-owned sandbox trust-boundary gap was reproduced test-first and fixed on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED. The host and runtime trust checks now require a root-owned regular Bubblewrap executable under a canonical, root-owned, non-group/world-writable /usr/bin or /bin directory chain. **PRODUCTION NO-GO**.
+
+### Defect boundary and correction
+
+Before this task, both the host preflight and runtime runner checked the final Bubblewrap path's regular-file type, executable mode, setuid/setgid bits and group/world-write bits, but did not establish the canonical parent-directory provenance or require the executable inode to be root-owned. A path that appeared under /usr/bin or /bin could therefore be accepted without proving that the parent resolved to the trusted system directory or that the executable owner was root.
+
+The correction is limited to the RELEASE-owned host preflight and runtime trust checks:
+
+- Resolve the candidate's parent directory with realpath() and accept only canonical /usr/bin or /bin.
+- Walk every canonical directory component from / to the trusted directory using lstat; require each to be a real directory owned by UID 0 and not group/world writable.
+- Require the final Bubblewrap inode to be a regular file owned by UID 0, executable, and free of setuid/setgid and group/world-write bits.
+- Preserve the legitimate merged-usr alias /bin -> /usr/bin when it resolves to the trusted canonical directory.
+- Keep the existing unprivileged single-ID namespace, no-sudo/no-subordinate-ID and fail-closed behavior unchanged.
+
+No privileged dependency installation, namespace fallback, workflow migration, profile change, network policy, firmware change or shared interface change was made.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- Child PR #35: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35 — OPEN / DRAFT / UNMERGED.
+- Branch: phoenix/release-build-script-publication-safety-20261117.
+- Parent PR #31 / base: 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- Test-first commit: [b81053a9](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b81053a96c1d01212874105226ca5aece4a417b4).
+- Source correction: [a10cf724](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a10cf724f1e0488ba23a5fad357257124a563732).
+- Final source/test SHA: a10cf724f1e0488ba23a5fad357257124a563732.
+- Source/test paths:
+  - tools/check_imagebuilder_sandbox_host.py
+  - tools/run_imagebuilder_sandbox.py
+  - tools/test_imagebuilder_sandbox_host.py
+  - tools/test_package_appliance_firmware.py
+
+### Test-first RED at b81053a9
+
+- Sandbox PR [#44934730538](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934730538), job 136938774783: **30 host tests, 4 expected failures**. The new failures were non-root-owned executable, untrusted parent redirect, group/world-writable parent and non-root-owned parent. The Bubblewrap availability and later namespace/package steps did not run because the host suite failed.
+- Sandbox push [#44934725590](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934725590): same exact-source host RED.
+- Shared PR [#44934730519](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934730519), job 136938774523: packaging/tool suite **150 tests, 8 expected failures, 2 intentional skips**. The eight failures are the same four negative conditions exercised by both the host-preflight and runtime trust helpers. Profile admission and board compilation did not pass.
+- Shared push [#44934725613](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934725613): same exact-source shared RED.
+- Case-collision PR [#44934730523](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934730523): PASS.
+
+### Exact-source GREEN at a10cf724
+
+- Sandbox PR [#44934840976](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934840976), job 136939109494: **30/30 host-preflight tests PASS**. The next Bubblewrap availability gate **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Unprivileged identity verification, namespace preflight and mandatory Bubblewrap packaging regressions were **SKIPPED**, not passed.
+- Sandbox push [#44934835045](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934835045): same exact-source result.
+- Shared PR [#44934840959](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934840959), job 136939109617: firmware syntax and shared-contract checks **PASS**; packaging/tool suite **150 tests PASS / 2 intentional skips**. The next all-profile admission step **FAILED CLOSED** for all ten appliance profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Shared push [#44934835054](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934835054): same exact-source shared result.
+- Case-collision PR [#44934840899](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44934840899): PASS.
+
+These results are hosted CI evidence. The trust predicate tests are synthetic metadata fixtures; the POSIX runner was not executed with a real Bubblewrap binary on this runner. No real namespace or ImageBuilder package was produced.
+
+### Live ownership and integration state refreshed
+
+- MASTER PR #288 exact head at inspection: 0fd192b09da50c33b9c49aac43982fc629c55706. Ownership route manifest blob e4db324315a1b3543fec17a148fbf960170fcb29 remains DRAFT_REVIEW_ONLY; RELEASE workflow route remains reimplementation-review.
+- Experiments RELEASE #242 exact head: 734b89d9e7792247e8376335c3f3685500ab3f89.
+- Experiments RELEASE #291 exact head: 42797e2f3d65c30a1070caf49c93aebec149d897. Its current Windows failure is in PISONET-owned negative-selftest.ps1; its Full build is blocked at inherited CORE handover freshness. No CORE or PISONET path was edited.
+- COE integration #26 exact head: b382d233ff06c8791b1028bed3c617cc7b670d12; five workflows remain queued with zero executed jobs.
+- COE parent #31 exact head/base: 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- COE child #35 exact source/test head: a10cf724f1e0488ba23a5fad357257124a563732; final documentation-head verification is pending this handover commit.
+- Cleanup-first #266 remains OPEN, 0/7 checked. This bounded release task does not complete the broader seven-role cleanup.
+- The authorized Library search surfaced only a provenance checkpoint referencing canonical BLAZE_PROJECT_REGISTRY_v11_20261027.json; the actual private v11 file and newer corrections were not surfaced. The checkpoint was used only to establish provenance; no private registry contents or identifiers were copied to GitHub, and no older registry snapshot was substituted.
+- The embedded PR-head index in #172 remains stale relative to live PR metadata; PHX-MASTER owns that coordination correction. RELEASE did not edit the control-plane body.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review test/source SHA a10cf724, especially root ownership, canonical parent resolution, writable ancestor rejection and merged-usr /bin alias behavior.
+2. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale PR-head references embedded in #172 and preserve the draft-only #35/#31/#26 ownership route.
+5. **Registry custodian:** restore authorized access to canonical private registry v11 and its newer corrections.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No workflow migration, merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
