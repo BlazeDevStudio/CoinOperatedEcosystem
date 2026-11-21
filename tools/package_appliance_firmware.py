@@ -1511,6 +1511,8 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
         f.flush()
         os.fsync(f.fileno())
         os.fchmod(f.fileno(), 0o755)
+        # The earlier fsync persisted script bytes; flush the executable mode too.
+        os.fsync(f.fileno())
 
 
 def main():
