@@ -2793,3 +2793,62 @@ These are hosted CI results. No real Bubblewrap namespace execution, ImageBuilde
 5. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC22 — centralize ImageBuilder private-host mount policy (2026-11-21)
+
+**Disposition:** one RELEASE-owned, behavior-preserving cleanup completed on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. Strict NO Codex. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was modified.
+
+### Finding and bounded change
+
+The host preflight (tools/check_imagebuilder_sandbox_host.py) and runtime (tools/run_imagebuilder_sandbox.py) independently defined the same private-host mask list and duplicated the argument builder. Both currently used /home, /root, /run, /mnt, /media, and /srv, but future drift could let preflight validate a different mount boundary from the actual build.
+
+The shared RELEASE-owned helper tools/imagebuilder_bwrap_trust.py now owns:
+- the immutable PRIVATE_HOST_PATHS tuple;
+- private_host_mount_args(), which emits the canonical ordered --tmpfs <path> arguments.
+
+Both preflight and runtime import the same tuple and function. Their command construction still consumes the same arguments in the same order; no mount, network, UID/GID, timeout or sandbox behavior was changed.
+
+A regression requires both modules to expose the same function object and the same path tuple object, and checks that the host probe command contains the complete expected ordered mask. This prevents the two security-sensitive entry points from silently drifting apart.
+
+### Test-first and correction history
+
+- Test-first commit: [0fe87b21](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0fe87b21ba2809c2d2d177398474236a9deffb2f). The new parity test failed as intended because preflight and runtime still owned separate helper functions. Push shared run [#44955866268](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955866268): **154 tests, one expected failure, two intentional skips**. Push sandbox [#44955866285](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955866285): host preflight **31/31 PASS**, then Bubblewrap unavailable / exit 125; namespace and mandatory packaging steps skipped. Case-collision PR [#44955870576](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955870576): PASS.
+- First source attempt: [ae66c912](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ae66c912d7f264abe7c1733929f2e01d12e03bad). It centralized the helper but initially removed the runner module's PRIVATE_HOST_PATHS export, causing an existing context-verification test to raise NameError. This implementation failure was retained and corrected; it is not counted as a pass. Push shared [#44955932083](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955932083): **154 tests, one error, two intentional skips**. Push sandbox [#44955932093](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955932093): host tests **31/31 PASS**, then Bubblewrap unavailable / exit 125.
+- Corrected source/test commit: [660491c6](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/660491c638ae42d70a70bd501cf445dc7e8fb437). Both modules now import the shared path tuple and function; the regression also asserts tuple identity. Only four RELEASE-owned source/test paths changed:
+  - tools/imagebuilder_bwrap_trust.py
+  - tools/run_imagebuilder_sandbox.py
+  - tools/check_imagebuilder_sandbox_host.py
+  - tools/test_package_appliance_firmware.py
+
+### Exact-source Actions at 660491c6
+
+- PR shared/firmware validation [#44956003561](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44956003561), job 137004165148: firmware syntax and shared-contract tests **PASS**; packaging/tool suite **154 tests PASS / 2 intentional skips**, including the new parity regression; PHX-MANIFEST-DURABILITY-PASS. The following ten-profile staging/admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is not defined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Push shared/firmware [#44955997258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955997258): same source/test head and the same profile-admission gate; no board compilation credited.
+- PR ImageBuilder sandbox [#44956003470](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44956003470), job 137004165028: host preflight **31/31 PASS**; Bubblewrap availability **FAILED CLOSED** because bwrap is absent (exit 125); unprivileged identity, namespace preflight and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- Push ImageBuilder sandbox [#44955997243](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44955997243): same host-test and Bubblewrap boundary.
+- PR case-collision guard [#44956003397](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44956003397): **PASS**.
+
+These are hosted CI results. The new parity regression uses Python test fixtures. No actual Bubblewrap namespace execution, ImageBuilder firmware artifact, target hardware test or production binary was produced.
+
+### Live ownership and integration snapshot
+
+- MASTER PR #288 live head: 6acb97c2a3649d449a35b12815943f571b17c83d, base Experiments main f4e8a891aed8af86d5fd315d28750a0ac3a7372b. OWNERSHIP_ROUTES.json remains blob e4db324315a1b3543fec17a148fbf960170fcb29, DRAFT_REVIEW_ONLY; the RELEASE workflow route .github/workflows/blazepwifi-build.yml → .github/workflows/pisowifi-ci.yml remains reimplementation-review. No migration, copy or ownership promotion is authorized.
+- Experiments RELEASE #242 live head: 734b89d9e7792247e8376335c3f3685500ab3f89. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) completed SUCCESS: handover and Windows build jobs passed; signing and publication steps were skipped.
+- Experiments RELEASE #291 live head: 42797e2f3d65c30a1070caf49c93aebec149d897, branch phoenix/release-publisher-isolation-20261115, 26 accumulated mixed-owner paths (21 RELEASE / 3 CORE / 2 PISONET). Compatibility matrix [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed 3/3 jobs. Full build [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the CORE-owned handover freshness gate; dependent validation/build/release steps were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the same freshness gate; Windows build and publisher were skipped. PHX-RELEASE did not edit the mixed-owner PR.
+- COE integration #26 remains OPEN / DRAFT / FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12; five workflows remain QUEUED with zero executed jobs.
+- COE parent #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b, based on #26. Its last exact-head shared validation [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) and case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed; sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed closed because Bubblewrap is unavailable.
+- COE child #35 remains OPEN / DRAFT / UNMERGED on phoenix/release-build-script-publication-safety-20261117, base #31 59ed44d0b911e176f1a95b9cf5585ef811ffd31b; exact source/test head is 660491c638ae42d70a70bd501cf445dc7e8fb437.
+- Cleanup-first #266 remains OPEN, **0/7** tracks checked. This bounded RELEASE increment is not completion of the seven-role cleanup.
+- Issue #172's embedded PR-head index remains stale relative to live owner PR heads; PHX-MASTER owns that index correction. RELEASE did not edit the control-plane body.
+- Canonical private Drive BLAZE_PROJECT_REGISTRY_v11_20261027.json and newer corrections remain inaccessible through the authorized Library/connector surface. Historical checkpoint metadata is provenance only; no older snapshot was substituted and no private contents or identifiers were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the exact source/test SHA 660491c638ae42d70a70bd501cf445dc7e8fb437, especially that preflight and runtime use the same immutable path tuple and function.
+2. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale #172 PR-head references and preserve the draft-only ownership routes.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
