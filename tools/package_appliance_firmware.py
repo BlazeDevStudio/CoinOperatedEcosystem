@@ -1180,16 +1180,25 @@ def _open_file_without_symlink_parents(
         os.close(directory_fd)
 
 
-def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> int:
-    """Create a new build script through a descriptor chain that never follows parent symlinks."""
-    return _open_file_without_symlink_parents(
+def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> tuple[int, int]:
+    """Create a build script and retain its parent descriptor for durable publication."""
+    directory_fd, filename = _open_parent_directory_without_symlink_parents(
         path,
-        flags,
-        mode,
         "Build script",
         "Safe build-script creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
         "Invalid build-script output filename",
     )
+    try:
+        file_fd = os.open(
+            filename,
+            flags | os.O_NOFOLLOW,
+            mode,
+            dir_fd=directory_fd,
+        )
+        return file_fd, directory_fd
+    except Exception:
+        os.close(directory_fd)
+        raise
 
 def generate_build_script(manifest: dict, script_path: str) -> None:
     """Emit an executable shell script to run ImageBuilder and generate SHA-256 release checksums."""
@@ -1500,19 +1509,29 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
         raise OSError("Safe build-script publication requires fchmod support")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     try:
-        script_fd = _open_new_file_without_symlink_parents(script_path, flags, 0o600)
+        script_fd, parent_directory_fd = _open_new_file_without_symlink_parents(
+            script_path,
+            flags,
+            0o600,
+        )
     except FileExistsError:
         raise FileExistsError(
             f"Build script destination already exists; refusing to overwrite: {script_path}"
         ) from None
 
-    with os.fdopen(script_fd, "w", encoding="utf-8") as f:
-        f.write(content)
-        f.flush()
-        os.fsync(f.fileno())
-        os.fchmod(f.fileno(), 0o755)
-        # The earlier fsync persisted script bytes; flush the executable mode too.
-        os.fsync(f.fileno())
+    try:
+        with os.fdopen(script_fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+            # Persist the new directory entry while the file is still 0600.
+            # If directory sync fails, the wrapper never becomes executable.
+            os.fsync(parent_directory_fd)
+            os.fchmod(f.fileno(), 0o755)
+            # Persist the executable inode metadata after the mode change.
+            os.fsync(f.fileno())
+    finally:
+        os.close(parent_directory_fd)
 
 
 def main():
