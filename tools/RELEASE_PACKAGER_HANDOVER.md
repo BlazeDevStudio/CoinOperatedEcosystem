@@ -2594,3 +2594,67 @@ After the initial ownership-route inspection, MASTER advanced PR #288 to ce12ad9
 
 The private registry v11 check remains provenance-only: authorized Library search surfaced a checkpoint reference, not the canonical private file or its newer corrections. No private file name, Drive ID, URL or contents were copied into this repository.
 
+
+
+## PHX-RELEASE UTC19 — pin checksum utility bytes before manifest use (2026-11-21)
+
+**Disposition:** one release-owned manifest-integrity hardening was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO**.
+
+### Finding and correction
+
+The generated ImageBuilder wrapper pinned the Python interpreter and sandbox-runner SHA-256 values, but only pinned the checksum utility by absolute path plus existence/executable checks. If the system-managed `sha256sum` path entry changed after wrapper generation, the replacement could be invoked to verify the interpreter/runner and to produce the firmware manifest. This left the checksum implementation itself outside the wrapper's generation-time identity.
+
+The wrapper now:
+- Resolves `sha256sum` only through the existing trusted `/usr/bin:/bin` lookup, preserving the system-managed path entry used by supported hosts.
+- Opens the selected executable during wrapper generation and records its SHA-256 digest as `SHA256SUM_SHA256`.
+- Uses the pinned Python interpreter to hash the current executable bytes before invoking `sha256sum` for any later verification or firmware manifest generation.
+- Rejects a changed, missing, non-regular or non-executable checksum utility before Makefile execution or manifest creation.
+- Retains the existing deterministic target-relative manifest, C-locale sorting, no-overwrite publication and crash-durability checks.
+
+The test generates a wrapper, substitutes a disposable checksum-tool fixture and its expected digest, mutates that tool after generation, then verifies the wrapper blocks before invoking the tool or Makefile. This is a synthetic regression fixture; it is not a real firmware build.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- Child PR #35: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35 — OPEN / DRAFT / UNMERGED.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first commit: [9feb7baf](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9feb7bafe8502a363cf07846a162330abb4a9bed).
+- Test-fixture correction commits: [5493e52d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5493e52d86153c28ebbd270faea56591c390ec60) and [2803bbe6](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2803bbe63d9de5739a7d7faaa7e13a51ec67436c). These corrected generated-script newline/tab escaping before the expected-RED CI run.
+- Expected-RED test head: `2803bbe63d9de5739a7d7faaa7e13a51ec67436c`.
+- First source attempt: [79ba6b51](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/79ba6b51bf1b50823c4290c4381e60ffd69500a5). It over-resolved a system-managed checksum path alias and failed CI; it is superseded by the corrected source commit.
+- Corrected source/test head: [47a4fcd8](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/47a4fcd8b3ce47ec70a9a763f7eb92fb165b5bcd).
+- Changed source/test paths: `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py`; this handover is the only documentation path changed for the task.
+
+### Test-first RED and retained failed attempt
+
+- Test-first PR shared validation [#44940893796](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44940893796), exact head `2803bbe6`: **151 tests, one expected new failure, two intentional skips**. The new test failed because the generated wrapper did not yet contain `SHA256SUM_SHA256`. The host preflight suite passed; the mandatory sandbox workflow separately failed closed because Bubblewrap was unavailable; case-collision guard passed.
+- First source attempt [#44941052472](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44941052472), exact head `79ba6b51`: **151 tests, 39 errors, one failure, two skips**. The attempt incorrectly required the resolved checksum utility target to remain under the literal trusted directory and used `O_NOFOLLOW`; the hosted runner exposed a system-managed path alias outside that lexical directory. This attempt is superseded and not counted as a pass. Its sandbox host suite passed 30 tests before Bubblewrap availability failed; case-collision passed.
+
+### Corrected exact-source Actions at `47a4fcd8`
+
+- Shared/firmware PR [#44941141089](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44941141089), validation job `136958398738`: firmware syntax and shared-contract checks **PASS**; packaging/tool suite **151 tests PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`. The subsequent all-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Sandbox PR [#44941141050](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44941141050), job `136958398285`: host preflight **30/30 PASS**; Bubblewrap availability **FAILED CLOSED** because the hosted runner does not have Bubblewrap installed (exit 125). Namespace execution and mandatory sandbox/ImageBuilder regressions were **SKIPPED**, not passed.
+- Case-collision guard [#44941144872](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44941144872): **PASS**.
+
+The new regression itself passed at `47a4fcd8`: `test_generated_wrapper_rejects_checksum_utility_changed_after_generation ... ok`. The 151-test result is source-level hosted CI evidence. No actual Bubblewrap namespace or ImageBuilder firmware artifact was produced.
+
+### Live ownership and integration state
+
+- MASTER PR #288 remains a draft ownership-routing review. Its route manifest remains `DRAFT_REVIEW_ONLY`; the PHX-RELEASE workflow route is `reimplementation-review`. No migration or ownership promotion is authorized.
+- Experiments #242 remains a draft; its Windows workflow result is CI evidence only, with signing/publication skipped.
+- Experiments #291 remains a mixed-owner draft (21 RELEASE / 3 CORE / 2 PISONET paths). Its ESP32 compatibility matrix passed; its Full build remains blocked at CORE-owned handover freshness; its Windows workflow remains blocked at the shared freshness gate. No CORE or PISONET path was edited.
+- COE integration #26 remains frozen with five queued workflows and zero executed jobs.
+- COE parent #31 remains the unchanged base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 remains unmerged.
+- Cleanup-first #266 remains OPEN / 0 of 7 checked; this task does not complete the wider cleanup.
+- Canonical private Drive registry v11 was not surfaced through authorized Library search; no older snapshot was substituted and no private contents, identifiers or links were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review exact source/test SHA `47a4fcd8b3ce47ec70a9a763f7eb92fb165b5bcd`, especially checksum-tool replacement between wrapper generation and execution.
+2. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces.
+3. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale #172 embedded PR-head references and preserve the draft-only ownership routes.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
