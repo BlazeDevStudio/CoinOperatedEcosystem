@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import run_imagebuilder_sandbox
+import check_imagebuilder_sandbox_host
 import package_appliance_firmware as packager
 
 # Synthetic test-only site prefix; never a production or deployment allocation.
@@ -1694,6 +1695,21 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             for argument in ("--tmpfs", path)
         ]
         self.assertEqual(run_imagebuilder_sandbox._private_host_mount_args(), expected)
+
+    def test_preflight_and_runtime_share_private_host_mount_policy(self):
+        self.assertIs(
+            check_imagebuilder_sandbox_host._private_host_mount_args,
+            run_imagebuilder_sandbox._private_host_mount_args,
+            "host preflight and runtime must use the same private-host mask helper",
+        )
+        expected = [
+            argument
+            for path in ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+            for argument in ("--tmpfs", path)
+        ]
+        probe = check_imagebuilder_sandbox_host.build_probe_command("/usr/bin/bwrap")
+        first_mask = probe.index("--tmpfs")
+        self.assertEqual(probe[first_mask:first_mask + len(expected)], expected)
 
     def test_runner_resolves_bubblewrap_from_trusted_system_path_only(self):
         cwd = os.path.join(self.temp_dir, "runner-path-cwd")
