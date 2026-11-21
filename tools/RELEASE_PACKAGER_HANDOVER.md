@@ -2006,3 +2006,54 @@ This is hosted CI evidence for filesystem call ordering and descriptor-based dur
 5. Registry custodian: restore authorized access to canonical private Drive registry v11. This activation's exact-title Library search returned older v3-v7 snapshots only; none was substituted.
 
 No real ImageBuilder sandbox execution, approved production binary, signer-positive result, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC06 — make checksum-manifest publication crash-durable (2026-11-21)
+
+**Disposition:** one release-owned manifest durability defect reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Defect and bounded correction
+
+The generated ImageBuilder wrapper already sorted checksums into a temporary file and published the final `RELEASE_MANIFEST.sha256` through a same-directory no-overwrite hard link. It then removed the sorted and unsorted temporary names without synchronizing the final manifest inode or its parent directory. Atomic publication prevented partial overwrite, but a crash could still lose the final manifest data or published directory entry after the wrapper reported success.
+
+The wrapper now performs a descriptor-based finalization step immediately after the hard link succeeds:
+
+1. Open the ImageBuilder directory with `O_DIRECTORY | O_NOFOLLOW`.
+2. Open the final manifest with `O_WRONLY | O_NOFOLLOW` relative to that pinned directory descriptor.
+3. Verify the final file is regular, the sorted temporary name is the same inode, the final inode has the expected two links, and the unsorted temporary input is a separate single-link regular file.
+4. `fsync(final_manifest_fd)` to persist checksum bytes and inode metadata.
+5. `fsync(directory_fd)` to persist the final published name before cleanup.
+6. Unlink the two temporary names relative to the pinned directory descriptor.
+7. `fsync(directory_fd)` again to persist cleanup.
+
+Any open/stat/fsync/unlink failure emits `RELEASE-BLOCKED: checksum manifest durability finalization failed` and exits nonzero. A file- or directory-sync failure occurs before temporary cleanup, so the temporary evidence is retained. The existing atomic no-overwrite hard-link publication remains unchanged.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`
+- Parent PR #31/base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`
+- Test-first commit: [`ea08e48b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ea08e48b66be4d8d912fa42797fd707dd98d2e17)
+- Source correction: [`3f4028ae`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3f4028aec38f922e197fa25bd54bf31cdd4c31cd)
+- Source/test head before this handover update: `3f4028aec38f922e197fa25bd54bf31cdd4c31cd`.
+
+Only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this RELEASE-owned handover changed for this task. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or shared interface implementation changed.
+
+### Exact-source CI
+
+- Expected RED at test-only head [#44875832118](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44875832118): packaging suite ran **124 tests / 2 intentional skips**; both new manifest-durability tests failed because the generated wrapper did not yet contain the required finalization block. The failures were expected and isolated to the new assertions. The overall validation run failed at the packaging test step; profile admission and board compiles were not reached.
+- Exact source/test PR validation [#44876039985](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44876039985): packaging/tool suite **124 PASS / 2 intentional skips**. Both new tests passed, including actual file/directory fsync call-order verification and the fail-closed/no-cleanup behavior when the first durability sync fails. The subsequent all-profile staging gate **FAILED CLOSED** for all 10 profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32 and ESP8266 compile jobs were SKIPPED; no board build or firmware artifact is claimed.
+- Exact-head case-collision guard [#44876039980](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44876039980): **PASS**.
+- Mandatory sandbox [#44876040106](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44876040106): host preflight **14/14 PASS**, then Bubblewrap availability **FAILED CLOSED**, exit 125. Unprivileged identity, namespace probe and sandbox-dependent packaging tests were SKIPPED, not passed. No privileged install or unsandboxed fallback.
+
+### Evidence boundary and next owners
+
+The new tests execute the generated manifest-finalization Python block in hosted CI and verify file fsync → directory fsync → temporary cleanup → directory fsync ordering. This is filesystem-call-order CI evidence, not a physical power-cut test or proof of storage-controller durability. The actual ImageBuilder sandbox remains unexecuted because Bubblewrap is unavailable; no appliance image was produced.
+
+1. PHX-QA: independently review the exact test/source commits and the fail-closed behavior for file/directory fsync failures.
+2. PHX-INFRA: provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged namespaces; the mandatory sandbox must remain closed until then.
+3. PHX-CORE / PHX-MASTER / COE integration owner: supply and approve the site-scoped ULA /48 authority and persistence contract; RELEASE will not invent or substitute a prefix.
+4. PHX-MASTER: reconcile child #35 with parent #31 and frozen integration #26; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY` and the RELEASE workflow route remains reimplementation-review only.
+5. Registry custodian: restore authorized access to canonical private Drive registry v11. The exact-title authorized Library search returned older v3-v7 snapshots only; none was substituted.
+
+No real ImageBuilder sandbox execution, approved production binary, signer-positive result, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
