@@ -2439,3 +2439,70 @@ The POSIX process test is hosted Linux CI evidence only. It is not Bubblewrap na
 5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
 
 No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC17 — real timeout escalation with detached child process-group coverage (2026-11-21)
+
+**Disposition:** one release-owned POSIX host-test coverage task was added to the existing COE child draft. The existing runtime implementation was not changed; no new runtime defect is claimed. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO**.
+
+### Scope and behavior exercised
+
+Added `test_real_timeout_escalates_and_reaps_outer_and_detached_child_groups` to `tools/test_imagebuilder_sandbox_host.py`.
+
+The test launches a real outer process in its own session and a detached child in a second session. Both ignore SIGTERM. The outer process publishes the child PGID, waits until the child has installed its handler, writes/flushed a partial-output marker, and then blocks. The parent invokes the existing `_communicate_with_timeout()` with a short timeout and the child PGID. The test verifies:
+- the timeout path is actually taken;
+- the partial stdout is retained;
+- SIGTERM grace expires and SIGKILL escalation completes;
+- the outer leader is reaped and both process groups disappear;
+- no cleanup diagnostic is returned; and
+- assertion failures still enter the final cleanup path.
+
+The test uses file readiness markers rather than mixing a manual pipe `readline()` with `communicate()`, because the earlier pipe-read attempt consumed/buffered the partial output before `communicate()` could return it. It is POSIX hosted-Linux process evidence only, not Bubblewrap namespace or ImageBuilder execution.
+
+### Exact branch, commits and test-authoring history
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35 — OPEN / DRAFT / UNMERGED.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Initial test attempt: [3a4f66b4](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3a4f66b4fdfcf37f2fe5325db12bd76d2b2c89eb); its generated helper script used an incorrectly escaped line separator and the outer process exited before publishing the child PGID.
+- Pipe-read revision: [0d4c8181](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0d4c818111e13d353875398fd83af8284045b9f7); it corrected the generated line separator, but manually reading the PGID from stdout caused the text wrapper to buffer the following partial-output line. The timeout path ran, but the test's partial-output assertion failed.
+- File-marker revision: [e17721a5](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e17721a57de50f1d9480a4047417d7bf2d082230); it removed mixed pipe reads but retained an incorrectly escaped generated line separator, so the outer helper again exited before publishing the PGID.
+- Final corrected source/test commit: [93506568](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/935065687d45848edf1c1cbc02bb76b6c2d5addf).
+- Final source/test blob: `f087c7e15a4ace3de6f7cb3a8ad68c5e8a13ee8b`.
+- Only source/test path changed: `tools/test_imagebuilder_sandbox_host.py`.
+
+### Exact-source Actions at final source/test SHA `93506568`
+
+- Sandbox PR [#44929347357](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929347357), job `136922343319`: **26/26 host tests PASS**, including the new real-timeout process-group regression. The following Bubblewrap availability step **FAILED CLOSED** because Bubblewrap is not installed on the runner (exit 125); namespace and mandatory sandbox packaging steps were **SKIPPED**, not passed.
+- Shared/firmware PR [#44929347397](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929347397), validation job `136922343689`: firmware syntax, shared contracts and packaging/tool suite **PASS**; **142 tests PASS / 2 intentional skips** and `PHX-MANIFEST-DURABILITY-PASS`. The subsequent appliance profile admission **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP8266/ESP32 compile jobs were **SKIPPED**.
+- Case-collision guard [#44929347361](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929347361): **PASS**.
+
+### Failed attempts retained in the record
+
+- Initial source head `3a4f66b4`: sandbox [#44929154159](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929154159) host suite failed at the empty child-PGID line; shared [#44929154178](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929154178) ran 142 tests with the same one new failure; case-collision [#44929154175](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929154175) passed.
+- Pipe-read source head `0d4c8181`: sandbox [#44929197704](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929197704) and shared [#44929197725](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929197725) failed only at the new partial-output assertion; case-collision [#44929197710](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929197710) passed.
+- File-marker source head `e17721a5`: sandbox [#44929316136](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929316136) and shared [#44929316076](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929316076) failed at the empty child-PGID line due the remaining escape error; case-collision [#44929316083](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44929316083) passed.
+
+No expected-RED run is claimed; this was coverage of existing behavior, not a newly discovered runtime defect.
+
+### Live ownership and integration references refreshed
+
+- MASTER PR #288: `8cc44fdf748fb7ba2ab44e665b0556c836be6351`, OPEN / DRAFT. `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE workflow route remains `reimplementation-review`. No migration is authorized.
+- Experiments PR #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded; signed executables and GitHub Release publication steps were skipped.
+- Experiments PR #291: `42797e2f3d65c30a1070caf49c93aebec149d897`, OPEN / DRAFT. ESP32 compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) succeeded. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the CORE-owned mandatory `PROJECT_HANDOVER.md` freshness gate; target/platform build jobs observed succeeded, while downstream simulations/update/signing/publication were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the same shared handover freshness gate; Windows build and publish were skipped. The 26-path diff remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no inherited path was changed.
+- COE integration PR #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN; five workflows remain queued with zero jobs.
+- COE parent PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`, OPEN / DRAFT. Its prior Bubblewrap 0.9.0 attempt [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) installed Bubblewrap but failed unprivileged UID-map setup with `Permission denied`.
+- COE child PR #35 before the task: `c39905cd18af13b3938c00af803e243cb03b8edc`; final source/test head: `935065687d45848edf1c1cbc02bb76b6c2d5addf`. PR remains OPEN / DRAFT / UNMERGED.
+- Cleanup-first #266 remains OPEN / 0 of 7 checked. This bounded test does not complete the broader cleanup inventory.
+- Canonical private Drive registry v11 and newer corrections were not surfaced through authorized Library search; only older v3-v7 snapshots were found and none was substituted. No private registry contents or identifiers were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review source/test SHA `935065687d45848edf1c1cbc02bb76b6c2d5addf`, especially real timeout, SIGTERM-ignore, SIGKILL escalation, output retention and both process-group disappearance.
+2. **PHX-INFRA:** supply the authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site network authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale #172 PR-head pins and preserve the draft-only #35/#31/#26 ownership route.
+5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
+
+No runner source, profile, network policy, workflow, shared interface or firmware was changed in this task. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
