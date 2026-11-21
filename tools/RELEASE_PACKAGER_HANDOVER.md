@@ -2106,3 +2106,69 @@ This task is a test-only coverage extension; no expected-RED run was appropriate
 5. Registry custodian: restore authorized access to canonical private Drive registry v11; older snapshots were not substituted.
 
 The new test is hosted-CI failure injection, not a physical power-cut test or proof of storage-controller durability. No real ImageBuilder sandbox execution, approved production binary, signer-positive result, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
+
+
+---
+
+## PHX-RELEASE UTC11 — reject symlinked Bubblewrap executables (2026-11-21)
+
+**Disposition:** a release-owned trust-path validation gap was reproduced test-first and corrected in both the sandbox host preflight and the runtime sandbox runner. COE #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Defect and bounded correction
+
+Both tools/check_imagebuilder_sandbox_host.py and tools/run_imagebuilder_sandbox.py restricted Bubblewrap lookup to /usr/bin:/bin and checked that the resolved path's parent directory was trusted. They then used os.path.isfile(), which follows the final symlink. A symlink named /usr/bin/bwrap could therefore pass the lexical trusted-directory check while redirecting execution to a target outside the trusted directory.
+
+Both checks now use os.lstat() and require the final directory entry itself to be a regular file before checking execute access. A symlink, FIFO, directory or other non-regular final entry is rejected. This does not pin the Bubblewrap binary's contents or claim protection against privileged mutation of trusted system directories; it closes the final-component symlink-following gap.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- Child PR #35 branch: phoenix/release-build-script-publication-safety-20261117.
+- Parent PR #31 / base SHA: 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- Starting docs/source head: d28271a35776543bf558c90e3a117957829ee61c.
+- Test-first commit: [bf2220e3](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bf2220e390795510e9e51515913405c39436cfa7).
+- Source correction: [847e3558](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/847e355845d9043667d6ccaa8e160b8e64b67352).
+- Source/test HEAD at this handover update: 847e355845d9043667d6ccaa8e160b8e64b67352.
+- Only two release-owned source files and two release-owned test files changed for this task; this handover is the fifth changed file. No workflow, shared interface, profile, firmware application, or other role-owned source was changed.
+
+### Regression tests
+
+- test_probe_rejects_symlinked_bubblewrap_in_trusted_directory creates a temporary executable symlink and verifies host preflight rejects it even when its lexical parent is represented as /usr/bin.
+- test_runner_rejects_symlinked_bubblewrap_in_trusted_directory exercises the runtime runner's trusted-directory predicate against the same symlink case.
+
+### Exact-source RED at test-only commit bf2220e390795510e9e51515913405c39436cfa7
+
+- PR shared/firmware [#44898395744](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898395744): 127 tests ran; exactly the two new symlink tests failed; two intentional skips. Firmware-hardening and shared-contract steps passed; profile admission and board compiles were not reached.
+- PR sandbox [#44898395675](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898395675): host preflight ran 15 tests and failed only at the new symlink test. Bubblewrap availability, namespace and packaging steps were skipped after that failure.
+- Case-collision [#44898395665](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898395665): PASS.
+
+### Exact-source results at source/test commit 847e355845d9043667d6ccaa8e160b8e64b67352
+
+- PR shared/firmware [#44898517084](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898517084): packaging/tool suite 127 PASS / 2 intentional skips; the following all-profile admission gate FAILED CLOSED for all 10 profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were SKIPPED.
+- Push shared/firmware [#44898511763](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898511763): same 127 PASS / 2 skips, then the same ten-profile ULA admission failure; board compile jobs skipped.
+- PR sandbox [#44898517081](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898517081): host preflight 15/15 PASS, then Bubblewrap availability FAILED CLOSED because bwrap is not installed (exit 125). Unprivileged identity, namespace probe and mandatory sandbox packaging tests were skipped, not passed.
+- Push sandbox [#44898511806](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898511806): same 15/15 host preflight PASS, then missing Bubblewrap exit 125; later sandbox steps skipped.
+- Case-collision [#44898517082](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44898517082): PASS.
+
+The two symlink regressions pass in both the 15-test host preflight and 127-test packaging/tool suite. The overall workflows are not green because separate required gates remain blocked. No actual Bubblewrap namespace or ImageBuilder execution occurred in these runs.
+
+### Live ownership and cross-repository state
+
+- MASTER PR #288 exact head at inspection: 940fe4f1ec3816dd2ac60468303b0454835d496c. coordination/phoenix/OWNERSHIP_ROUTES.json remains blob e4db324315a1b3543fec17a148fbf960170fcb29, DRAFT_REVIEW_ONLY; the RELEASE route from .github/workflows/blazepwifi-build.yml to .github/workflows/pisowifi-ci.yml remains reimplementation-review. No workflow migration is authorized.
+- Experiments #242 exact head: 734b89d9e7792247e8376335c3f3685500ab3f89.
+- Experiments #291 exact docs/head: 42797e2f3d65c30a1070caf49c93aebec149d897; source/test: 1851f1d06648beed70695528f2799d57154a69237. Compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed 3/3. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at CORE-owned PROJECT_HANDOVER.md freshness; downstream signing/publication and Windows build/publisher were skipped. The 26-path #291 diff remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); RELEASE did not edit those inherited paths.
+- COE integration #26 exact head: b382d233ff06c8791b1028bed3c617cc7b670d12, frozen with five workflows queued / zero jobs.
+- COE parent #31 exact head/base for #35: 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
+- COE child #35 source/test head: 847e355845d9043667d6ccaa8e160b8e64b67352; PR remains OPEN / DRAFT / UNMERGED.
+- Cleanup-first issue #266 remains OPEN, 0/7 checked. This scoped release fix does not complete the seven-role cleanup inventory.
+- The #172 embedded control-plane body still contains an older #291 head (bcb71b4c...). The live PR API and MASTER UTC10 audit confirm 42797e2f.... MASTER should reconcile its own index; RELEASE did not edit coordination-owned files.
+
+### Remaining owner actions and evidence boundary
+
+1. PHX-QA: independently review the exact symlink rejection tests and source correction at 847e3558.
+2. PHX-INFRA: provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged namespaces; no privileged install or unsandboxed fallback.
+3. PHX-CORE / PHX-MASTER / COE integration owner: establish approved site-scoped ULA /48 authority and persistence contract before profile admission can proceed.
+4. PHX-MASTER: reconcile the stale #172 PR-head index and preserve the draft-only reimplementation-review route.
+5. Registry custodian: restore authorized access to canonical private Drive registry v11. The exact-title Library search surfaced older v3-v7 snapshots only; none was substituted. No Google Drive connector was exposed in this activation.
+
+This is hosted-CI path-validation evidence using synthetic symlink fixtures, not a real host Bubblewrap execution, real ImageBuilder build, signed production binary, physical power-cut test or hardware acceptance. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain NOT TESTED. **PRODUCTION NO-GO**.
