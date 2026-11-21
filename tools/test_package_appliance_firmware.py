@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shlex
+import stat
 import shutil
 import subprocess
 import sys
@@ -763,6 +764,42 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             0,
             msg=f"Generated ImageBuilder wrapper is not valid POSIX shell: {result.stderr}"
         )
+
+    def test_generate_build_script_fsyncs_parent_directory_before_publish(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "durable-directory-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        script_path = os.path.join(self.temp_dir, "durable-directory-build.sh")
+
+        events = []
+        original_fsync = os.fsync
+        original_fchmod = os.fchmod
+
+        def record_fsync(file_descriptor):
+            mode = os.fstat(file_descriptor).st_mode
+            events.append(("fsync", "directory" if stat.S_ISDIR(mode) else "file"))
+            return original_fsync(file_descriptor)
+
+        def record_fchmod(file_descriptor, mode):
+            events.append(("fchmod", mode))
+            return original_fchmod(file_descriptor, mode)
+
+        with mock.patch.object(packager.os, "fsync", side_effect=record_fsync):
+            with mock.patch.object(packager.os, "fchmod", side_effect=record_fchmod):
+                generate_build_script(manifest, script_path)
+
+        self.assertEqual(
+            events,
+            [
+                ("fsync", "file"),
+                ("fsync", "directory"),
+                ("fchmod", 0o755),
+                ("fsync", "file"),
+            ],
+            "The directory entry must be durable while the new script is still non-executable; "
+            "only then may the executable mode be published and synced",
+        )
+        self.assertEqual(os.stat(script_path).st_mode & 0o777, 0o755)
 
     def test_generate_build_script_fsyncs_executable_mode_after_chmod(self):
         profile = load_profile("gl-mt1300")
