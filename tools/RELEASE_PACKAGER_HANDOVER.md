@@ -2852,3 +2852,63 @@ These are hosted CI results. The new parity regression uses Python test fixtures
 5. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC23 — deterministic ESP firmware artifact manifests and checksums (2026-11-21)
+
+**Disposition:** one RELEASE-owned artifact-provenance feature was added to the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. Strict NO Codex. No firmware sketch, shared API, network profile, ULA authority, CORE, RENTAL, PISONET, HARDWARE implementation, QA or MASTER source was changed.
+
+### Scope and output contract
+
+The existing `.github/workflows/hardware-ci.yml` uploaded ESP8266 and ESP32 build directories without a source-bound manifest or a portable checksum list. The two existing board jobs now run a RELEASE-owned manifest writer after compilation and before the existing artifact upload:
+
+- `tools/write_firmware_artifact_manifest.py`
+- `artifact-manifest.json`, schema `phoenix/firmware-artifact/v1`
+- `SHA256SUMS`, covering every payload file plus `artifact-manifest.json`
+
+Each manifest records repository, checked-out Git SHA, GitHub event SHA (which must match the checked-out SHA), PR head/base SHAs when present, product, board, FQBN, Arduino CLI version, board-core ID/version, and sorted relative file paths with byte sizes and SHA-256 digests. The JSON and checksum text are deterministic for identical inputs; no wall-clock timestamp is embedded.
+
+The writer fails closed on missing/empty `.bin` payloads, unsafe relative paths, symlinked/non-regular/hard-linked files or directories, pre-existing output names, invalid provenance fields, source/event SHA mismatch, and incomplete directory enumeration. Manifest and checksum outputs are created exclusively (no overwrite), file-synced, then the directory is synced. The existing upload steps remain in place and include both files automatically through their existing directory paths.
+
+The manifest schema is local to this RELEASE artifact boundary; no MASTER/shared interface or COE migration contract was changed.
+
+### Test-first, corrections and exact commits
+
+- Test-first commit [18bddcf2](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/18bddcf2958d2e97efc7b2dab051685e3f52bf35) added the missing-module and workflow-contract regressions before the writer existed. Exact PR run [#44960978732](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44960978732), job 137019489806, failed at the packaging test step with the expected `ModuleNotFoundError: write_firmware_artifact_manifest`. The sandbox run [#44960978721](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44960978721) independently failed closed because Bubblewrap was absent; it is not part of the expected test RED.
+- Initial writer commit [6e93c356](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6e93c356b42a4bb97fd37d937d2e3c2d4f015ff0) added the deterministic payload builder and no-overwrite writer. Its exact-source shared run [#44961036034](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44961036034), job 137019668125, exposed two test-stage issues: the empty-`.bin` assertion regex did not match the diagnostic, and the workflow wiring was not yet present. These were test-contract/integration gaps, not firmware defects.
+- Test assertion correction [84637bd9](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/84637bd9fafddb19d10200d56b9917fa7cd67137) aligned the expected diagnostic. Workflow integration [d5032eec](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d5032eec4c0637fede6edf57123eda3bab5130d8) added the ESP8266/ESP32 manifest steps with exact FQBN/core pins and source/event/PR identity.
+- A further test-first commit [a7e1be59](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a7e1be599d438e82ea8b62acae8ffa3de2782958) injected an artifact-directory enumeration error. Exact run [#44961216021](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44961216021), job 137020218310, logged the expected failure because `os.walk` had no `onerror` callback; that workflow run was later cancelled by the superseding source push, so it is recorded as an expected test RED, not a completed green/red workflow.
+- Source correction [6ecbbd98](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6ecbbd980fbb594b805a6bde53905eb3320ee3eb) makes directory enumeration fail closed. CLI coverage [ce57bce1](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ce57bce198ce0f3f5e901f386d54964e722ee321) exercises the exact argparse entry point and verifies both output files and provenance markers.
+
+### Exact final-head GitHub Actions
+
+Final PR/source-test HEAD: `ce57bce198ce0f3f5e901f386d54964e722ee321`.
+
+- PR shared/firmware run [#44961307523](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44961307523), job 137020493399: firmware syntax and shared-contract checks **PASS**; packaging/tool suite **165 tests PASS / 2 intentional skips**, including deterministic output, source/event SHA binding, symlink/hardlink rejection, empty/missing binary rejection, incomplete-walk rejection, CLI execution and both workflow wiring contracts. `PHX-MANIFEST-DURABILITY-PASS` was emitted. The following ten-profile staging/admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Push shared/firmware run [#44961312084](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44961312084), job 137020506867: same final source head and same 165-test/profile-gate result.
+- Final-head case-collision guard [#44961312140](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44961312140): **PASS**.
+- Final-head sandbox run [#44961312088](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44961312088), job 137020506966: host preflight **31/31 PASS**, then Bubblewrap availability **FAILED CLOSED** because `bwrap` is not installed (exit 125); namespace and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+
+**Artifact evidence boundary:** the new writer and CLI were exercised against disposable synthetic files in hosted CI. The real ESP8266/ESP32 build jobs were skipped by the existing all-profile ULA admission gate, so no actual board binary, uploaded firmware artifact, or generated production manifest was produced in this activation. No target compile or hardware acceptance is claimed.
+
+### Live ownership and integration snapshot
+
+- MASTER PR #288 live API head: `e2a6934cd2dba8e7c3df6a972cf0a6a3d6c255d2`, base Experiments main `f4e8a891aed8af86d5fd315d28750a0ac3a7372b`, OPEN / DRAFT, 160 changed paths. `coordination/phoenix/OWNERSHIP_ROUTES.json` remains blob `e4db324315a1b3543fec17a148fbf960170fcb29`, `DRAFT_REVIEW_ONLY`; PHX-MASTER target is null and the RELEASE route `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml` remains `reimplementation-review`. No migration or ownership promotion is authorized.
+- Experiments RELEASE #242 live head `734b89d9e7792247e8376335c3f3685500ab3f89`, base `6d4c9b487af4d768c4d7627654d119417fcc6e00`. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) completed SUCCESS; signing and publication were skipped.
+- Experiments RELEASE #291 live head `42797e2f3d65c30a1070caf49c93aebec149d897`, base #242 `734b89d9e7792247e8376335c3f3685500ab3f89`, 26 accumulated mixed-owner paths (21 RELEASE / 3 CORE / 2 PISONET). ESP32 compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed 3/3. Full build [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the CORE-owned handover freshness gate; all 14 target/Android build jobs completed successfully, while dependent simulations/candidate/signing/publication stages were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the shared handover freshness gate before the Windows build and publisher; those stages were skipped. RELEASE did not edit this mixed-owner PR.
+- COE integration #26 remains OPEN / DRAFT / FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`, base COE main `a6513ab4412b4c014eee2863e45cbe32d06cb243`; five workflows remain QUEUED with zero executed jobs.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`, based on #26. Shared validation [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) and case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed. Sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) installed Bubblewrap and passed host/identity checks, then failed closed at unprivileged UID-map setup (`Permission denied`, exit 125); mandatory sandbox packaging tests were skipped.
+- COE child #35 remains OPEN / DRAFT / UNMERGED on `phoenix/release-build-script-publication-safety-20261117`, base #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; final head `ce57bce198ce0f3f5e901f386d54964e722ee321`. Its 12 changed paths are confined to `.github/workflows/` and `tools/` release CI/packaging/test/handover paths; no firmware sketch or shared interface was changed.
+- Cleanup-first #266 remains OPEN, **0/7** tracks checked. This bounded RELEASE task is not completion of the seven-role cleanup.
+- Issue #172's embedded PR-head index is stale: it still lists older #288/#291/#35 heads than the live PR API values above. PHX-MASTER owns the control-plane index correction; RELEASE did not edit the issue body.
+- The exact private registry search surfaced older v3–v7 provenance files but did not surface canonical private Drive registry v11 or newer corrections. No older registry was substituted; no private file contents or identifiers were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review exact source/test head `ce57bce198ce0f3f5e901f386d54964e722ee321`, especially source/event SHA equality, manifest path safety, checksum coverage and no-overwrite behavior.
+2. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix or bypass profile admission.
+4. **PHX-MASTER:** reconcile stale #172 PR-head references while preserving draft-only ownership routes.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
