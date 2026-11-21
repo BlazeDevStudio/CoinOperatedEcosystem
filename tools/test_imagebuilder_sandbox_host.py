@@ -191,6 +191,45 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
                     )
 
 
+    def test_probe_rejects_setid_bubblewrap_in_trusted_directory(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in (0o4755, 0o2755):
+                with self.subTest(mode=oct(mode)):
+                    path = self.make_fake_bwrap(directory, "exit 0\\n")
+                    os.chmod(path, mode)
+                    with mock.patch.object(helper.shutil, "which", return_value=path):
+                        with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                            self.assertIsNone(
+                                helper._find_trusted_bwrap(),
+                                "setuid/setgid Bubblewrap is not the approved unprivileged userns mode",
+                            )
+                    os.unlink(path)
+
+    def test_probe_rejects_group_or_world_writable_bubblewrap(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in (0o775, 0o757):
+                with self.subTest(mode=oct(mode)):
+                    path = self.make_fake_bwrap(directory, "exit 0\\n")
+                    os.chmod(path, mode)
+                    with mock.patch.object(helper.shutil, "which", return_value=path):
+                        with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                            self.assertIsNone(
+                                helper._find_trusted_bwrap(),
+                                "group/world-writable Bubblewrap must not be trusted",
+                            )
+                    os.unlink(path)
+
+    def test_probe_accepts_regular_unprivileged_bubblewrap_mode(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.make_fake_bwrap(directory, "exit 0\\n")
+            os.chmod(path, 0o755)
+            with mock.patch.object(helper.shutil, "which", return_value=path):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    self.assertEqual(helper._find_trusted_bwrap(), path)
+
     def test_probe_blocks_when_bubblewrap_is_missing(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None):
