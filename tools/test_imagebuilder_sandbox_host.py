@@ -173,6 +173,24 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         which.assert_called_once_with("bwrap", path="/usr/bin:/bin")
 
 
+    def test_probe_rejects_symlinked_bubblewrap_in_trusted_directory(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            target = os.path.join(directory, "real-bwrap")
+            link = os.path.join(directory, "bwrap")
+            with open(target, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\\nexit 0\\n")
+            os.chmod(target, 0o755)
+            os.symlink(target, link)
+
+            with mock.patch.object(helper.shutil, "which", return_value=link):
+                with mock.patch.object(helper.os.path, "dirname", return_value="/usr/bin"):
+                    self.assertIsNone(
+                        helper._find_trusted_bwrap(),
+                        "a trusted-directory symlink must not redirect execution outside that directory",
+                    )
+
+
     def test_probe_blocks_when_bubblewrap_is_missing(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None):

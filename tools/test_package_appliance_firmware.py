@@ -2985,6 +2985,23 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         )
         self.assertIn("sandbox process group", stderr.lower())
 
+    def test_runner_rejects_symlinked_bubblewrap_in_trusted_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = os.path.join(directory, "real-bwrap")
+            link = os.path.join(directory, "bwrap")
+            with open(target, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\\nexit 0\\n")
+            os.chmod(target, 0o755)
+            os.symlink(target, link)
+
+            with mock.patch.object(
+                run_imagebuilder_sandbox.os.path, "dirname", return_value="/usr/bin"
+            ):
+                self.assertFalse(
+                    run_imagebuilder_sandbox._is_within_trusted_system_directories(link),
+                    "a trusted-directory symlink must not redirect execution outside that directory",
+                )
+
     def test_runner_rejects_unbounded_build_timeout(self):
         with mock.patch.object(
             sys,
