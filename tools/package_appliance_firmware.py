@@ -1496,7 +1496,75 @@ if ! ln "$SORTED_MANIFEST" "$OUT_MANIFEST"; then
     echo "RELEASE-BLOCKED: final checksum manifest path became occupied; refusing to overwrite: $OUT_MANIFEST" >&2
     exit 1
 fi
-rm -f "$SORTED_MANIFEST" "$TMP_MANIFEST"
+"$PYTHON_PATH" - "$BUILD_DIR" "RELEASE_MANIFEST.sha256" "RELEASE_MANIFEST.sha256.sorted.tmp" "RELEASE_MANIFEST.sha256.tmp" <<'PHX_MANIFEST_SYNC'
+# PHX-MANIFEST-DURABILITY-BEGIN
+import os
+import stat
+import sys
+
+build_dir, final_name, sorted_name, temporary_name = sys.argv[1:]
+directory_fd = -1
+try:
+    directory_fd = os.open(
+        build_dir,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+    )
+    final_fd = os.open(
+        final_name,
+        os.O_WRONLY | os.O_NOFOLLOW,
+        dir_fd=directory_fd,
+    )
+    try:
+        final_stat = os.fstat(final_fd)
+        sorted_stat = os.stat(
+            sorted_name,
+            dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        temporary_stat = os.stat(
+            temporary_name,
+            dir_fd=directory_fd,
+            follow_symlinks=False,
+        )
+        if not stat.S_ISREG(final_stat.st_mode):
+            raise RuntimeError("final manifest is not a regular file")
+        if not stat.S_ISREG(sorted_stat.st_mode):
+            raise RuntimeError("sorted temporary manifest is not a regular file")
+        if not stat.S_ISREG(temporary_stat.st_mode):
+            raise RuntimeError("temporary checksum input is not a regular file")
+        if (final_stat.st_dev, final_stat.st_ino) != (sorted_stat.st_dev, sorted_stat.st_ino):
+            raise RuntimeError("final manifest is not the published sorted inode")
+        if final_stat.st_nlink != 2:
+            raise RuntimeError("published manifest has an unexpected hard-link count")
+        if temporary_stat.st_nlink != 1 or (
+            temporary_stat.st_dev,
+            temporary_stat.st_ino,
+        ) == (final_stat.st_dev, final_stat.st_ino):
+            raise RuntimeError("temporary checksum input has an unexpected inode alias")
+        os.fsync(final_fd)
+    finally:
+        os.close(final_fd)
+
+    # Persist the final manifest inode and its published directory entry
+    # before deleting either temporary name.
+    os.fsync(directory_fd)
+
+    os.unlink(sorted_name, dir_fd=directory_fd)
+    os.unlink(temporary_name, dir_fd=directory_fd)
+
+    # Persist temporary-name cleanup while retaining the final manifest link.
+    os.fsync(directory_fd)
+except (OSError, RuntimeError) as exc:
+    raise SystemExit(
+        "RELEASE-BLOCKED: checksum manifest durability finalization failed: " + str(exc)
+    )
+finally:
+    if directory_fd >= 0:
+        os.close(directory_fd)
+
+print("PHX-MANIFEST-DURABILITY-PASS")
+# PHX-MANIFEST-DURABILITY-END
+PHX_MANIFEST_SYNC
 echo "Release manifest written to $BUILD_DIR/RELEASE_MANIFEST.sha256 (PREVIEW ONLY)"
 cat "$BUILD_DIR/RELEASE_MANIFEST.sha256"
 echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
