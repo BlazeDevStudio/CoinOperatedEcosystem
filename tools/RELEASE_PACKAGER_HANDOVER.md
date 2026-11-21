@@ -2379,3 +2379,63 @@ No expected-RED run is claimed: the new test covers existing cleanup behavior an
 5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
 
 No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Approved production binaries, protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC16 — real successful-leader exit with detached child cleanup (2026-11-21)
+
+### Scope and coverage gap
+
+The existing mock test `test_successful_leader_exit_still_kills_detached_child_group` asserted SIGTERM/SIGKILL call ordering, while the UTC15 real-process test called `_terminate_process_groups()` with the outer leader still running. The success path in `_communicate_with_timeout()`—outer leader exits successfully while a detached child session remains—therefore lacked a real POSIX process regression.
+
+Added a POSIX-only test that starts an outer process group and a detached child process group. The child installs a SIGTERM-ignore handler and publishes readiness; the outer leader prints its child PGID and exits 0. The test passes the already-exited leader and live detached child PGID to `_communicate_with_timeout()`, then verifies successful leader status/output, no cleanup diagnostic, and disappearance of the detached child group. A `finally` path attempts cleanup if any assertion fails.
+
+This is test-coverage work for existing runtime behavior; it does not claim a newly discovered runtime defect and changes no production runner code.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35: [release-packager draft](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Initial test attempt: [`4631ff85`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4631ff85119e5253bd3c01e9b444bc5ae332db68). Its file-only PID handshake failed to publish the child PGID before the test deadline.
+- Test-harness correction: [`662b8a45`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/662b8a45dc0b8d21af07353f90cc264a5aaad8fe). The outer helper now publishes the PGID on stdout as well as a cleanup fallback file; the parent waits for the child readiness marker before invoking the success-path cleanup.
+- Final source/test SHA: `662b8a45dc0b8d21af07353f90cc264a5aaad8fe`.
+- Source/test blob: `573fbc6ffc30f3cf25029e8ee1f190b6289a370a`.
+- Source scope: `tools/test_imagebuilder_sandbox_host.py` only.
+
+### Exact-source Actions
+
+**Initial test attempt at `4631ff85` — failure recorded, not hidden**
+- Shared/push [#44923293233](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923293233): 141 tests ran, one new PID-handshake failure, two intentional skips; downstream profile admission did not pass.
+- Sandbox/PR [#44923293259](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923293259): 24/25 host tests passed; the new test failed at the PID-file readiness assertion.
+- Case-collision [#44923293256](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923293256): PASS.
+
+**Corrected source/test head `662b8a45`**
+- Sandbox/PR [#44923651180](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923651180): host suite **25/25 PASS**, including the real successful-leader/detached-child case; next environment gate **FAILED CLOSED** because Bubblewrap is not installed (exit 125). Namespace and ImageBuilder packaging steps were skipped, not passed.
+- Sandbox/push [#44923646922](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923646922): same source-head sandbox workflow; runner availability remains blocked.
+- Shared/PR [#44923651213](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923651213) and shared/push [#44923646953](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923646953): packaging/tool suite **141 PASS / 2 intentional skips**; subsequent all-profile admission **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority is unset; ESP8266/ESP32 compilation jobs skipped.
+- Case-collision/PR [#44923651243](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44923651243): PASS.
+
+The POSIX process test is hosted Linux CI evidence only. It is not Bubblewrap namespace acceptance, real OpenWrt ImageBuilder output, router/ESP hardware testing or production acceptance.
+
+### Live ownership and blockers
+
+- MASTER PR #288 live head at this activation: `7b4688dc989f17707f722f85f739b2b31c962eb9`; route manifest blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`. RELEASE workflow route remains `reimplementation-review`; no migration is authorized.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`; scoped Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) PASS.
+- Experiments #291: `42797e2f3d65c30a1070caf49c93aebec149d897`; ESP32 compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) PASS; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) fail at the CORE-owned `PROJECT_HANDOVER.md` freshness gate. The 26-path diff remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no inherited path was changed.
+- COE #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, five workflows queued / zero jobs.
+- COE #31 base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; earlier Bubblewrap 0.9.0 trial [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed unprivileged UID-map setup with `Permission denied`.
+- COE #35 current test head: `662b8a45dc0b8d21af07353f90cc264a5aaad8fe`; no independent PR review had been submitted at the last review-list read.
+- #266 remains OPEN / 0/7 checked. This bounded test does not complete the seven-role cleanup.
+- The embedded PHX-RELEASE row in #172 is stale and still lists #35 as `7b9706d8...`; live PR API is authoritative. PHX-MASTER owns the control-plane index correction.
+- Canonical private Drive registry v11 and newer corrections were not surfaced through the authorized Library search. No older snapshot was substituted; no private contents/identifiers were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review test commits `4631ff85` and `662b8a45`, with emphasis on the stdout readiness handshake, detached child session, successful outer exit and cleanup-on-assertion-failure path.
+2. **PHX-INFRA:** provide the authorized disposable no-secret runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces. No privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site network authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** refresh the stale #172 PR-head index and retain the draft-only #35/#31/#26 route.
+5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
+
+No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
