@@ -73,6 +73,34 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             self.skipTest("helper implementation is introduced by the source commit")
         return load_helper()
 
+    def test_host_and_runtime_delegate_to_shared_bubblewrap_trust_policy(self):
+        helper = self.helper_or_skip()
+        import imagebuilder_bwrap_trust as trust
+
+        runner_path = os.path.join(TOOLS_DIR, "run_imagebuilder_sandbox.py")
+        spec = importlib.util.spec_from_file_location(
+            "phx_release_runner_trust_policy_test", runner_path
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+
+        with mock.patch.object(
+            trust, "is_trusted_system_directory", return_value=False
+        ):
+            self.assertFalse(helper._is_trusted_system_directory("/usr/bin"))
+            self.assertFalse(runner._is_trusted_system_directory("/usr/bin"))
+
+        with mock.patch.object(trust, "is_trusted_executable", return_value=False):
+            with mock.patch.object(
+                helper.shutil, "which", return_value="/usr/bin/bwrap"
+            ):
+                self.assertIsNone(helper._find_trusted_bwrap())
+            self.assertFalse(
+                runner._is_within_trusted_system_directories("/usr/bin/bwrap")
+            )
+
     def make_fake_bwrap(self, directory, script):
         path = os.path.join(directory, "bwrap")
         with open(path, "w", encoding="utf-8") as fp:
