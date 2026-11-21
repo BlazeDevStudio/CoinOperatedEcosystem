@@ -560,7 +560,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                 "open(sys.argv[1], 'w', encoding='ascii').write('ready'); "
                 "time.sleep(60)"
             )
-            outer_code = "\\n".join(
+            outer_code = "\n".join(
                 [
                     "import os, subprocess, sys, time",
                     "pid_path, ready_path, child_code = sys.argv[1:]",
@@ -572,6 +572,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                     ")",
                     "with open(pid_path, 'w', encoding='ascii') as fp:",
                     "    fp.write(str(child.pid))",
+                    "print(child.pid, flush=True)",
                     "deadline = time.monotonic() + 5",
                     "while not os.path.exists(ready_path) and time.monotonic() < deadline:",
                     "    time.sleep(0.01)",
@@ -597,17 +598,17 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
             child_pgid = None
             cleanup_attempted = False
             try:
-                deadline = runner.time.monotonic() + 5
-                while not os.path.exists(pid_path) and runner.time.monotonic() < deadline:
-                    runner.time.sleep(0.01)
+                ready, _, _ = runner.select.select([process.stdout], [], [], 5)
                 self.assertTrue(
-                    os.path.exists(pid_path),
+                    ready,
                     "outer process did not publish the detached child process-group ID",
                 )
-                with open(pid_path, "r", encoding="ascii") as fp:
-                    child_pgid = int(fp.read())
+                line = process.stdout.readline()
+                self.assertTrue(line.strip(), "detached child process-group ID was empty")
+                child_pgid = int(line.strip())
                 self.assertGreater(child_pgid, 0)
 
+                deadline = runner.time.monotonic() + 5
                 while not os.path.exists(ready_path) and runner.time.monotonic() < deadline:
                     runner.time.sleep(0.01)
                 self.assertTrue(
