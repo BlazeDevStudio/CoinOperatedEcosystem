@@ -2561,14 +2561,14 @@ These results are hosted CI evidence. The trust predicate tests are synthetic me
 
 ### Live ownership and integration state refreshed
 
-- MASTER PR #288 exact head at inspection: 0fd192b09da50c33b9c49aac43982fc629c55706. Ownership route manifest blob e4db324315a1b3543fec17a148fbf960170fcb29 remains DRAFT_REVIEW_ONLY; RELEASE workflow route remains reimplementation-review.
+- MASTER PR #288 exact head at initial ownership-route inspection: 0fd192b09da50c33b9c49aac43982fc629c55706; MASTER later advanced its draft to live head ce12ad9b838a6deca89176c8b2086bde0a0a410d during this activation. Ownership route manifest blob e4db324315a1b3543fec17a148fbf960170fcb29 remains DRAFT_REVIEW_ONLY; RELEASE workflow route remains reimplementation-review.
 - Experiments RELEASE #242 exact head: 734b89d9e7792247e8376335c3f3685500ab3f89.
 - Experiments RELEASE #291 exact head: 42797e2f3d65c30a1070caf49c93aebec149d897. Its current Windows failure is in PISONET-owned negative-selftest.ps1; its Full build is blocked at inherited CORE handover freshness. No CORE or PISONET path was edited.
 - COE integration #26 exact head: b382d233ff06c8791b1028bed3c617cc7b670d12; five workflows remain queued with zero executed jobs.
 - COE parent #31 exact head/base: 59ed44d0b911e176f1a95b9cf5585ef811ffd31b.
-- COE child #35 exact source/test head: a10cf724f1e0488ba23a5fad357257124a563732; final documentation-head verification is pending this handover commit.
+- COE child #35 exact source/test head: a10cf724f1e0488ba23a5fad357257124a563732; documentation head 732ba66626d267b9b85c80b251722a3f710f2972 was also checked by the exact PR Actions below.
 - Cleanup-first #266 remains OPEN, 0/7 checked. This bounded release task does not complete the broader seven-role cleanup.
-- The authorized Library search surfaced only a provenance checkpoint referencing canonical BLAZE_PROJECT_REGISTRY_v11_20261027.json; the actual private v11 file and newer corrections were not surfaced. The checkpoint was used only to establish provenance; no private registry contents or identifiers were copied to GitHub, and no older registry snapshot was substituted.
+- The authorized Library search surfaced only provenance metadata referencing canonical private registry v11; the actual file and newer corrections were not surfaced. The checkpoint was used only to establish provenance; no private registry contents, Drive identifiers or links were copied to GitHub, and no older registry snapshot was substituted.
 - The embedded PR-head index in #172 remains stale relative to live PR metadata; PHX-MASTER owns that coordination correction. RELEASE did not edit the control-plane body.
 
 ### Next owner actions and release boundary
@@ -2580,3 +2580,17 @@ These results are hosted CI evidence. The trust predicate tests are synthetic me
 5. **Registry custodian:** restore authorized access to canonical private registry v11 and its newer corrections.
 
 No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No workflow migration, merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+### PHX-RELEASE UTC18 post-handover exact-head reconciliation
+
+The documentation-head SHA 732ba66626d267b9b85c80b251722a3f710f2972 was verified after the handover commit:
+
+- Sandbox PR [#44935047125](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44935047125), job 136939727734: **30/30 host-preflight tests PASS**. Bubblewrap availability then **FAILED CLOSED** because the runner has no Bubblewrap executable (exit 125); identity, namespace and mandatory sandbox packaging steps were **SKIPPED**.
+- Shared PR [#44935047159](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44935047159), job 136939728096: host preflight **18 tests PASS**; packaging/tool suite **150 tests PASS / 2 intentional skips**; firmware syntax and shared contracts **PASS**. All ten appliance profile admissions then **FAILED CLOSED** for missing approved site-scoped RFC 4193 ULA /48 authority. ESP8266/ESP32 compile jobs were **SKIPPED**. Overall workflow remains **FAILURE**, not green.
+- Case-collision PR [#44935047185](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44935047185): **PASS**.
+
+After the initial ownership-route inspection, MASTER advanced PR #288 to ce12ad9b838a6deca89176c8b2086bde0a0a410d and posted its UTC18 checkpoint on #172. The canonical route manifest blob remains e4db324315a1b3543fec17a148fbf960170fcb29 / DRAFT_REVIEW_ONLY. The #172 issue body still carries older embedded heads for #288, #291 and #35; PHX-MASTER owns that index correction. RELEASE did not edit the control-plane body or MASTER files.
+
+The private registry v11 check remains provenance-only: authorized Library search surfaced a checkpoint reference, not the canonical private file or its newer corrections. No private file name, Drive ID, URL or contents were copied into this repository.
+
