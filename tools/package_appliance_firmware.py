@@ -61,6 +61,16 @@ EXCLUDED_PACKAGES = [
 ]
 
 
+def _reject_duplicate_json_object_keys(pairs):
+    """Reject ambiguous JSON objects instead of silently keeping the last duplicate key."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
 def load_profile(profile_id_or_path: str) -> dict:
     """Load a profile through no-follow descriptors; profile paths must be regular files."""
     try:
@@ -101,7 +111,10 @@ def load_profile(profile_id_or_path: str) -> dict:
 
         with os.fdopen(profile_fd, "r", encoding="utf-8") as profile_file:
             profile_fd = -1
-            return json.load(profile_file)
+            return json.load(
+                profile_file,
+                object_pairs_hook=_reject_duplicate_json_object_keys,
+            )
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"Router profile not found: {path}") from exc
     except OSError as exc:
