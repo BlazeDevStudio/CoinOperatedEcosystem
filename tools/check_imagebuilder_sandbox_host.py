@@ -35,7 +35,12 @@ def _find_trusted_bwrap() -> str | None:
         mode = os.lstat(resolved).st_mode
     except OSError:
         return None
-    if not stat.S_ISREG(mode) or not os.access(resolved, os.X_OK):
+    forbidden_mode_bits = stat.S_ISUID | stat.S_ISGID | stat.S_IWGRP | stat.S_IWOTH
+    if (
+        not stat.S_ISREG(mode)
+        or mode & forbidden_mode_bits
+        or not os.access(resolved, os.X_OK)
+    ):
         return None
     return resolved
 
