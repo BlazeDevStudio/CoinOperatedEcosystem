@@ -899,6 +899,53 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         self.assertEqual(os.stat(script_path).st_mode & 0o777, 0o755)
 
+    def test_generate_build_script_final_mode_fsync_failure_reverts_to_non_executable(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "mode-fsync-failure-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        script_path = os.path.join(self.temp_dir, "mode-fsync-failure-build.sh")
+
+        file_syncs = 0
+        fsync_events = []
+        chmod_modes = []
+        original_fsync = os.fsync
+        original_fchmod = os.fchmod
+
+        def fail_final_file_sync(file_descriptor):
+            nonlocal file_syncs
+            if stat.S_ISDIR(os.fstat(file_descriptor).st_mode):
+                fsync_events.append("directory")
+                return original_fsync(file_descriptor)
+            file_syncs += 1
+            fsync_events.append("file")
+            if file_syncs == 2:
+                raise OSError("simulated executable-mode fsync failure")
+            return original_fsync(file_descriptor)
+
+        def record_fchmod(file_descriptor, mode):
+            chmod_modes.append(mode)
+            return original_fchmod(file_descriptor, mode)
+
+        with mock.patch.object(
+            packager.os, "fsync", side_effect=fail_final_file_sync
+        ):
+            with mock.patch.object(
+                packager.os, "fchmod", side_effect=record_fchmod
+            ):
+                with self.assertRaisesRegex(OSError, "executable-mode fsync"):
+                    generate_build_script(manifest, script_path)
+
+        self.assertEqual(
+            fsync_events,
+            ["file", "directory", "file", "file"],
+            "A failed executable-mode sync must be followed by a synced non-executable rollback",
+        )
+        self.assertEqual(chmod_modes, [0o755, 0o600])
+        self.assertTrue(os.path.isfile(script_path))
+        self.assertEqual(os.stat(script_path).st_mode & 0o777, 0o600)
+        with open(script_path, "r", encoding="utf-8") as fp:
+            self.assertIn("Appliance PREVIEW build completed", fp.read())
+
     def test_generate_build_script_failed_write_never_publishes_executable_partial_file(self):
         profile = load_profile("gl-mt1300")
         staging = os.path.join(self.temp_dir, "partial-write-staging")
