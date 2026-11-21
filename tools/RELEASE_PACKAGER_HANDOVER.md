@@ -2729,3 +2729,67 @@ The same source-level outcomes were observed on the push runs [shared #449461139
 5. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC21 — build-script executable-mode fsync rollback (2026-11-21)
+
+**Disposition:** one test-first, RELEASE-owned failure-path hardening increment on existing COE child PR #35. PR #35 remains OPEN / DRAFT / UNMERGED. Strict NO Codex. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was modified.
+
+### Finding and bounded correction
+
+`generate_build_script()` writes the complete wrapper, fsyncs the file, fsyncs the parent directory while the new file is still mode 0600, changes the mode to 0755, and fsyncs the executable inode metadata. The success ordering was already tested, but the failure path for that final post-chmod fsync was not.
+
+A test-first regression now simulates failure of that final fsync and requires the generator to:
+- attempt a rollback to mode 0600;
+- fsync the non-executable mode;
+- propagate an OSError rather than report publication success;
+- leave the complete wrapper available for diagnosis but non-executable when rollback succeeds.
+
+The source now performs that rollback before propagating the final-mode sync failure. If the rollback chmod or its fsync also fails, the error explicitly states that non-executable rollback could not be confirmed; no stronger guarantee is claimed. Normal successful publication remains unchanged.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- Child PR #35: https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35 — OPEN / DRAFT / UNMERGED.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first RED: [`bd5ef2c7`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bd5ef2c7e3221e718a787f9b673fcdad68862786).
+- Source/test correction: [`0aa7ff85`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0aa7ff85f1a20786b142ab7dc85aa009be68cb1d).
+- Exact source/test SHA: `0aa7ff85f1a20786b142ab7dc85aa009be68cb1d`.
+- Changed source/test paths: `tools/test_package_appliance_firmware.py`, `tools/package_appliance_firmware.py`.
+- This handover is the only documentation path changed for the UTC21 increment.
+
+### Test-first RED at exact test-only SHA `bd5ef2c7`
+
+- Shared/firmware PR [#44950843058](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44950843058): firmware hardening and shared contracts passed; packaging suite ran **153 tests with one expected failure and two intentional skips**. The new test failed because the final-mode fsync error was propagated without a rollback fsync; observed events were `file, directory, file` instead of the required `file, directory, file, file`. All other packaging tests passed. The subsequent all-profile admission and board compilation were skipped after the packaging failure.
+- Sandbox PR [#44950843110](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44950843110): host preflight **31/31 PASS**; Bubblewrap availability **FAILED CLOSED** because `bwrap` is absent (exit 125). Namespace and mandatory sandbox/ImageBuilder tests were skipped.
+- Case-collision guard [#44950843077](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44950843077): **PASS**.
+
+### Corrected source/test Actions at `0aa7ff85`
+
+- Shared/firmware PR [#44950919161](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44950919161): firmware hardening and shared contracts **PASS**; packaging/tool suite **153 tests PASS / 2 intentional skips**, including the new rollback regression. The next all-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Sandbox PR [#44950919168](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44950919168): host preflight **31/31 PASS**; Bubblewrap availability **FAILED CLOSED** because `bwrap` is absent (exit 125); unprivileged identity, namespace preflight and mandatory sandbox/ImageBuilder regressions were **SKIPPED**, not passed.
+- Case-collision guard [#44950919221](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44950919221): **PASS**.
+
+These are hosted CI results. No real Bubblewrap namespace execution, ImageBuilder firmware artifact, target hardware test or production binary was produced.
+
+### Live ownership and integration snapshot
+
+- MASTER PR #288 live head: `60ad84bbd20e20b44d7fdc53c612695308278ab3`. Ownership manifest blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; the RELEASE workflow route `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml` remains `reimplementation-review`. No migration or ownership promotion is authorized.
+- Experiments RELEASE #242 live head: `734b89d9e7792247e8376335c3f3685500ab3f89`. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) completed success; signing and publication remain unproven/skipped. No separate RELEASE handover file is present in #242's changed-file list; its PR description and workflow record were inspected.
+- Experiments RELEASE #291 live head: `42797e2f3d65c30a1070caf49c93aebec149d897`; `.github/PHX_RELEASE_HANDOVER.md` was read. Exact-source compatibility matrix [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) **PASS, 3/3 jobs**. Full build [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) **FAIL** at the CORE-owned `PROJECT_HANDOVER.md` freshness gate; all 14 ESP8266/ESP32/Android/OpenWrt target jobs completed success, but downstream simulations, candidate gate, signing and publication were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) **FAIL** at the same CORE-owned handover freshness gate; Windows build and publisher were skipped. Its 26 accumulated paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no path in #291 was modified.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero executed jobs.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 now has source/test head `0aa7ff85f1a20786b142ab7dc85aa009be68cb1d`.
+- Cleanup-first #266 remains OPEN, 0/7 checked. This bounded RELEASE increment does not complete the seven-role cleanup.
+- Issue #172's embedded PR-head index remains stale relative to live #288/#291/#35 heads; PHX-MASTER owns that index correction. RELEASE did not edit the control-plane body.
+- Authorized Library search did not surface the canonical private Drive registry v11 file or newer corrections. Historical snapshots were not substituted; no private contents, Drive identifiers or links were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review exact source/test SHA `0aa7ff85f1a20786b142ab7dc85aa009be68cb1d`, including the rollback-success and rollback-failure reporting boundary.
+2. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale #172 PR-head references and preserve the draft-only ownership routes.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
