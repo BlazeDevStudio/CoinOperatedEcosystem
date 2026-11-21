@@ -1276,14 +1276,31 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
     sha256sum_candidate = shutil.which("sha256sum", path=TRUSTED_SYSTEM_PATH)
     if not sha256sum_candidate:
         raise OSError("Safe ImageBuilder wrapper requires sha256sum in trusted system directories")
-    sha256sum_path = os.path.abspath(sha256sum_candidate)
+    # Resolve system-managed aliases once, then pin the exact executable bytes.
+    # The wrapper must not trust a path that can be replaced after generation.
+    sha256sum_path = os.path.realpath(sha256sum_candidate)
     if (
         os.path.dirname(sha256sum_path) not in ("/usr/bin", "/bin")
         or not os.path.isfile(sha256sum_path)
         or not os.access(sha256sum_path, os.X_OK)
-        or not stat.S_ISREG(os.stat(sha256sum_path).st_mode)
+        or not hasattr(os, "O_NOFOLLOW")
     ):
         raise OSError("Safe ImageBuilder wrapper requires a regular trusted-system sha256sum executable")
+    sha256sum_fd = -1
+    try:
+        sha256sum_fd = os.open(sha256sum_path, os.O_RDONLY | os.O_NOFOLLOW)
+        sha256sum_stat = os.fstat(sha256sum_fd)
+        if (
+            not stat.S_ISREG(sha256sum_stat.st_mode)
+            or not sha256sum_stat.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        ):
+            raise OSError("Safe ImageBuilder wrapper requires a regular executable sha256sum inode")
+        with os.fdopen(sha256sum_fd, "rb") as sha256sum_file:
+            sha256sum_fd = -1
+            sha256sum_sha256 = hashlib.sha256(sha256sum_file.read()).hexdigest()
+    finally:
+        if sha256sum_fd >= 0:
+            os.close(sha256sum_fd)
 
     # This absolute path remains valid after the wrapper changes into ImageBuilder.
     stage_arg = shlex.quote(staging_dir)
@@ -1300,6 +1317,7 @@ set -eu
 PYTHON_PATH={python_arg}
 PYTHON_SHA256={python_sha256}
 SHA256SUM_PATH={sha256sum_arg}
+SHA256SUM_SHA256={sha256sum_sha256}
 RUNNER_PATH={runner_arg}
 RUNNER_SHA256={runner_sha256}
 
@@ -1311,6 +1329,39 @@ if [ ! -f "$PYTHON_PATH" ] || [ -L "$PYTHON_PATH" ] || [ ! -x "$PYTHON_PATH" ]; 
     echo "RELEASE-BLOCKED: pinned Python interpreter is missing or unsafe" >&2
     exit 1
 fi
+"$PYTHON_PATH" - "$SHA256SUM_PATH" "$SHA256SUM_SHA256" <<'PHX_SHA256SUM_VERIFY'
+import hashlib
+import os
+import stat
+import sys
+
+path, expected = sys.argv[1:]
+fd = -1
+try:
+    if os.path.islink(path):
+        raise OSError("checksum utility path became a symlink")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    metadata = os.fstat(fd)
+    if not stat.S_ISREG(metadata.st_mode) or not (
+        metadata.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    ):
+        raise OSError("checksum utility is not a regular executable file")
+    with os.fdopen(fd, "rb") as source:
+        fd = -1
+        actual = hashlib.sha256(source.read()).hexdigest()
+except OSError as exc:
+    raise SystemExit(
+        "RELEASE-BLOCKED: pinned sha256sum executable could not be verified: " + str(exc)
+    )
+finally:
+    if fd >= 0:
+        os.close(fd)
+
+if actual != expected:
+    raise SystemExit(
+        "RELEASE-BLOCKED: pinned sha256sum executable SHA-256 differs from the generated wrapper"
+    )
+PHX_SHA256SUM_VERIFY
 PYTHON_DIGEST_LINE="$("$SHA256SUM_PATH" "$PYTHON_PATH")"
 ACTUAL_PYTHON_SHA256="${{PYTHON_DIGEST_LINE%% *}}"
 if [ "$ACTUAL_PYTHON_SHA256" != "$PYTHON_SHA256" ]; then
