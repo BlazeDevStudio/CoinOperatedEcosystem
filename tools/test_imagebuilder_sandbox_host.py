@@ -644,17 +644,18 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             pid_path = os.path.join(temp_dir, "child.pid")
             ready_path = os.path.join(temp_dir, "child.ready")
+            output_path = os.path.join(temp_dir, "output.ready")
             child_code = (
                 "import signal, sys, time; "
                 "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
                 "open(sys.argv[1], 'w', encoding='ascii').write('ready'); "
                 "time.sleep(60)"
             )
-            outer_code = "\n".join(
+            outer_code = "\\n".join(
                 [
                     "import os, signal, subprocess, sys, time",
                     "signal.signal(signal.SIGTERM, signal.SIG_IGN)",
-                    "pid_path, ready_path, child_code = sys.argv[1:]",
+                    "pid_path, ready_path, output_path, child_code = sys.argv[1:]",
                     "child = subprocess.Popen(",
                     "    [sys.executable, '-c', child_code, ready_path],",
                     "    start_new_session=True,",
@@ -668,8 +669,9 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                     "    time.sleep(0.01)",
                     "if not os.path.exists(ready_path):",
                     "    raise SystemExit(3)",
-                    "print(child.pid, flush=True)",
                     "print('partial-build-output', flush=True)",
+                    "with open(output_path, 'w', encoding='ascii') as fp:",
+                    "    fp.write('ready')",
                     "time.sleep(60)",
                 ]
             )
@@ -680,6 +682,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                     outer_code,
                     pid_path,
                     ready_path,
+                    output_path,
                     child_code,
                 ],
                 start_new_session=True,
@@ -690,16 +693,27 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
             child_pgid = None
             cleanup_attempted = False
             try:
-                ready, _, _ = runner.select.select([process.stdout], [], [], 5)
+                deadline = runner.time.monotonic() + 5
+                while (
+                    not os.path.exists(pid_path)
+                    or not os.path.exists(ready_path)
+                    or not os.path.exists(output_path)
+                ) and runner.time.monotonic() < deadline:
+                    runner.time.sleep(0.01)
+                self.assertTrue(os.path.exists(pid_path), "outer process did not publish child PGID")
                 self.assertTrue(
-                    ready,
-                    "outer process did not publish the detached child process-group ID",
+                    os.path.exists(ready_path),
+                    "detached child did not install its SIGTERM-ignore handler",
                 )
-                line = process.stdout.readline()
-                self.assertTrue(line.strip(), "detached child process-group ID was empty")
-                child_pgid = int(line.strip())
+                self.assertTrue(
+                    os.path.exists(output_path),
+                    "outer process did not flush partial build output",
+                )
+                with open(pid_path, "r", encoding="ascii") as fp:
+                    child_pgid = int(fp.read())
                 self.assertGreater(child_pgid, 0)
                 self.assertEqual(runner.os.getpgid(child_pgid), child_pgid)
+                self.assertEqual(runner.os.getpgid(process.pid), process.pid)
 
                 (stdout, stderr), timed_out = runner._communicate_with_timeout(
                     process, timeout_seconds=0.25, child_pgid=child_pgid
