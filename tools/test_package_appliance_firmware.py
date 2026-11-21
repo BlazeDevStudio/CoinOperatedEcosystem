@@ -2717,6 +2717,69 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertTrue(os.path.isfile(temporary_path))
 
 
+    def test_generated_wrapper_keeps_temporary_manifests_when_precleanup_directory_sync_fails(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "manifest-directory-sync-failure-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "manifest-directory-sync-failure-build.sh")
+        generate_build_script(manifest, wrapper)
+        sync_script = self._manifest_sync_script(wrapper)
+
+        builder = os.path.join(self.temp_dir, "manifest-directory-sync-failure-builder")
+        os.makedirs(builder)
+        final_name = "RELEASE_MANIFEST.sha256"
+        sorted_name = "RELEASE_MANIFEST.sha256.sorted.tmp"
+        temporary_name = "RELEASE_MANIFEST.sha256.tmp"
+        final_path = os.path.join(builder, final_name)
+        sorted_path = os.path.join(builder, sorted_name)
+        temporary_path = os.path.join(builder, temporary_name)
+        with open(final_path, "w", encoding="utf-8") as fp:
+            fp.write("0123456789abcdef  image.bin\\n")
+        os.link(final_path, sorted_path)
+        with open(temporary_path, "w", encoding="utf-8") as fp:
+            fp.write("temporary checksum input\\n")
+
+        fsync_events = []
+        original_fsync = os.fsync
+
+        def fail_precleanup_directory_sync(file_descriptor):
+            mode = os.fstat(file_descriptor).st_mode
+            event = "directory" if stat.S_ISDIR(mode) else "file"
+            fsync_events.append(event)
+            if len(fsync_events) == 2:
+                raise OSError("simulated pre-cleanup directory fsync failure")
+            return original_fsync(file_descriptor)
+
+        with mock.patch.object(
+            packager.os, "fsync", side_effect=fail_precleanup_directory_sync
+        ):
+            with mock.patch.object(
+                sys,
+                "argv",
+                ["manifest-finalize", builder, final_name, sorted_name, temporary_name],
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "RELEASE-BLOCKED: checksum manifest durability finalization failed",
+                ):
+                    exec(sync_script, {"__name__": "__main__"})
+
+        self.assertEqual(
+            fsync_events,
+            ["file", "directory"],
+            "The pre-cleanup directory fsync must be attempted after the manifest inode fsync",
+        )
+        self.assertTrue(os.path.isfile(final_path))
+        self.assertTrue(os.path.isfile(sorted_path))
+        self.assertTrue(os.path.isfile(temporary_path))
+        self.assertEqual(
+            os.stat(final_path).st_ino,
+            os.stat(sorted_path).st_ino,
+            "A failed directory sync must preserve the published and sorted hard links",
+        )
+        self.assertEqual(os.stat(final_path).st_nlink, 2)
+
+
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
         with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
