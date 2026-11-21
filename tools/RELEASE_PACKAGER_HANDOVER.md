@@ -2172,3 +2172,41 @@ The two symlink regressions pass in both the 15-test host preflight and 127-test
 5. Registry custodian: restore authorized access to canonical private Drive registry v11. The exact-title Library search surfaced older v3-v7 snapshots only; none was substituted. No Google Drive connector was exposed in this activation.
 
 This is hosted-CI path-validation evidence using synthetic symlink fixtures, not a real host Bubblewrap execution, real ImageBuilder build, signed production binary, physical power-cut test or hardware acceptance. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain NOT TESTED. **PRODUCTION NO-GO**.
+
+
+
+---
+
+## PHX-RELEASE UTC12 — require unprivileged Bubblewrap executable mode (2026-11-21)
+
+**Disposition:** release-owned trust-boundary hardening implemented test-first and verified by exact-source host CI. COE #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+The UTC11 checks rejected a final-component symlink but still accepted a regular executable with setuid/setgid bits or group/world write permission. That is inconsistent with MASTER's approved unprivileged single-ID user-namespace trial. Upstream Bubblewrap guidance says the unprivileged executable must not be setuid root and is normally mode 0755: https://github.com/flatpak/flatpak/wiki/User-namespace-requirements
+
+Both the host preflight and runtime runner now require a regular executable whose mode has none of `S_ISUID`, `S_ISGID`, `S_IWGRP`, or `S_IWOTH`. Ordinary executable mode 0755 remains accepted. This is a mode-bit check only: it does not pin the Bubblewrap binary's contents, prove root ownership, or protect against privileged mutation of trusted system directories.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting PR/docs head: `24ca7f7000fb8626e3e517935dd6ec6f375d0998`.
+- Test-only commits: [1cf4e8c9](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1cf4e8c961fd4ba1c575f362de8a6491e9e4d75a) and [fb1925d1](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/fb1925d1c3396f3a67bf73087c521f37c8d46adf).
+- Source corrections: [b0258542](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b025854203226da566963de6d4127a74442e4f30) and [e1934fcb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e1934fcb42f493ac0929490884045d54ad3a035e).
+- Source/test head: `e1934fcb42f493ac0929490884045d54ad3a035e`.
+- Changed paths for this task: `tools/check_imagebuilder_sandbox_host.py`, `tools/run_imagebuilder_sandbox.py`, `tools/test_imagebuilder_sandbox_host.py`, `tools/test_package_appliance_firmware.py`, and this handover. All are RELEASE-owned.
+
+### Test-first and exact-source evidence
+
+- Expected RED at test head `fb1925d1`: shared/firmware [#44903035579](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44903035579), job `136842751529`, ran 133 tests with 8 expected new mode-rejection failures and 2 intentional skips; sandbox [#44903035615](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44903035615), job `136842751430`, ran 18 host tests with 4 expected new mode-rejection failures; case-collision [#44903035593](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44903035593) PASS.
+- Exact source/test head `e1934fcb`: shared/firmware [#44903089459](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44903089459), job `136842912538`, packaging/tool suite **133 PASS / 2 intentional skips**, then all ten profile admissions **FAILED CLOSED** because approved site-scoped RFC 4193 ULA /48 authority is still absent; ESP32/ESP8266 compiles SKIPPED.
+- Exact source/test head sandbox [#44903089472](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44903089472), job `136842912634`: host preflight **18/18 PASS**, then Bubblewrap availability FAILED CLOSED (not installed, exit 125). Namespace probe and mandatory sandbox packaging regressions were skipped, not passed.
+- Exact source/test head case-collision [#44903089470](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44903089470): PASS.
+
+### Evidence boundary / next owners
+
+The mode-bit regressions are synthetic filesystem metadata tests. No real Bubblewrap executable was present on the hosted runner, so no namespace setup or ImageBuilder execution occurred. PHX-INFRA must provide the authorized disposable runner with non-setuid Bubblewrap and working unprivileged user namespaces. PHX-CORE/MASTER/COE integration must provide the approved site-scoped ULA /48 authority. PHX-QA should independently review both exact source/test commits. No other subsystem source, shared interface, profile or firmware was changed.
+
+No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment occurred. Physical 150 power-cut and 30-device/24-hour soak evidence remains NOT TESTED. **PRODUCTION NO-GO**.
