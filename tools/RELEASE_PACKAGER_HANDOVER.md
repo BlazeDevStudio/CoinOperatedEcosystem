@@ -1914,3 +1914,44 @@ The handover commit then triggered current docs-head checks:
 
 No real ImageBuilder build was run. The only passing packaging evidence is the synthetic CI regression suite; all-profile firmware staging and the mandatory sandbox remain blocked.
 
+
+## PHX-RELEASE UTC04 — persist generated build-script execute mode (2026-11-21)
+
+**Disposition:** one release-owned durability defect reproduced test-first and fixed on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Defect and bounded correction
+
+`generate_build_script()` wrote and flushed the generated script, called `fsync()`, and only then applied mode `0755` with `fchmod()`. The file contents were synced, but the executable-mode metadata change had no subsequent sync. A crash after the function returned could therefore leave the script non-executable after recovery even though generation had reported success.
+
+A new regression records the filesystem call order and requires `fsync → fchmod(0755) → fsync`. The release-owned generator now performs a second `fsync()` after `fchmod()`, persisting the executable-mode metadata through the same open descriptor. Existing exclusive-create and no-symlink-parent behavior is unchanged.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`
+- Parent #31/base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`
+- Child #35 branch: `phoenix/release-build-script-publication-safety-20261117`
+- Test-first commit: [`3e245d37`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3e245d37ee4bd9ed263544774d3499a3fea56861)
+- Source correction: [`be4ad529`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/be4ad529d9117fad07a52a189a7d7468ecf80683)
+- Current PR before this handover update: [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35) at `be4ad529d9117fad07a52a189a7d7468ecf80683`
+
+Only `tools/test_package_appliance_firmware.py`, `tools/package_appliance_firmware.py`, and this release-owned handover changed in this task. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation or shared interface was changed.
+
+### Exact-source CI
+
+- Expected RED at test-only commit: [push run #44864992108](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44864992108). Packaging suite ran 121 tests, with exactly the new test failing: observed calls were `['fsync', 'fchmod']`, missing the post-chmod sync. Two pre-existing tests were intentionally skipped.
+- Exact source/test push run [#44865035316](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44865035316): packaging/tool suite **121 tests PASS, 2 intentional skips**. The subsequent all-profile admission step **FAILED CLOSED** for all 10 profiles because approved site-scoped RFC 4193 ULA /48 authority is still undefined. ESP32 and ESP8266 jobs were skipped because validation failed at profile admission. Overall workflow is **FAILURE**, not green.
+- Exact PR validation [#44865040773](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44865040773): same 121-test PASS / 2 skips, followed by the same missing-site-ULA admission failure; both board compile jobs SKIPPED.
+- Mandatory sandbox [#44865040768](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44865040768): host preflight **14/14 PASS**, then failed closed because Bubblewrap is not installed on the hosted runner (exit 125). Namespace execution and sandbox-dependent packaging tests were SKIPPED, not passed. No privileged install or unsandboxed fallback.
+- Case-collision guard [#44865040796](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44865040796): **SUCCESS**.
+
+### Evidence limits and next owners
+
+The new regression and source correction are hosted CI evidence for filesystem call ordering only. They do not establish a real ImageBuilder run, production image, protected signer, or physical acceptance. This change persists the file's executable-mode metadata; it does not claim directory-entry crash-consistency or power-cut acceptance.
+
+1. PHX-QA: independently review the exact test/source commits and failure-mode coverage.
+2. PHX-INFRA: provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged namespaces; do not bypass the mandatory sandbox.
+3. PHX-CORE / COE integration owner: supply the approved site-scoped ULA authority and persistence contract; RELEASE will not invent or replace the prefix.
+4. PHX-MASTER: reconcile #35 with parent #31 and the frozen #26 integration route; the ownership manifest remains `DRAFT_REVIEW_ONLY`.
+5. Registry custodian: restore authorized access to private Drive registry v11; no older snapshot was substituted.
+
+No real OpenWrt ImageBuilder appliance image, signer-positive result, hardware flash, payment migration, or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
