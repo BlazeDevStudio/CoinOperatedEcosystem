@@ -1702,6 +1702,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             run_imagebuilder_sandbox._private_host_mount_args,
             "host preflight and runtime must use the same private-host mask helper",
         )
+        self.assertIs(
+            check_imagebuilder_sandbox_host.PRIVATE_HOST_PATHS,
+            run_imagebuilder_sandbox.PRIVATE_HOST_PATHS,
+            "host preflight and runtime must share one immutable path list",
+        )
         expected = [
             argument
             for path in ("/home", "/root", "/run", "/mnt", "/media", "/srv")

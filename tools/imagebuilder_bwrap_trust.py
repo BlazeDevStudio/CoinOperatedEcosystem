@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared trusted-system executable checks for the release ImageBuilder sandbox."""
+"""Shared trust and private-host mount policy for the release ImageBuilder sandbox."""
 import os
 import stat
 

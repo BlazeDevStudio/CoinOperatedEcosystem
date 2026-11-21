@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 import imagebuilder_bwrap_trust
-from imagebuilder_bwrap_trust import private_host_mount_args as _private_host_mount_args
+from imagebuilder_bwrap_trust import PRIVATE_HOST_PATHS, private_host_mount_args as _private_host_mount_args
 
 PROBE_TIMEOUT_SECONDS = 10
 PROBE_SCRIPT = (
