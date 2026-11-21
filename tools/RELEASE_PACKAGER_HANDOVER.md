@@ -2210,3 +2210,49 @@ Both the host preflight and runtime runner now require a regular executable whos
 The mode-bit regressions are synthetic filesystem metadata tests. No real Bubblewrap executable was present on the hosted runner, so no namespace setup or ImageBuilder execution occurred. PHX-INFRA must provide the authorized disposable runner with non-setuid Bubblewrap and working unprivileged user namespaces. PHX-CORE/MASTER/COE integration must provide the approved site-scoped ULA /48 authority. PHX-QA should independently review both exact source/test commits. No other subsystem source, shared interface, profile or firmware was changed.
 
 No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment occurred. Physical 150 power-cut and 30-device/24-hour soak evidence remains NOT TESTED. **PRODUCTION NO-GO**.
+
+---
+
+## PHX-RELEASE UTC13 — reject duplicate JSON object keys in custom router profiles (2026-11-21)
+
+**Disposition:** a release-owned profile-input ambiguity was reproduced test-first and corrected in the existing COE #35 child draft. The parser now rejects duplicate keys at every JSON object depth rather than silently accepting the last value. PR remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+`load_profile()` accepts operator-supplied custom JSON paths and previously called Python's default `json.load()`. The default decoder silently keeps the last value when a JSON object repeats a key. This permits ambiguous top-level profile identity or nested networking/VLAN fields to be interpreted differently by other JSON consumers.
+
+The release-owned loader now passes `_reject_duplicate_json_object_keys` as `object_pairs_hook`. It checks each parsed object and raises `ValueError` naming the duplicate key. Because the hook is applied recursively by the JSON decoder, both top-level and nested duplicates are rejected. Valid profile-ID and custom-JSON-path behavior is unchanged. No checked-in profile, ULA authority, network policy, firmware source or shared interface was changed.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35: [release build-script publication safety](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35).
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting docs/source head: `9d6fa64113243981efcc4b5c7af098a5c4bb94c8`.
+- Test-only regression commit: [`1d209291`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1d2092917c781cb0f1c6f7ab41beede893070cdb).
+- Source correction commit: [`a143068f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a143068f0eaf8a61ce05502ccfdf544b447fafbb).
+- Changed source/test paths: `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py`. This handover is the only documentation path changed for this task.
+
+### Test-first RED at `1d2092917c781cb0f1c6f7ab41beede893070cdb`
+
+- Shared validation [run #44908015281](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44908015281), job `136857647930`: **134 tests ran; exactly the two new duplicate-key subcases failed** (top-level `profile_id` and nested `lan`); two intentional skips. The packaging test step failed before profile admission and board compilation.
+- Sandbox [run #44908015276](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44908015276), job `136857647956`: host preflight **18/18 PASS**, then Bubblewrap availability **FAILED CLOSED**, exit 125 because Bubblewrap is not installed. Namespace and mandatory ImageBuilder packaging tests were not run.
+
+### Exact source/test results at `a143068f0eaf8a61ce05502ccfdf544b447fafbb`
+
+- Shared validation [run #44908078965](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44908078965), job `136857838021`: **134 tests PASS / 2 intentional skips**, marker `PHX-MANIFEST-DURABILITY-PASS`; subsequent all-profile admission **FAILED CLOSED** for all 10 profiles because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP8266 and ESP32 compile jobs were **SKIPPED**.
+- Mandatory sandbox [run #44908079206](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44908079206), job `136857838801`: host preflight **18/18 PASS**, then Bubblewrap availability **FAILED CLOSED**, exit 125. No namespace setup or ImageBuilder execution occurred.
+- Case-collision guard [run #44908078969](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44908078969): **PASS**.
+
+The new parser regression is synthetic custom-profile input coverage. It does not provide appliance build, ImageBuilder sandbox, firmware, hardware, financial or production evidence.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review source/test commits `1d209291` and `a143068f`, including nested duplicate-key rejection.
+2. **PHX-CORE / PHX-MASTER:** approve the site-scoped ULA /48 authority and persistence contract; RELEASE will not invent or substitute a prefix.
+3. **PHX-INFRA:** provide the authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged user namespaces.
+4. **PHX-MASTER:** refresh the stale PR-head references in #172 and reconcile the #35/#31/#26 ownership routes; the route manifest remains `DRAFT_REVIEW_ONLY`.
+5. **Registry custodian:** restore authorized access to canonical private Drive registry v11. Older Library snapshots were not substituted and no private registry contents were copied to GitHub.
+
+No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
