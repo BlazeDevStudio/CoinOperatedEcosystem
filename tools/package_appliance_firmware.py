@@ -1659,7 +1659,24 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
             os.fsync(parent_directory_fd)
             os.fchmod(f.fileno(), 0o755)
             # Persist the executable inode metadata after the mode change.
-            os.fsync(f.fileno())
+            # If that final sync fails, return the complete script to the
+            # already-durable non-executable state before reporting failure.
+            try:
+                os.fsync(f.fileno())
+            except OSError as publish_error:
+                try:
+                    os.fchmod(f.fileno(), 0o600)
+                    os.fsync(f.fileno())
+                except OSError as rollback_error:
+                    raise OSError(
+                        "Build-script executable-mode fsync failed and "
+                        "non-executable rollback could not be confirmed: "
+                        f"{rollback_error}"
+                    ) from publish_error
+                raise OSError(
+                    "Build-script executable-mode fsync failed; "
+                    "script reverted to non-executable mode"
+                ) from publish_error
     finally:
         os.close(parent_directory_fd)
 
