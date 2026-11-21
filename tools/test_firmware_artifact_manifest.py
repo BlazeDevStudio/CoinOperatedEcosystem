@@ -122,7 +122,7 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
     def test_rejects_empty_firmware_binary(self):
         (self.artifact_dir / "firmware.bin").write_bytes(b"")
-        with self.assertRaisesRegex(ManifestError, "non-empty firmware .bin"):
+        with self.assertRaisesRegex(ManifestError, "non-empty .bin firmware payload"):
             build_artifact_manifest_payloads(**self.kwargs())
 
     def test_rejects_artifact_directory_without_firmware_binary(self):
