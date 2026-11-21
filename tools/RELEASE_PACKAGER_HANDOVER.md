@@ -2320,3 +2320,61 @@ No expected-RED run is claimed: the task adds coverage for already-implemented b
 5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
 
 This activation provides mock-based host-unit CI evidence only. No real Bubblewrap namespace, ImageBuilder build, approved target binary, signing, physical power-cut test or hardware acceptance is established. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO**.
+
+
+---
+
+## PHX-RELEASE UTC15 — real POSIX detached-process-group cleanup (2026-11-21)
+
+**Disposition:** one additional release-owned host regression now exercises the existing ImageBuilder cleanup helper against real detached OS process groups. This extends the UTC14 mock coverage; it does not claim a Bubblewrap namespace or ImageBuilder build. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Scope and behavior exercised
+
+Added `test_real_detached_process_groups_are_terminated_and_reaped` to `tools/test_imagebuilder_sandbox_host.py`.
+
+The test is POSIX-only and launches:
+- an outer process in its own session/process group; and
+- a detached child in a second session/process group.
+
+Both deliberately ignore SIGTERM. The test waits for the child to install that handler, then calls the existing `_terminate_process_groups()` helper with both real process-group IDs. It verifies SIGTERM grace expires, SIGKILL terminates both groups, the outer process is reaped, the child group disappears, and no cleanup diagnostic is returned. A `finally` cleanup path attempts to terminate both groups if an assertion fails.
+
+Only the release-owned host test file changed in the source/test commit. No runtime runner implementation, Bubblewrap configuration, profile, firmware, workflow, shared interface or other role-owned path changed.
+
+### Exact branch and commit
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting docs/source head: `a533ec7b3f8080eb7f3780ba59d4bb411906f503`.
+- Source/test commit: [`4c1fb136`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4c1fb136eb1d5fa9cad0780b861028e27d95a21b).
+- Source/test SHA: `4c1fb136eb1d5fa9cad0780b861028e27d95a21b`.
+- Test file blob: `fb1d93da7cbcc8ff38e6f256e5dfdb92fc749ee5`.
+- Source scope: `tools/test_imagebuilder_sandbox_host.py` only.
+
+### Exact-source Actions at `4c1fb136`
+
+- Sandbox PR [#44918011491](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918011491), job `136887682814`: host preflight **24/24 PASS**, including the new real detached-process test (2.109 seconds for the suite). The next Bubblewrap availability step **FAILED CLOSED** because Bubblewrap is not installed (exit 125). Unprivileged identity, namespace probe and mandatory ImageBuilder packaging steps were **SKIPPED**, not passed.
+- Shared/firmware PR [#44918011551](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918011551), validation job `136887683109`: packaging/tool suite **140 tests PASS / 2 intentional skips**, with `PHX-MANIFEST-DURABILITY-PASS`; firmware syntax and shared-contract checks passed. The subsequent all-profile admission step **FAILED CLOSED** for all ten profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**.
+- Case-collision PR [#44918011561](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918011561), job `136887682807`: **PASS**.
+
+No expected-RED run is claimed: the new test covers existing cleanup behavior and does not claim a newly discovered runtime defect. The real POSIX process-group test is hosted Linux CI evidence only; it is not real Bubblewrap namespace, ImageBuilder, hardware or production evidence.
+
+### Live ownership and cross-repository references
+
+- MASTER PR #288 exact head at this activation: `d02335240eb8cdc7f7e671beb53f721ffd13247c`; base `main@f4e8a891aed8af86d5fd315d28750a0ac3a7372b`. Ownership routes blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE workflow route remains `reimplementation-review`. No migration is authorized.
+- Experiments #242 exact head: `734b89d9e7792247e8376335c3f3685500ab3f89`; its Windows CI [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) is scoped SUCCESS only.
+- Experiments #291 exact head: `42797e2f3d65c30a1070caf49c93aebec149d897`; ESP32 compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) is 3/3 PASS for its pinned source. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) fail at the CORE-owned `PROJECT_HANDOVER.md` freshness gate; downstream signing/publication and Windows build/publisher were skipped. Its 26-path diff remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no inherited path was changed here.
+- COE integration #26 exact head: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN with five queued workflows and zero executed jobs.
+- COE parent #31 exact head/base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Its earlier Bubblewrap experiment [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) installed Bubblewrap 0.9.0 but failed the unprivileged UID-map setup with `Permission denied`; no namespace acceptance.
+- Cleanup-first #266 remains OPEN / 0/7 checked. This bounded test does not complete the seven-role cleanup inventory.
+- Canonical private Drive registry v11 and newer corrections were not surfaced by the authorized Library search. Older snapshots were not substituted and no private registry content/identifiers were copied to GitHub.
+
+### Next owner actions and evidence boundary
+
+1. **PHX-QA:** independently review test commit `4c1fb136`, especially the detached-session setup, readiness handshake, SIGTERM-ignore condition and process-group disappearance assertions.
+2. **PHX-INFRA:** provide the authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces. Do not install privileged dependencies or use an unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site network authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile the stale embedded PR-head index in #172 and retain the draft-only #35/#31/#26 ownership route.
+5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
+
+No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Approved production binaries, protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
