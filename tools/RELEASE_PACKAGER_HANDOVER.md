@@ -2372,7 +2372,7 @@ No expected-RED run is claimed: the new test covers existing cleanup behavior an
 
 ### Next owner actions and evidence boundary
 
-1. **PHX-QA:** independently review test commit `4c1fb136`, especially the detached-session setup, readiness handshake, SIGTERM-ignore condition and process-group disappearance assertions.
+1. **PHX-QA:** independently review the real-process test addition `4c1fb136` and cleanup-finally follow-up `496c374c`, especially the detached-session setup, readiness handshake, SIGTERM-ignore condition, process-group disappearance assertions and failure-path cleanup.
 2. **PHX-INFRA:** provide the authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces. Do not install privileged dependencies or use an unsandboxed fallback.
 3. **PHX-CORE / PHX-MASTER / site network authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
 4. **PHX-MASTER:** reconcile the stale embedded PR-head index in #172 and retain the draft-only #35/#31/#26 ownership route.
