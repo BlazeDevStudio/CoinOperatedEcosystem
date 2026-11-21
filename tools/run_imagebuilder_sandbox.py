@@ -196,9 +196,14 @@ def _is_within_trusted_system_directories(path: str) -> bool:
         mode = os.lstat(candidate).st_mode
     except OSError:
         return False
-    # isfile() follows a final symlink. Inspect the directory entry itself so
-    # a trusted-looking /usr/bin/bwrap link cannot redirect execution elsewhere.
-    return stat.S_ISREG(mode) and os.access(candidate, os.X_OK)
+    # Reject privilege bits and writable-by-group/other modes: this runner
+    # requires Bubblewrap's unprivileged user-namespace model, not set-ID mode.
+    forbidden_mode_bits = stat.S_ISUID | stat.S_ISGID | stat.S_IWGRP | stat.S_IWOTH
+    return (
+        stat.S_ISREG(mode)
+        and not (mode & forbidden_mode_bits)
+        and os.access(candidate, os.X_OK)
+    )
 
 
 def _has_single_id_mapping(path: str) -> bool:
