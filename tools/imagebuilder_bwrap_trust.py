@@ -4,6 +4,18 @@ import os
 import stat
 
 
+PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+
+
+def private_host_mount_args() -> list[str]:
+    """Return the canonical tmpfs masks shared by host preflight and runtime."""
+    return [
+        argument
+        for path in PRIVATE_HOST_PATHS
+        for argument in ("--tmpfs", path)
+    ]
+
+
 def is_trusted_system_directory(path: str) -> bool:
     """Require every canonical directory component to be root-owned and non-writable."""
     if path not in ("/usr/bin", "/bin"):

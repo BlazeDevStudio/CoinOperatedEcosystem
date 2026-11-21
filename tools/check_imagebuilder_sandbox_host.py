@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import imagebuilder_bwrap_trust
+from imagebuilder_bwrap_trust import private_host_mount_args as _private_host_mount_args
 
 PROBE_TIMEOUT_SECONDS = 10
 PROBE_SCRIPT = (
@@ -17,14 +18,6 @@ PROBE_SCRIPT = (
 )
 TRUSTED_BWRAP_PATH = "/usr/bin:/bin"
 SANDBOX_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
-PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
-
-
-def _private_host_mount_args() -> list[str]:
-    """Mirror the runner's masked host-data mount list."""
-    return [argument for path in PRIVATE_HOST_PATHS for argument in ("--tmpfs", path)]
-
-
 def _is_trusted_system_directory(path: str) -> bool:
     return imagebuilder_bwrap_trust.is_trusted_system_directory(path)
 

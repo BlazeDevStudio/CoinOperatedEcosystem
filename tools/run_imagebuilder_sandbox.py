@@ -15,6 +15,7 @@ import sys
 import time
 
 import imagebuilder_bwrap_trust
+from imagebuilder_bwrap_trust import private_host_mount_args as _private_host_mount_args
 
 
 USERNS_INFO_TIMEOUT_SECONDS = 30
@@ -23,14 +24,6 @@ DEFAULT_BUILD_TIMEOUT_SECONDS = 3600
 MAX_BUILD_TIMEOUT_SECONDS = 14400
 TRUSTED_BWRAP_PATH = "/usr/bin:/bin"
 SANDBOX_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
-PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
-
-
-def _private_host_mount_args() -> list[str]:
-    """Hide common user, runtime-secret and external-mount paths from Makefile code."""
-    return [argument for path in PRIVATE_HOST_PATHS for argument in ("--tmpfs", path)]
-
-
 def blocked(message: str, detail: str = "") -> int:
     print(f"RELEASE-BLOCKED: {message}", file=sys.stderr)
     if detail:
