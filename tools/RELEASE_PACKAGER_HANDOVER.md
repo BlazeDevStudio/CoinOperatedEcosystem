@@ -2057,3 +2057,52 @@ The new tests execute the generated manifest-finalization Python block in hosted
 5. Registry custodian: restore authorized access to canonical private Drive registry v11. The exact-title authorized Library search returned older v3-v7 snapshots only; none was substituted.
 
 No real ImageBuilder sandbox execution, approved production binary, signer-positive result, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
+
+
+---
+
+## PHX-RELEASE UTC07 — cover pre-cleanup directory fsync failure (2026-11-21)
+
+**Disposition:** added the missing release-owned negative regression requested by MASTER. This is a coverage completion, not a claim that the existing implementation was defective. COE #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Review request and exact branch
+
+- MASTER review request: [COE #35 comment #7058864355](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35#issuecomment-7058864355).
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting PR/docs head: `93bab4c97e2a487a3223dc209c5be8fbbc609b5c`.
+- Test-only commit: [`d5a2d727`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d5a2d727727d7019cf3b4ad60503a4fb821d69d1).
+- Current source/test head: `d5a2d727727d7019cf3b4ad60503a4fb821d69d1`.
+
+### Added regression
+
+New test: `test_generated_wrapper_keeps_temporary_manifests_when_precleanup_directory_sync_fails` in `tools/test_package_appliance_firmware.py`.
+
+The test executes the generated manifest-finalization block against disposable files and injects an `OSError` on the second `os.fsync` call. It allows the manifest-file fsync to succeed, then fails the pre-cleanup directory fsync. It asserts:
+
+1. The observed fsync sequence is exactly `file`, then `directory`.
+2. The wrapper exits with `RELEASE-BLOCKED: checksum manifest durability finalization failed`.
+3. The final manifest, sorted temporary hard-link name and unsorted temporary input all remain.
+4. The final and sorted names still identify the same inode with link count 2.
+
+No packager source behavior, profile, workflow, shared interface or other subsystem path changed in this task.
+
+### Exact-source Actions at `d5a2d727727d7019cf3b4ad60503a4fb821d69d1`
+
+- PR shared/firmware [#44879798619](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44879798619): packaging/tool test step **PASS**, **125 tests PASS** and log marker `PHX-MANIFEST-DURABILITY-PASS`. The subsequent all-profile admission step **FAILED CLOSED** for all 10 profiles because approved site-scoped RFC 4193 ULA /48 authority is still absent. ESP8266 and ESP32 compile jobs were **SKIPPED**; no board artifact is claimed.
+- Push shared/firmware [#44879793109](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44879793109): same 125-test packaging step **PASS**, then the same 10-profile ULA admission failure; board compile jobs **SKIPPED**.
+- Case-collision guard [#44879798675](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44879798675): **PASS**.
+- Mandatory ImageBuilder sandbox [#44879798653](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44879798653): host preflight **14/14 PASS**, then Bubblewrap availability **FAILED CLOSED**, exit 125. Unprivileged identity, namespace probe and mandatory sandbox packaging tests were **SKIPPED**, not passed. No privileged install or unsandboxed fallback.
+
+This task is a test-only coverage extension; no expected-RED run was appropriate because the current source already contains the fail-closed behavior. The test now guards against regression if the pre-cleanup directory fsync is removed or moved after temporary cleanup.
+
+### Next owners and evidence boundary
+
+1. PHX-QA: independently review exact test commit `d5a2d727727d7019cf3b4ad60503a4fb821d69d1` and the failure injection/retained-name assertions.
+2. PHX-INFRA: provide the authorized disposable, no-secret runner with pre-provisioned Bubblewrap and working unprivileged namespaces.
+3. PHX-CORE / PHX-MASTER / COE integration owner: approve the site-scoped ULA /48 authority and persistence contract; RELEASE will not invent a prefix.
+4. PHX-MASTER: reconcile #35/#31/#26 ownership and route status; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`.
+5. Registry custodian: restore authorized access to canonical private Drive registry v11; older snapshots were not substituted.
+
+The new test is hosted-CI failure injection, not a physical power-cut test or proof of storage-controller durability. No real ImageBuilder sandbox execution, approved production binary, signer-positive result, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
