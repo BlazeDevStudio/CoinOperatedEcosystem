@@ -2256,3 +2256,67 @@ The new parser regression is synthetic custom-profile input coverage. It does no
 5. **Registry custodian:** restore authorized access to canonical private Drive registry v11. Older Library snapshots were not substituted and no private registry contents were copied to GitHub.
 
 No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. **PRODUCTION NO-GO**.
+
+
+---
+
+## PHX-RELEASE UTC14 — test ImageBuilder sandbox process-group timeout cleanup (2026-11-21)
+
+**Disposition:** five deterministic host-unit tests were added to cover the existing runner's process-group timeout and cleanup behavior. The runner implementation was already present; this is a previously untested release-owned control path, not a newly discovered runtime defect. COE #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded coverage
+
+`tools/run_imagebuilder_sandbox.py` already:
+- bounds ImageBuilder execution with `--timeout-seconds` (default 3600; maximum 14400);
+- sends SIGTERM then SIGKILL to both the outer Bubblewrap process group and the child `--new-session` group;
+- waits for both groups to disappear before accepting completion;
+- preserves partial output and cleanup diagnostics on timeout; and
+- distinguishes ordinary wrapper `RELEASE-BLOCKED` output from process-group cleanup failure.
+
+The existing sandbox host suite did not import the runtime runner or exercise these paths. Five tests were added to `tools/test_imagebuilder_sandbox_host.py`:
+1. timeout escalation order and both outer/child process groups;
+2. cleanup of a detached child group after a successful wrapper leader exit;
+3. partial stdout/stderr and cleanup diagnostic preservation;
+4. ordinary profile `RELEASE-BLOCKED` output not being misclassified as cleanup failure; and
+5. fail-closed classification when the child process group cannot be reaped.
+
+These are deterministic mock-based unit tests. They verify the runner's signaling decisions and cleanup-result classification; they do **not** spawn real detached OS processes, exercise a real Bubblewrap namespace, or establish that the hosted runner can run ImageBuilder.
+
+### Exact branch and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent PR #31 / base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting source/docs head: `f2bd3e13a2c42d8bc7155060aee84c2b97e9cb6f`.
+- Test commit: [`a5d49742`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a5d49742de476c8e5b0159ba1f7ad59dd50751b5).
+- Source/test head for this task: `a5d49742de476c8e5b0159ba1f7ad59dd50751b5`.
+- New test-file blob: `3dce8da77c1c11bad9f815e6e780b7adaa2b79f2`.
+- Only `tools/test_imagebuilder_sandbox_host.py` changed in the test commit. No runtime source, profile, workflow, firmware, shared interface or other role-owned path changed.
+
+### Exact-source CI at test head `a5d49742`
+
+- Sandbox PR run [#44912978248](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44912978248), job `136872511929`: host preflight **23/23 PASS**, including all five new runner tests. The following Bubblewrap availability step **FAILED CLOSED** because Bubblewrap is not installed on this runner (exit 125). Unprivileged identity, namespace probe and mandatory ImageBuilder packaging steps were **SKIPPED**, not passed.
+- Shared/firmware PR run [#44912978205](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44912978205), job `136872511532`: firmware/syntax, shared-contract/profile checks and packaging/tools steps **PASS**. Packaging/tools executed **139 tests PASS / 2 intentional skips**, with `PHX-MANIFEST-DURABILITY-PASS`. The subsequent all-profile admission step **FAILED CLOSED** for all 10 profiles because approved site-scoped RFC 4193 ULA /48 authority is still undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**.
+- Case-collision PR run [#44912978201](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44912978201), job `136872511437`: **PASS**.
+
+No expected-RED run is claimed: the task adds coverage for already-implemented behavior and does not claim a runtime defect or source correction.
+
+### Live ownership and cross-repository state
+
+- MASTER PR #288 exact head: `2fdad5acb3dfa8e9c170721b87fd5524061eb577`; base `main@f4e8a891aed8af86d5fd315d28750a0ac3a7372b`. `coordination/phoenix/OWNERSHIP_ROUTES.json` remains blob `e4db324315a1b3543fec17a148fbf960170fcb29`, `DRAFT_REVIEW_ONLY`; the RELEASE workflow route remains `reimplementation-review`. No migration is authorized.
+- Experiments #242 exact head: `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) is **SUCCESS** (scoped CI only).
+- Experiments #291 exact head: `42797e2f3d65c30a1070caf49c93aebec149d897`; ESP32 compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) **PASS 3/3** for its pinned source. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) **FAIL** at the CORE-owned `PROJECT_HANDOVER.md` freshness gate; downstream signing/publication and Windows build/publisher were skipped. The 26-path diff remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no inherited paths were changed.
+- COE integration #26 exact head: `b382d233ff06c8791b1028bed3c617cc7b670d12`; **FROZEN**, five workflows queued / zero jobs.
+- COE parent #31 exact head/base for #35: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Its earlier sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) installed Bubblewrap 0.9.0 but failed the unprivileged namespace probe with `bwrap: setting up uid map: Permission denied` (exit 125); this is runner capability failure, not a successful sandbox build.
+- Cleanup-first #266 remains OPEN / 0/7 checked. This scoped RELEASE test addition does not complete the seven-role cleanup inventory.
+- Canonical private Drive registry v11 and newer corrections were not surfaced by the authorized Library search. Older snapshots were not substituted; no private registry content or identifiers were copied to GitHub.
+
+### Next owner actions and evidence boundary
+
+1. **PHX-QA:** independently review test commit `a5d49742` and confirm the timeout/cleanup assertions are adequate for the runner contract.
+2. **PHX-INFRA:** provide the authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces. Do not install privileged dependencies or fall back to unsandboxed packaging.
+3. **PHX-CORE / PHX-MASTER / network authority:** define the approved site-scoped ULA /48 and persistence contract; RELEASE will not invent a prefix.
+4. **PHX-MASTER:** reconcile stale #172 embedded PR-head references and keep the #35/#31/#26 ownership route draft-only.
+5. **Registry custodian:** restore authorized access to canonical private Drive registry v11.
+
+This activation provides mock-based host-unit CI evidence only. No real Bubblewrap namespace, ImageBuilder build, approved target binary, signing, physical power-cut test or hardware acceptance is established. The 150 physical power-cut test and 30-device/24-hour soak remain **NOT TESTED**. No merge, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. **PRODUCTION NO-GO**.
