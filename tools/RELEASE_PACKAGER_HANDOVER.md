@@ -2346,16 +2346,17 @@ Only the release-owned host test file changed in the source/test commit. No runt
 - Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
 - Parent PR #31 / base SHA: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
 - Starting docs/source head: `a533ec7b3f8080eb7f3780ba59d4bb411906f503`.
-- Source/test commit: [`4c1fb136`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4c1fb136eb1d5fa9cad0780b861028e27d95a21b).
-- Source/test SHA: `4c1fb136eb1d5fa9cad0780b861028e27d95a21b`.
-- Test file blob: `fb1d93da7cbcc8ff38e6f256e5dfdb92fc749ee5`.
+- Initial real-process test commit: [`4c1fb136`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4c1fb136eb1d5fa9cad0780b861028e27d95a21b).
+- Test-harness cleanup-finally hardening follow-up: [`496c374c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/496c374cd0ae4fd630be51a0ea507d8d6139229b); the cleanup retry flag is now set only after all assertions pass, so a failed assertion still enters the final cleanup path.
+- Final source/test SHA: `496c374cd0ae4fd630be51a0ea507d8d6139229b`.
+- Final test-file blob: `39b04c9cb32cb028036b438791e463079cfffed5`.
 - Source scope: `tools/test_imagebuilder_sandbox_host.py` only.
 
-### Exact-source Actions at `4c1fb136`
+### Exact-source Actions at final source/test head `496c374c`
 
-- Sandbox PR [#44918011491](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918011491), job `136887682814`: host preflight **24/24 PASS**, including the new real detached-process test (2.109 seconds for the suite). The next Bubblewrap availability step **FAILED CLOSED** because Bubblewrap is not installed (exit 125). Unprivileged identity, namespace probe and mandatory ImageBuilder packaging steps were **SKIPPED**, not passed.
-- Shared/firmware PR [#44918011551](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918011551), validation job `136887683109`: packaging/tool suite **140 tests PASS / 2 intentional skips**, with `PHX-MANIFEST-DURABILITY-PASS`; firmware syntax and shared-contract checks passed. The subsequent all-profile admission step **FAILED CLOSED** for all ten profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**.
-- Case-collision PR [#44918011561](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918011561), job `136887682807`: **PASS**.
+- Sandbox PR [#44918411114](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918411114), job `136888905997`: host preflight **24/24 PASS**, including the real detached-process test (2.158 seconds). Bubblewrap availability then **FAILED CLOSED** because Bubblewrap is not installed (exit 125). Unprivileged identity, namespace probe and mandatory ImageBuilder packaging steps were **SKIPPED**, not passed.
+- Shared/firmware PR [#44918411159](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918411159), validation job `136888906304`: firmware syntax and shared-contract checks **PASS**; packaging/tool suite **140 tests PASS / 2 intentional skips**, with `PHX-MANIFEST-DURABILITY-PASS`. All ten appliance profiles then **FAILED CLOSED** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**.
+- Case-collision PR [#44918411168](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44918411168), job `136888905928`: **PASS**.
 
 No expected-RED run is claimed: the new test covers existing cleanup behavior and does not claim a newly discovered runtime defect. The real POSIX process-group test is hosted Linux CI evidence only; it is not real Bubblewrap namespace, ImageBuilder, hardware or production evidence.
 
