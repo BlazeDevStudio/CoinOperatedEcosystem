@@ -529,6 +529,74 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(external_stat.st_nlink, 1)
         self.assertEqual(destination_stat.st_nlink, 1)
 
+    def test_copy_staging_file_rejects_source_modified_during_read(self):
+        source_dir = os.path.join(self.temp_dir, "rental-source-read-race")
+        destination_dir = os.path.join(self.temp_dir, "rental-destination-read-race")
+        os.makedirs(source_dir)
+        os.makedirs(destination_dir)
+
+        source_path = os.path.join(source_dir, "core.sh")
+        destination_path = os.path.join(destination_dir, "core.sh")
+        original_content = b"trusted rental source"
+        replacement_content = b"mutated rental source"
+        self.assertEqual(len(original_content), len(replacement_content))
+        with open(source_path, "wb") as fp:
+            fp.write(original_content)
+
+        source_stat = os.stat(source_path, follow_symlinks=False)
+        original_fdopen = os.fdopen
+        mutation = {"performed": False}
+
+        class MutatingReader:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+
+            def __enter__(self):
+                self.wrapped.__enter__()
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return self.wrapped.__exit__(exc_type, exc, traceback)
+
+            def fileno(self):
+                return self.wrapped.fileno()
+
+            def read(self, *args, **kwargs):
+                data = self.wrapped.read(*args, **kwargs)
+                if not mutation["performed"]:
+                    with open(source_path, "r+b") as fp:
+                        fp.seek(0)
+                        fp.write(replacement_content)
+                        fp.flush()
+                        os.fsync(fp.fileno())
+                    mutation["performed"] = True
+                return data
+
+        def fdopen_after_source_mutation(descriptor, mode="r", *args, **kwargs):
+            opened_stat = os.fstat(descriptor)
+            if (opened_stat.st_dev, opened_stat.st_ino) == (
+                source_stat.st_dev,
+                source_stat.st_ino,
+            ):
+                return MutatingReader(original_fdopen(descriptor, mode, *args, **kwargs))
+            return original_fdopen(descriptor, mode, *args, **kwargs)
+
+        # Change the already-read source bytes in place before the packager
+        # accepts the read. The same inode and file size are deliberately kept.
+        with mock.patch.object(
+            packager.os, "fdopen", side_effect=fdopen_after_source_mutation
+        ):
+            with self.assertRaisesRegex(ValueError, "changed while reading"):
+                packager._copy_staging_file(source_path, destination_dir, "core.sh")
+
+        self.assertTrue(mutation["performed"])
+        self.assertFalse(
+            os.path.lexists(destination_path),
+            "A source that changes during the read must never be copied into staging",
+        )
+        with open(source_path, "rb") as fp:
+            self.assertEqual(fp.read(), replacement_content)
+
     def test_copy_staging_file_rejects_source_replaced_with_symlink_after_lstat(self):
         source_dir = os.path.join(self.temp_dir, "rental-source-race")
         destination_dir = os.path.join(self.temp_dir, "rental-destination-race")
