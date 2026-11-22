@@ -809,6 +809,32 @@ def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
         with os.fdopen(source_fd, "rb") as source_file:
             source_fd = -1
             content = source_file.read()
+            after_read_stat = os.fstat(source_file.fileno())
+            before_read_identity = (
+                opened_stat.st_dev,
+                opened_stat.st_ino,
+                opened_stat.st_mode,
+                opened_stat.st_nlink,
+                opened_stat.st_size,
+                opened_stat.st_mtime_ns,
+                opened_stat.st_ctime_ns,
+            )
+            after_read_identity = (
+                after_read_stat.st_dev,
+                after_read_stat.st_ino,
+                after_read_stat.st_mode,
+                after_read_stat.st_nlink,
+                after_read_stat.st_size,
+                after_read_stat.st_mtime_ns,
+                after_read_stat.st_ctime_ns,
+            )
+            if (
+                after_read_identity != before_read_identity
+                or len(content) != opened_stat.st_size
+            ):
+                raise ValueError(
+                    f"Rental source file changed while reading: {source_path}"
+                )
     finally:
         if source_fd >= 0:
             os.close(source_fd)
