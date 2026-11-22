@@ -432,8 +432,10 @@ def _write_new_file(
         if descriptor >= 0:
             try:
                 os.close(descriptor)
-            except OSError as exc:
-                rollback_errors.append(f"close partial output: {exc}")
+            except BaseException as exc:
+                rollback_errors.append(
+                    f"close partial output: {type(exc).__name__}: {exc}"
+                )
         try:
             if directory_descriptor is None:
                 os.unlink(path)
@@ -441,13 +443,17 @@ def _write_new_file(
                 os.unlink(filename, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
-        except OSError as exc:
-            rollback_errors.append(f"remove partial output: {exc}")
+        except BaseException as exc:
+            rollback_errors.append(
+                f"remove partial output: {type(exc).__name__}: {exc}"
+            )
         if directory_descriptor is not None:
             try:
                 os.fsync(directory_descriptor)
-            except OSError as exc:
-                rollback_errors.append(f"sync partial-output rollback: {exc}")
+            except BaseException as exc:
+                rollback_errors.append(
+                    f"sync partial-output rollback: {type(exc).__name__}: {exc}"
+                )
         if rollback_errors:
             details = "; ".join(rollback_errors)
             raise ManifestError(
@@ -502,13 +508,17 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
                     os.unlink(os.path.basename(path), dir_fd=directory_descriptor)
                 except FileNotFoundError:
                     pass
-                except OSError as exc:
-                    rollback_errors.append(f"remove {os.path.basename(path)}: {exc}")
+                except BaseException as exc:
+                    rollback_errors.append(
+                        f"remove {os.path.basename(path)}: {type(exc).__name__}: {exc}"
+                    )
             if created:
                 try:
                     os.fsync(directory_descriptor)
-                except OSError as exc:
-                    rollback_errors.append(f"sync artifact-pair rollback: {exc}")
+                except BaseException as exc:
+                    rollback_errors.append(
+                        f"sync artifact-pair rollback: {type(exc).__name__}: {exc}"
+                    )
             if rollback_errors:
                 details = "; ".join(rollback_errors)
                 raise ManifestError(
