@@ -1,3 +1,192 @@
+#!/usr/bin/env python3
+"""Create deterministic provenance and SHA-256 files for one firmware CI artifact."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+
+SCHEMA = "phoenix/firmware-artifact/v1"
+MANIFEST_FILENAME = "artifact-manifest.json"
+CHECKSUMS_FILENAME = "SHA256SUMS"
+_GIT_SHA = re.compile(r"[0-9a-f]{40}")
+_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+_SAFE_TOKEN = re.compile(r"[A-Za-z0-9._-]+")
+_SAFE_FQBN = re.compile(r"[A-Za-z0-9:._-]+")
+_SAFE_CORE_ID = re.compile(r"[a-z0-9_.-]+:[a-z0-9_.-]+")
+
+
+class ManifestError(ValueError):
+    """Raised when an artifact directory cannot be admitted for provenance."""
+
+
+def _require_match(value: str, pattern: re.Pattern[str], label: str) -> str:
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise ManifestError(f"{label} has an invalid format")
+    return value
+
+
+def _validate_metadata(
+    *,
+    repository: str,
+    source_sha: str,
+    event_sha: str,
+    pr_head_sha: str,
+    pr_base_sha: str,
+    product: str,
+    board: str,
+    fqbn: str,
+    arduino_cli_version: str,
+    core_id: str,
+    core_version: str,
+) -> dict:
+    if not isinstance(repository, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise ManifestError("repository must use owner/name form")
+    _require_match(source_sha, _GIT_SHA, "checked-out source SHA (expected a 40-character Git SHA)")
+    _require_match(event_sha, _GIT_SHA, "GitHub event SHA (expected a 40-character Git SHA)")
+    if source_sha != event_sha:
+        raise ManifestError("GitHub event SHA does not match the checked-out source SHA")
+
+    if bool(pr_head_sha) != bool(pr_base_sha):
+        raise ManifestError("pull-request head and base SHAs must both be set or both be empty")
+    if pr_head_sha:
+        _require_match(pr_head_sha, _GIT_SHA, "pull-request head SHA")
+        _require_match(pr_base_sha, _GIT_SHA, "pull-request base SHA")
+
+    _require_match(product, _SAFE_TOKEN, "product")
+    if board not in ("esp8266", "esp32"):
+        raise ManifestError("board must be esp8266 or esp32")
+    _require_match(fqbn, _SAFE_FQBN, "FQBN")
+    _require_match(arduino_cli_version, _VERSION, "Arduino CLI version")
+    _require_match(core_id, _SAFE_CORE_ID, "board core ID")
+    _require_match(core_version, _VERSION, "board core version")
+
+    return {
+        "schema": SCHEMA,
+        "source": {
+            "repository": repository,
+            "checked_out_sha": source_sha,
+            "event_sha": event_sha,
+            "pull_request_head_sha": pr_head_sha or None,
+            "pull_request_base_sha": pr_base_sha or None,
+        },
+        "target": {
+            "product": product,
+            "board": board,
+            "fqbn": fqbn,
+        },
+        "toolchain": {
+            "arduino_cli_version": arduino_cli_version,
+            "core_id": core_id,
+            "core_version": core_version,
+        },
+    }
+
+
+def _require_descriptor_scan_support() -> None:
+    """Require the POSIX descriptor-relative operations used by the safe scanner."""
+    if (
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+    ):
+        raise ManifestError(
+            "safe artifact traversal requires POSIX descriptor-relative directory operations"
+        )
+
+
+def _scan_artifact_directory_fd(
+    directory_descriptor: int,
+    relative_prefix: str,
+    records: list[dict],
+) -> None:
+    """Hash one directory using pinned descriptors, never path-based parent traversal."""
+    try:
+        names = os.listdir(directory_descriptor)
+    except (OSError, TypeError, NotImplementedError) as exc:
+        raise ManifestError(f"could not enumerate artifact directory: {exc}") from exc
+
+    names.sort()
+    for name in names:
+        if not name or name in (".", "..") or "/" in name:
+            raise ManifestError("artifact directory returned an unsafe entry name")
+
+        relative = f"{relative_prefix}/{name}" if relative_prefix else name
+        parts = relative.split("/")
+        if (
+            relative.startswith("/")
+            or any(part in ("", ".", "..") for part in parts)
+            or not re.fullmatch(r"[A-Za-z0-9._/-]+", relative)
+        ):
+            raise ManifestError(
+                f"artifact path cannot be represented safely in SHA256SUMS: {relative!r}"
+            )
+        if name in (MANIFEST_FILENAME, CHECKSUMS_FILENAME):
+            raise ManifestError(f"refusing pre-existing manifest output: {name}")
+
+        try:
+            before = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+        except OSError as exc:
+            raise ManifestError(
+                f"artifact entry changed during scan: {relative}: {exc}"
+            ) from exc
+
+        if stat.S_ISLNK(before.st_mode):
+            raise ManifestError(
+                "refusing symlink or non-regular artifact file; "
+                f"refusing symlink or non-directory artifact path: {relative}"
+            )
+
+        if stat.S_ISDIR(before.st_mode):
+            try:
+                child_descriptor = os.open(
+                    name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_descriptor,
+                )
+            except (OSError, TypeError, NotImplementedError) as exc:
+                raise ManifestError(
+                    f"artifact directory changed during scan: {relative}: {exc}"
+                ) from exc
+
+            try:
+                opened = os.fstat(child_descriptor)
+                if (
+                    not stat.S_ISDIR(opened.st_mode)
+                    or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+                ):
+                    raise ManifestError(
+                        f"artifact directory changed while opening: {relative}"
+                    )
+
+                _scan_artifact_directory_fd(child_descriptor, relative, records)
+
+                try:
+                    current = os.stat(
+                        name,
+                        dir_fd=directory_descriptor,
+                        follow_symlinks=False,
+                    )
+                except (OSError, TypeError, NotImplementedError) as exc:
+                    raise ManifestError(
+                        f"artifact directory changed during scan: {relative}: {exc}"
+                    ) from exc
+                if (
+                    not stat.S_ISDIR(current.st_mode)
+                    or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+                ):
+                    raise ManifestError(
+                        f"artifact directory changed during scan: {relative}"
+                    )
+            finally:
+                os.close(child_descriptor)
+            continue
+
+        if not stat.S_ISREG(before.st_mode):
             raise ManifestError(
                 f"refusing symlink or non-regular artifact file: {relative}"
             )
@@ -93,3 +282,248 @@ def _scan_artifact_files(
         try:
             directory_descriptor = os.open(
                 root,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            )
+        except OSError as exc:
+            raise ManifestError(f"artifact directory is unavailable: {exc}") from exc
+
+    try:
+        _require_artifact_directory_identity(root, directory_descriptor)
+        records: list[dict] = []
+        _scan_artifact_directory_fd(directory_descriptor, "", records)
+        _require_artifact_directory_identity(root, directory_descriptor)
+    finally:
+        if owns_descriptor:
+            os.close(directory_descriptor)
+
+    records.sort(key=lambda item: item["path"])
+    if not records:
+        raise ManifestError("artifact directory contains no regular files")
+    if not any(item["path"].lower().endswith(".bin") and item["size"] > 0 for item in records):
+        raise ManifestError("artifact directory must contain at least one non-empty .bin firmware payload")
+    return records
+
+
+def build_artifact_manifest_payloads(
+    *,
+    artifact_dir: str,
+    artifact_directory_descriptor: int | None = None,
+    repository: str,
+    source_sha: str,
+    event_sha: str,
+    pr_head_sha: str = "",
+    pr_base_sha: str = "",
+    product: str,
+    board: str,
+    fqbn: str,
+    arduino_cli_version: str,
+    core_id: str,
+    core_version: str,
+) -> tuple[bytes, bytes]:
+    """Return deterministic manifest and checksums bytes without writing files."""
+    metadata = _validate_metadata(
+        repository=repository,
+        source_sha=source_sha,
+        event_sha=event_sha,
+        pr_head_sha=pr_head_sha,
+        pr_base_sha=pr_base_sha,
+        product=product,
+        board=board,
+        fqbn=fqbn,
+        arduino_cli_version=arduino_cli_version,
+        core_id=core_id,
+        core_version=core_version,
+    )
+    records = _scan_artifact_files(artifact_dir, directory_descriptor=artifact_directory_descriptor)
+    manifest = {**metadata, "files": records}
+    manifest_bytes = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+    checksum_records = [
+        (item["path"], item["sha256"])
+        for item in records
+    ]
+    checksum_records.append((MANIFEST_FILENAME, hashlib.sha256(manifest_bytes).hexdigest()))
+    checksum_records.sort(key=lambda item: item[0])
+    checksums_bytes = (
+        "".join(f"{digest}  {path}\n" for path, digest in checksum_records)
+    ).encode("ascii")
+    return manifest_bytes, checksums_bytes
+
+
+def _require_artifact_directory_identity(
+    artifact_dir: str,
+    directory_descriptor: int,
+) -> None:
+    """Ensure the scanned path still names the directory pinned for publication."""
+    try:
+        path_stat = os.lstat(artifact_dir)
+        descriptor_stat = os.fstat(directory_descriptor)
+    except OSError as exc:
+        raise ManifestError(
+            f"artifact directory changed during manifest scan/publication: {exc}"
+        ) from exc
+
+    if (
+        not stat.S_ISDIR(path_stat.st_mode)
+        or not stat.S_ISDIR(descriptor_stat.st_mode)
+        or (path_stat.st_dev, path_stat.st_ino)
+        != (descriptor_stat.st_dev, descriptor_stat.st_ino)
+        or os.path.realpath(artifact_dir) != artifact_dir
+    ):
+        raise ManifestError(
+            "artifact directory changed during manifest scan/publication"
+        )
+
+
+def _write_new_file(
+    directory: str,
+    filename: str,
+    content: bytes,
+    *,
+    directory_descriptor: int | None = None,
+) -> str:
+    """Create and sync one new output, durably removing it if writing fails."""
+    path = os.path.join(directory, filename)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    if directory_descriptor is None:
+        descriptor = os.open(path, flags, 0o644)
+    else:
+        descriptor = os.open(
+            filename,
+            flags,
+            0o644,
+            dir_fd=directory_descriptor,
+        )
+    try:
+        output = os.fdopen(descriptor, "wb")
+        descriptor = -1
+        with output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+    except Exception as write_error:
+        rollback_errors: list[str] = []
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError as exc:
+                rollback_errors.append(f"close partial output: {exc}")
+        try:
+            if directory_descriptor is None:
+                os.unlink(path)
+            else:
+                os.unlink(filename, dir_fd=directory_descriptor)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            rollback_errors.append(f"remove partial output: {exc}")
+        if directory_descriptor is not None:
+            try:
+                os.fsync(directory_descriptor)
+            except OSError as exc:
+                rollback_errors.append(f"sync partial-output rollback: {exc}")
+        if rollback_errors:
+            details = "; ".join(rollback_errors)
+            raise ManifestError(
+                f"partial artifact output rollback could not be confirmed for {filename}: {details}"
+            ) from write_error
+        raise
+    return path
+
+
+def write_artifact_manifest(**kwargs) -> tuple[str, str]:
+    """Publish manifest and SHA256SUMS into the same directory that was scanned."""
+    artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
+    _require_descriptor_scan_support()
+    try:
+        directory_descriptor = os.open(
+            artifact_dir,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+    except (OSError, TypeError, NotImplementedError) as exc:
+        raise ManifestError(f"artifact directory cannot be opened for durable publication: {exc}") from exc
+
+    try:
+        payload_kwargs = dict(kwargs)
+        payload_kwargs["artifact_directory_descriptor"] = directory_descriptor
+        manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**payload_kwargs)
+        _require_artifact_directory_identity(artifact_dir, directory_descriptor)
+
+        created: list[str] = []
+        try:
+            created.append(
+                _write_new_file(
+                    artifact_dir,
+                    MANIFEST_FILENAME,
+                    manifest_bytes,
+                    directory_descriptor=directory_descriptor,
+                )
+            )
+            created.append(
+                _write_new_file(
+                    artifact_dir,
+                    CHECKSUMS_FILENAME,
+                    checksums_bytes,
+                    directory_descriptor=directory_descriptor,
+                )
+            )
+            os.fsync(directory_descriptor)
+            _require_artifact_directory_identity(artifact_dir, directory_descriptor)
+        except Exception as publication_error:
+            rollback_errors: list[str] = []
+            for path in reversed(created):
+                try:
+                    os.unlink(os.path.basename(path), dir_fd=directory_descriptor)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    rollback_errors.append(f"remove {os.path.basename(path)}: {exc}")
+            if created:
+                try:
+                    os.fsync(directory_descriptor)
+                except OSError as exc:
+                    rollback_errors.append(f"sync artifact-pair rollback: {exc}")
+            if rollback_errors:
+                details = "; ".join(rollback_errors)
+                raise ManifestError(
+                    f"artifact publication failed; rollback could not be confirmed: {details}"
+                ) from publication_error
+            raise
+    finally:
+        os.close(directory_descriptor)
+
+    return (
+        os.path.join(artifact_dir, MANIFEST_FILENAME),
+        os.path.join(artifact_dir, CHECKSUMS_FILENAME),
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--artifact-dir", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--event-sha", required=True)
+    parser.add_argument("--pr-head-sha", default="")
+    parser.add_argument("--pr-base-sha", default="")
+    parser.add_argument("--product", required=True)
+    parser.add_argument("--board", choices=("esp8266", "esp32"), required=True)
+    parser.add_argument("--fqbn", required=True)
+    parser.add_argument("--arduino-cli-version", required=True)
+    parser.add_argument("--core-id", required=True)
+    parser.add_argument("--core-version", required=True)
+    args = parser.parse_args(argv)
+
+    try:
+        manifest_path, checksums_path = write_artifact_manifest(**vars(args))
+    except (ManifestError, OSError, ValueError) as exc:
+        print(f"RELEASE-BLOCKED: firmware artifact manifest creation failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"FIRMWARE-ARTIFACT-MANIFEST-PASS: {manifest_path}")
+    print(f"FIRMWARE-SHA256SUMS-PASS: {checksums_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
