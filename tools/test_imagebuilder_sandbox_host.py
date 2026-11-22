@@ -594,6 +594,85 @@ def load_runner():
 
 
 class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
+    def test_runner_interrupt_cleans_detached_group_even_if_leader_exited(self):
+        runner = load_runner()
+        for interruption in (KeyboardInterrupt("operator interrupt"), SystemExit(7)):
+            with self.subTest(interruption=type(interruption).__name__):
+                with tempfile.TemporaryDirectory() as workspace:
+                    builder = os.path.join(workspace, "builder")
+                    wrapper = os.path.join(workspace, "build.sh")
+                    os.mkdir(builder)
+                    with open(wrapper, "w", encoding="utf-8") as wrapper_file:
+                        wrapper_file.write("exit 0\\n")
+
+                    process = mock.Mock()
+                    process.pid = 101
+                    # The outer bwrap leader has exited; its detached child group
+                    # can still survive while holding inherited capture pipes.
+                    process.poll.return_value = 0
+
+                    with ExitStack() as stack:
+                        stack.enter_context(
+                            mock.patch.object(
+                                runner.sys,
+                                "argv",
+                                [
+                                    "run_imagebuilder_sandbox.py",
+                                    "--cwd", workspace,
+                                    "--builder", builder,
+                                    "--wrapper", wrapper,
+                                ],
+                            )
+                        )
+                        stack.enter_context(
+                            mock.patch.object(
+                                runner, "_invoking_unprivileged_identity",
+                                return_value=(1001, 1001),
+                            )
+                        )
+                        stack.enter_context(
+                            mock.patch.object(runner.shutil, "which", return_value="/usr/bin/bwrap")
+                        )
+                        stack.enter_context(
+                            mock.patch.object(
+                                runner, "_is_within_trusted_system_directories",
+                                return_value=True,
+                            )
+                        )
+                        stack.enter_context(
+                            mock.patch.object(
+                                runner.select, "select",
+                                side_effect=lambda read, write, errors, timeout=None: (read, [], []),
+                            )
+                        )
+                        stack.enter_context(
+                            mock.patch.object(
+                                runner.os, "read", return_value=b'{"child-pid": 202}'
+                            )
+                        )
+                        stack.enter_context(
+                            mock.patch.object(runner.subprocess, "Popen", return_value=process)
+                        )
+                        stack.enter_context(
+                            mock.patch.object(
+                                runner, "_communicate_with_timeout",
+                                side_effect=interruption,
+                            )
+                        )
+                        cleanup = stack.enter_context(
+                            mock.patch.object(
+                                runner, "_terminate_process_groups",
+                                return_value=("", "cleanup diagnostic"),
+                            )
+                        )
+
+                        with self.assertRaises(type(interruption)) as raised:
+                            runner.main()
+
+                    self.assertIs(raised.exception, interruption)
+                    cleanup.assert_called_once_with(process, 202)
+
+
     def test_timeout_escalates_and_waits_for_outer_and_child_process_groups(self):
         runner = load_runner()
         process = mock.Mock()
