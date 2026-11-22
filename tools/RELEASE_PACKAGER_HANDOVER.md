@@ -3284,3 +3284,59 @@ These are hosted synthetic filesystem/unit-test results. No OpenWrt ImageBuilder
 5. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No merge, signing with real keys, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC06 — interrupt-safe firmware manifest rollback (2026-11-22)
+
+**Disposition:** one RELEASE-owned artifact-publication failure-path defect reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+The release artifact writer already creates each manifest output exclusively, writes and flushes it, fsyncs the file, and removes partial output on ordinary exceptions. Both cleanup scopes caught `Exception` only:
+
+- `_write_new_file()` could leave a partial manifest file if a Python-level interruption such as `KeyboardInterrupt` or `SystemExit` occurred after exclusive creation.
+- `write_artifact_manifest()` could leave the first `RELEASE_MANIFEST.json` published if interruption occurred while creating the second `SHA256SUMS` output, because the pair rollback also bypassed `BaseException`.
+
+The RELEASE-owned correction catches `BaseException` only around these cleanup scopes, closes any still-owned descriptor, removes the partial file, directory-syncs the rollback when a directory descriptor is available, removes the first manifest if pair publication is interrupted, then re-raises the original interruption. No manifest schema, checksum line format, provenance fields, signing policy or publication order changed.
+
+### Test-first and source history
+
+- Test-only regression commit [`607b4aa0`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/607b4aa0a7b731f682cb3842f306be1d6293c7f4) added two KeyboardInterrupt cases: partial-file cleanup after file fsync interruption, and pair rollback when checksum publication is interrupted after the first manifest exists.
+- Expected RED, PR shared [#44993606069](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993606069), job `137119812376`, and push shared [#44993602571](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993602571), job `137119801598`: **175 tests, exactly two new failures, two intentional skips**. The first left the partial output and skipped its directory-sync cleanup; the second left the first manifest after the checksum interruption. This is the expected pre-fix regression result.
+- Source correction [`0b91d7ef`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0b91d7efe50181d280bf21943e97261917448cf0) changes only the two cleanup exception boundaries to `BaseException` and clarifies their docstrings.
+- Intermediate source/test run PR shared [#44993738996](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993738996), job `137120209566`, and push shared [#44993734935](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993734935): **175 tests, one test-assertion failure, two intentional skips**. The partial-file regression passed and the manifest-pair rollback itself succeeded; the test incorrectly expected a separate directory fsync after the first file (the writer intentionally syncs the pair once after both files, or syncs the rollback after interruption). This was a test expectation mismatch, not a remaining source failure.
+- Test expectation correction [`6e331be4`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6e331be4234f43012d8a0b9e83eb0d1d753356ec) asserts the first manifest exists at the interruption point and expects the single rollback directory sync. This is the final source/test HEAD.
+
+### Exact-source Actions at `6e331be4`
+
+- PR shared/firmware [#44993881155](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993881155), validation job `137120651901`: **175 packaging/tool tests PASS / 2 intentional skips**, `PHX-MANIFEST-DURABILITY-PASS`; subsequent all-profile admission **FAILED CLOSED 10/10** because no approved site-scoped RFC 4193 ULA /48 authority is configured; ESP32 and ESP8266 compile jobs **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Push shared/firmware [#44993877301](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993877301), validation job `137120638698`: same exact-source result — **175 PASS / 2 skips**, then 10/10 profiles fail closed; board compile jobs skipped.
+- PR ImageBuilder sandbox [#44993881085](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993881085), job `137120651557`: host preflight **31/31 PASS**; Bubblewrap is absent, exit 125; namespace and mandatory sandbox packaging regressions **SKIPPED**, not passed.
+- PR case-collision [#44993881098](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44993881098), job `137120651482`: **PASS**.
+
+These are hosted synthetic filesystem/unit-test results. No production firmware image or OpenWrt ImageBuilder binary was produced at this source head. The hosted sandbox never reached namespace execution.
+
+### Branch, ownership and cross-repository reconciliation
+
+- COE PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`; parent PR #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Final source/test SHA: `6e331be4234f43012d8a0b9e83eb0d1d753356ec`; this handover is the documentation successor.
+- This UTC06 task changes only `tools/write_firmware_artifact_manifest.py`, `tools/test_firmware_artifact_manifest.py`, and this handover. The accumulated #35 diff still includes inherited `.github/workflows/hardware-ci.yml`, outside MASTER's current RELEASE route; no Hardware workflow was edited. PHX-HARDWARE / PHX-MASTER must resolve that ownership before integration.
+- MASTER PR [#288](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/288) current head at audit: `737af73dbc4d3ab3786b6f6b0b251106a5d1c7c3`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`. PHX-RELEASE's only listed Experiments migration route remains `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, `reimplementation-review`. No workflow migration or route promotion occurred.
+- Experiments RELEASE #242 exact head `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed handover/build and synthetic packaging steps. Authenticode signing and GitHub Release publication were **SKIPPED**.
+- Experiments RELEASE #291 exact head `42797e2f3d65c30a1070caf49c93aebec149d897`, based on #242 `734b89d9...`; its 26 changed paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET). Compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed provenance/toolchain tests and both ESP32 core compile/reproducibility legs. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the mandatory handover freshness gate; build and publisher skipped. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the inherited freshness gate; production signing/publication and downstream acceptance remained skipped. RELEASE did not edit #291 or PISONET-owned self-tests.
+- COE integration #26 exact head `b382d233ff06c8791b1028bed3c617cc7b670d12`, base main `a6513ab4412b4c014eee2863e45cbe32d06cb243`: five PR workflows remain **QUEUED**, zero jobs returned.
+- COE parent #31 exact head `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`: shared/firmware [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed validation, 10/10 profile staging, ESP32 and ESP8266 compile/artifact upload; case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed. Mandatory sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed at unprivileged namespace preflight after Bubblewrap installation and host tests; mandatory sandbox packaging regressions were skipped. This is not production acceptance.
+- Cleanup-first #266 remains OPEN, **0/7 tracks complete**. Canonical private Drive registry v11 was not surfaced through the authorized Library/connector; no older snapshot was substituted and no private content was copied.
+
+### Next owner actions and limits
+
+1. **PHX-QA:** independently review the two KeyboardInterrupt regressions and exact source/test SHA `6e331be4`.
+2. **PHX-INFRA:** provide an authorized disposable no-secret Bubblewrap-capable runner with working unprivileged user namespaces; no privileged install or unsandboxed fallback.
+3. **PHX-CORE / PHX-MASTER / site authority:** define approved site-scoped ULA /48 authority before all-profile admission can pass; RELEASE must not invent a prefix.
+4. **PHX-HARDWARE / PHX-MASTER:** resolve inherited `hardware-ci.yml` ownership before any integration decision.
+5. **PHX-MASTER:** refresh the #172 current PR-head index; its previous #35 pointer is stale relative to this exact branch head.
+6. **Registry custodian:** restore authorized provenance-only access to canonical registry v11.
+
+No merge, real-key signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
