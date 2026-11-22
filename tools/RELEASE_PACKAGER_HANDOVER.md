@@ -3427,3 +3427,57 @@ These are hosted synthetic CI results. No actual Bubblewrap namespace execution,
 6. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
 
 No merge, signing with real keys, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC08 — host preflight descendant timeout cleanup (2026-11-22)
+
+**Disposition:** one RELEASE-owned preflight process-lifecycle defect reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Finding and bounded correction
+
+`tools/check_imagebuilder_sandbox_host.py::check_host()` previously used `subprocess.run(timeout=...)`. That timeout only guarantees termination/waiting for the direct process; a descendant that survives the leader and retains captured output pipes can remain alive after the preflight reports timeout. The runtime build runner already has tested process-group cleanup, but the separate host-preflight path did not use it.
+
+The correction:
+- starts the preflight with `subprocess.Popen(..., start_new_session=True)`;
+- reuses the existing RELEASE runner `_terminate_process_groups()` helper on timeout and after normal completion, so surviving members of the preflight's own process group are terminated;
+- retains partial stdout/stderr in timeout diagnostics;
+- fails closed when process-group cleanup reports an unconfirmed survivor or signal failure;
+- keeps the existing timeout result and no-privileged-fallback policy.
+
+The new host regression launches a disposable fake preflight executable with a SIGTERM-ignoring child that records its PID. It verifies the timeout path returns and the child is no longer running. This is synthetic host-process evidence only; it does not execute Bubblewrap or ImageBuilder.
+
+### Test-first / source commits
+
+- Initial test-only commit: [`27c071b0`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/27c071b076f2867407bdf21fb078d12a3c255324). PR sandbox [#45002407940](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002407940) failed with a test-harness placement error (`AttributeError: helper_or_skip` because the new method was initially inserted in the wrong test class). No source code changed in this commit.
+- Corrected test-only commit: [`7c1b2891`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7c1b2891f2deaca0cdb1dd19c3727ed3253fde93). Exact PR sandbox RED [#45002520083](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002520083), job `137146938394`: 33 tests, with the new regression failing because the preflight timeout left its descendant process running. The required Bubblewrap/namespace/packaging steps were skipped after the host suite failed.
+- Source correction / exact source-test SHA: [`30ee7a67`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/30ee7a67e745026b4aecde8e0936030576eee64f). Only `tools/check_imagebuilder_sandbox_host.py` changed in this source commit.
+
+### Exact-source Actions at `30ee7a67`
+
+- Sandbox PR [#45002788265](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002788265) and push [#45002784616](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002784616): host preflight suite **33/33 PASS**. The next required Bubblewrap availability gate **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner. Unprivileged identity, namespace preflight and mandatory Bubblewrap packaging regressions were **SKIPPED**, not passed.
+- Shared/firmware PR [#45002788122](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002788122) and push [#45002784622](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002784622): firmware hardening/syntax and shared-contract validation **PASS**; packaging/tool suite **177 PASS / 2 intentional skips**. End-to-end profile admission **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP32 and ESP8266 compile jobs were **SKIPPED**. Overall workflow conclusion is **FAILURE**, not green.
+- Case-collision guard [#45002788120](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45002788120): **PASS**.
+
+### Branch, ownership and cross-repository state
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`; PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31/base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`.
+- At source/test SHA `30ee7a67`, only the two RELEASE-owned paths `tools/check_imagebuilder_sandbox_host.py` and `tools/test_imagebuilder_sandbox_host.py` changed during this increment; this section is the narrow handover update.
+- Inherited `.github/workflows/hardware-ci.yml` remains in the accumulated child diff outside the current RELEASE route; PHX-RELEASE did not edit it. PHX-HARDWARE / PHX-MASTER must resolve ownership before integration.
+- MASTER #288 remains OPEN / DRAFT at `737af73dbc4d3ab3786b6f6b0b251106a5d1c7c3`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`.
+- RELEASE #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`.
+- RELEASE #291 remains OPEN / DRAFT at `42797e2f3d65c30a1070caf49c93aebec149d897`, with mixed CORE/PISONET ownership in its accumulated diff; no #291 files were changed.
+- #266 remains OPEN; the seven-role cleanup checklist is incomplete. Canonical private Drive registry v11 was not found in the authorized Library search; older snapshots/checkpoints were not substituted, and no private contents or identifiers were copied.
+
+### Next owner actions and limits
+
+1. **PHX-INFRA:** provide the authorized disposable no-secret runner with Bubblewrap preinstalled and working unprivileged user namespaces; rerun mandatory sandbox packaging regressions.
+2. **PHX-CORE / PHX-MASTER / site-prefix authority:** define and approve the site-scoped ULA /48; do not substitute a synthetic prefix.
+3. **PHX-QA:** independently review exact source/test SHA `30ee7a67` and the preflight descendant cleanup regression.
+4. **PHX-HARDWARE / PHX-MASTER:** resolve inherited `hardware-ci.yml` ownership before integration.
+5. **PHX-MASTER:** refresh stale #172 branch-head references from live PR metadata.
+6. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
