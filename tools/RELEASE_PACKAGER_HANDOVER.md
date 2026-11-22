@@ -3631,3 +3631,62 @@ These are hosted synthetic CI results. No Bubblewrap namespace, real ImageBuilde
 **Next owners:** PHX-QA independently reviews source/test head `0ee31b93`; PHX-INFRA supplies a disposable no-secret Bubblewrap-capable runner with unprivileged user namespaces; PHX-CORE/MASTER define approved site ULA /48 authority; MASTER refreshes its own stale control-plane head index; registry custodian restores canonical v11 access.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+
+## PHX-RELEASE UTC12 — reject staging-tree mutation during overlay size scan (2026-11-22)
+
+**Disposition:** one RELEASE-owned overlay-size integrity defect was reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source/interface was changed.
+
+### Finding and bounded correction
+
+\`calculate_overlay_size()\` previously took one \`os.listdir(directory_fd)\` snapshot per staging directory, then walked the returned names through pinned no-follow descriptors. A file added after the listing snapshot could be omitted from the overlay byte budget. The staging root could also be renamed/replaced after its scan without a final check that the path still referred to the pinned root directory.
+
+The corrected walk keeps each directory descriptor open on an explicit depth-first stack until its descendants have been scanned. At directory exit it:
+- re-lists the pinned directory and compares the entry-name set with the original listing;
+- re-stats every observed entry relative to the pinned directory and compares its device/inode/type/link/owner/group/size/mtime/ctime snapshot;
+- verifies the pinned directory identity and mode; and
+- revalidates the staging-root name through its still-pinned parent descriptor before closing the root.
+
+This catches additions/removals and same-name object replacement after an entry was measured, while preserving the existing behavior for deliberate symlink-to-file and file-to-symlink replacement races that occur before the entry is opened. It is a mutation-detection check, not an atomic filesystem snapshot; staging inputs must still remain quiescent during packaging.
+
+### Test-first lineage and intermediate corrections
+
+- Test-only regression commit [\`9dc01bef\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9dc01bef5e0ad05095a2f00a4af9e9b72a5c612b) added:
+  - \`test_calculate_overlay_size_rejects_directory_entry_added_after_listing_snapshot\`;
+  - \`test_calculate_overlay_size_rejects_staging_root_replaced_after_scan\`.
+- Expected RED: shared run [#45022713756](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45022713756), job \`137208921111\`: **183 tests, two new expected failures, two intentional skips**. Both new tests reproduced \`ValueError not raised\`. Case-collision [#45022713642](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45022713642) passed; sandbox remained blocked by missing Bubblewrap.
+- Initial descriptor-walk implementation [\`7ff88d18\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7ff88d1839b75846caeba910620a64961a55828b) correctly detected the added entry, but its broad directory metadata comparison incorrectly rejected two existing same-name symlink replacement regressions and classified root replacement as a generic directory mutation. Exact PR shared run [#45023409307](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023409307): 183 tests, two errors and one failure, two intentional skips.
+- Root descriptor ownership transfer [\`1936849f\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1936849fe15125efe129af7dc45f37d0b1c46d5f) prevented a double-close path when root-frame initialization failed, but did not clear the false-positive mutation checks. Exact PR shared run [#45023466616](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023466616): the two symlink replacement tests errored and the root-specific diagnostic assertion failed. These are retained as failed intermediate attempts, not passes.
+- Final source correction [\`7bbf7c40\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7bbf7c40ab09fd839faaaa3b5a14fec818e9a23b) uses entry-name-set plus per-entry metadata revalidation and checks root path identity before the root directory snapshot comparison.
+
+### Exact source/test-head Actions at \`7bbf7c40\`
+
+- Shared/firmware PR [#45023691331](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023691331), job \`137211939007\`: **183 tests PASS / 2 intentional skips**; \`PHX-MANIFEST-DURABILITY-PASS\`; firmware hardening/shared contracts and packaging/tool tests PASS. The subsequent all-profile gate **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were skipped. Overall workflow **FAILURE**, not green.
+- Shared/firmware push [#45023687241](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023687241): same exact-source result — **183 PASS / 2 skips**, followed by the same ULA admission failure.
+- Sandbox PR [#45023691322](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023691322) and push [#45023687258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023687258): host-preflight suite **33/33 PASS**; Bubblewrap availability then **FAILED CLOSED** because \`bwrap\` is absent (exit 125). Unprivileged namespace verification and mandatory sandbox packaging tests were skipped, not passed.
+- Case-collision guard [#45023691325](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45023691325): **PASS**.
+
+These are hosted synthetic CI results. No Bubblewrap namespace, real ImageBuilder execution, OpenWrt firmware artifact, target binary, physical hardware test or production release was performed.
+
+### Exact branch / live ownership snapshot
+
+- Child PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch \`phoenix/release-build-script-publication-safety-20261117\`, parent #31/base \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`.
+- Source/test head at this entry: \`7bbf7c40ab09fd839faaaa3b5a14fec818e9a23b\`. This increment changes only \`tools/test_package_appliance_firmware.py\` (test-first commit) and \`tools/package_appliance_firmware.py\` (source corrections); this handover is the only documentation path.
+- MASTER #288 current head \`a65d96161319740d4a54f62b5637bf7d65fb8a7f\`; \`OWNERSHIP_ROUTES.json\` remains \`DRAFT_REVIEW_ONLY\`. RELEASE's Experiments route \`.github/workflows/blazepwifi-build.yml\` → \`.github/workflows/pisowifi-ci.yml\` remains \`reimplementation-review\`, not copy/migration authorization.
+- Experiments #242 current head \`734b89d9e7792247e8376335c3f3685500ab3f89\`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) completed SUCCESS, but Authenticode signing and release publication steps were skipped.
+- Experiments #291 current head \`42797e2f3d65c30a1070caf49c93aebec149d897\`; compatibility run [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) SUCCESS. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the CORE-owned mandatory handover freshness gate after target build jobs succeeded; downstream simulations/signing/publication were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the shared handover freshness gate; Windows build/publisher were skipped. The 26 accumulated paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no #291 path changed.
+- COE integration #26 current head \`b382d233ff06c8791b1028bed3c617cc7b670d12\`; five distinct workflow types remain QUEUED with zero executed jobs. Its boundary/provenance documents identify the Experiments source as historical and #26 as a draft candidate, not completed byte-identity migration.
+- COE parent #31 current head \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`; parent shared/case runs #44222517238/#44222517258 passed, while mandatory sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed at unprivileged namespace preflight. Those are parent #31 results, not #35 exact-head acceptance.
+- #35 remains OPEN / DRAFT / UNMERGED; independent submitted reviews: 0; review threads: 0.
+- Cleanup-first #266 remains OPEN with all seven role tracks unchecked.
+- Authorized Library inventory contains registry snapshots v3–v7 only; canonical private Drive registry v11 was not surfaced. No historical snapshot was substituted and no private registry contents/identifiers were copied to GitHub.
+
+### Next owner actions / release limits
+
+1. PHX-QA independently reviews source/test head \`7bbf7c40\`, including directory-entry identity revalidation and both mutation regressions.
+2. PHX-INFRA supplies an authorized disposable no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces.
+3. PHX-CORE / PHX-MASTER define and approve site-scoped RFC 4193 ULA /48 authority; no synthetic prefix substitution.
+4. PHX-MASTER refreshes stale #172 PR-head references and resolves the inherited \`hardware-ci.yml\` ownership collision without RELEASE editing HARDWARE source.
+5. Registry custodian restores authorized provenance-only access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
