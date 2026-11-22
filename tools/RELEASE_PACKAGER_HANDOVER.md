@@ -2913,3 +2913,57 @@ Final PR/source-test HEAD: `ce57bce198ce0f3f5e901f386d54964e722ee321`.
 5. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+## PHX-RELEASE UTC00 — durable rollback for firmware artifact manifest/checksum publication (2026-11-22)
+
+**Disposition:** one RELEASE-owned failure-path defect reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- PR: [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first regression commit: [`beab4441`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/beab44413c5c5f5e022e53ea18aff843a21d5573).
+- Corrected source/test commit: [`1c9ee385`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1c9ee3858a07ce6b1853d75576c042b521cfcd50).
+- Scope: `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this handover only. No firmware sketch, shared interface, ULA/network policy, or other-role source changed.
+
+### Failure reproduced and correction
+
+The writer published `artifact-manifest.json` and `SHA256SUMS`, then fsynced the directory. If the second file creation or the final directory fsync failed, it removed already-created output names but did not fsync the directory after rollback. Cleanup unlink errors were also silently ignored. A crash could therefore leave a partial pair or an unconfirmed rollback while the CLI reported failure.
+
+Three test-first regressions were added:
+
+1. A failure creating `SHA256SUMS` after the manifest exists must remove the manifest and fsync the directory after removal.
+2. A failed final directory fsync must remove both published names and perform a second directory fsync after rollback.
+3. If rollback unlink fails, the writer must explicitly report that rollback could not be confirmed rather than silently re-raising only the original publication error.
+
+The source correction opens the artifact directory for durable publication before creating outputs, rejects missing `O_DIRECTORY` support before writing, syncs each file, syncs the directory after successful pair publication, and syncs again after rollback. Partial-file cleanup also attempts a directory sync. Any failed removal or rollback sync is surfaced as `ManifestError` with an explicit “rollback could not be confirmed” diagnostic. Existing no-overwrite behavior and manifest/checksum format are unchanged.
+
+### Test-first and exact-source Actions
+
+**Test-only commit `beab4441` — expected RED**
+
+- Shared/firmware [#44966151617](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44966151617), job `137035515848`: **168 tests executed; 2 failed and 1 errored**, exactly the three new rollback regressions. The two failures observed no directory fsync after rollback; the error showed the injected unlink denial was swallowed and the original `FileExistsError` escaped instead of a rollback-specific error. Profile staging and board builds were skipped after the test step failed.
+- Sandbox [#44966151822](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44966151822), job `137035516816`: host preflight **31/31 PASS**, then Bubblewrap missing / exit 125; namespace and mandatory sandbox packaging steps SKIPPED.
+- Case-collision [#44966151579](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44966151579): **PASS**.
+
+**Corrected source/test commit `1c9ee385`**
+
+- Shared/firmware [#44966235503](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44966235503), job `137035782564`: **168 tests PASS / 2 intentional skips**; firmware syntax, shared contracts, packaging/tool tests and manifest durability marker PASS. The following all-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32 and ESP8266 compile jobs were SKIPPED. Overall workflow is **FAILURE**, not green.
+- Sandbox [#44966235511](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44966235511), job `137035782579`: host preflight **31/31 PASS**, then Bubblewrap absent / exit 125. Identity, namespace and mandatory sandbox packaging steps SKIPPED.
+- Case-collision [#44966235508](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44966235508): **PASS**.
+
+These are hosted synthetic CI results. No actual ESP32/ESP8266 artifact was built; both board compile jobs were skipped by the existing profile-admission gate. No real Bubblewrap namespace or ImageBuilder execution was performed.
+
+### Current blockers and next owners
+
+1. **PHX-CORE / site ULA authority / PHX-MASTER:** define and approve the durable site-scoped RFC 4193 ULA /48 source and same-site multi-appliance provisioning contract. RELEASE must not invent a prefix or bypass profile admission.
+2. **PHX-INFRA:** provide an authorized disposable runner with Bubblewrap preinstalled and working unprivileged user namespaces. No privileged installation or unsandboxed fallback.
+3. **PHX-QA:** independently review the rollback failure-injection tests and exact source/test SHA `1c9ee3858a07ce6b1853d75576c042b521cfcd50`.
+4. **PHX-MASTER:** refresh stale control-plane PR-head pins and reconcile release ownership routes. No migration or ownership promotion was performed.
+5. **Registry custodian:** canonical private Drive project registry v11 and newer corrections remain unavailable through the authorized Library surface. Older v3–v7 provenance snapshots were not substituted; no private content or identifiers were copied to GitHub.
+
+No merge, real-key signing, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+---
+
