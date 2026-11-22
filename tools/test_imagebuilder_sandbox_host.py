@@ -115,6 +115,29 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             "release sandbox workflow requires a dedicated host capability preflight",
         )
 
+    def test_workflow_triggers_when_shared_bubblewrap_trust_policy_changes(self):
+        with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
+            workflow = fp.read()
+
+        pull_request_paths = workflow.split("  pull_request:", 1)[1].split(
+            "  push:", 1
+        )[0]
+        push_paths = workflow.split("  push:", 1)[1].split(
+            "  workflow_dispatch:", 1
+        )[0]
+        helper_path = '      - "tools/imagebuilder_bwrap_trust.py"'
+
+        self.assertIn(
+            helper_path,
+            pull_request_paths,
+            "sandbox PR validation must run when its shared trust helper changes",
+        )
+        self.assertIn(
+            helper_path,
+            push_paths,
+            "sandbox push validation must run when its shared trust helper changes",
+        )
+
     def test_workflow_preflights_before_mandatory_packaging_regressions(self):
         with open(WORKFLOW_PATH, "r", encoding="utf-8") as fp:
             workflow = fp.read()
