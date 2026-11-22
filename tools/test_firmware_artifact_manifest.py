@@ -197,7 +197,10 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
             return original_write(directory, filename, content, *args, **kwargs)
 
         def fail_manifest_unlink(path, *args, **kwargs):
-            if os.fspath(path) == str(manifest_path):
+            if (
+                os.fspath(path) == MANIFEST_FILENAME
+                and kwargs.get("dir_fd") is not None
+            ):
                 raise PermissionError("injected rollback unlink denial")
             return original_unlink(path, *args, **kwargs)
 

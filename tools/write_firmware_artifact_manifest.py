@@ -233,6 +233,31 @@ def build_artifact_manifest_payloads(
     return manifest_bytes, checksums_bytes
 
 
+def _require_artifact_directory_identity(
+    artifact_dir: str,
+    directory_descriptor: int,
+) -> None:
+    """Ensure the scanned path still names the directory pinned for publication."""
+    try:
+        path_stat = os.lstat(artifact_dir)
+        descriptor_stat = os.fstat(directory_descriptor)
+    except OSError as exc:
+        raise ManifestError(
+            f"artifact directory changed during manifest scan/publication: {exc}"
+        ) from exc
+
+    if (
+        not stat.S_ISDIR(path_stat.st_mode)
+        or not stat.S_ISDIR(descriptor_stat.st_mode)
+        or (path_stat.st_dev, path_stat.st_ino)
+        != (descriptor_stat.st_dev, descriptor_stat.st_ino)
+        or os.path.realpath(artifact_dir) != artifact_dir
+    ):
+        raise ManifestError(
+            "artifact directory changed during manifest scan/publication"
+        )
+
+
 def _write_new_file(
     directory: str,
     filename: str,
@@ -243,7 +268,15 @@ def _write_new_file(
     """Create and sync one new output, durably removing it if writing fails."""
     path = os.path.join(directory, filename)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
-    descriptor = os.open(path, flags, 0o644)
+    if directory_descriptor is None:
+        descriptor = os.open(path, flags, 0o644)
+    else:
+        descriptor = os.open(
+            filename,
+            flags,
+            0o644,
+            dir_fd=directory_descriptor,
+        )
     try:
         output = os.fdopen(descriptor, "wb")
         descriptor = -1
@@ -259,7 +292,10 @@ def _write_new_file(
             except OSError as exc:
                 rollback_errors.append(f"close partial output: {exc}")
         try:
-            os.unlink(path)
+            if directory_descriptor is None:
+                os.unlink(path)
+            else:
+                os.unlink(filename, dir_fd=directory_descriptor)
         except FileNotFoundError:
             pass
         except OSError as exc:
@@ -279,12 +315,12 @@ def _write_new_file(
 
 
 def write_artifact_manifest(**kwargs) -> tuple[str, str]:
-    """Publish manifest and SHA256SUMS without overwriting existing files."""
+    """Publish manifest and SHA256SUMS into the same directory that was scanned."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
-    manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**kwargs)
-
-    if not hasattr(os, "O_DIRECTORY"):
-        raise ManifestError("durable artifact publication requires O_DIRECTORY support")
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise ManifestError(
+            "durable artifact publication requires O_DIRECTORY and O_NOFOLLOW support"
+        )
     try:
         directory_descriptor = os.open(
             artifact_dir,
@@ -293,8 +329,11 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
     except OSError as exc:
         raise ManifestError(f"artifact directory cannot be opened for durable publication: {exc}") from exc
 
-    created: list[str] = []
     try:
+        manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**kwargs)
+        _require_artifact_directory_identity(artifact_dir, directory_descriptor)
+
+        created: list[str] = []
         try:
             created.append(
                 _write_new_file(
@@ -313,11 +352,12 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
                 )
             )
             os.fsync(directory_descriptor)
+            _require_artifact_directory_identity(artifact_dir, directory_descriptor)
         except Exception as publication_error:
             rollback_errors: list[str] = []
             for path in reversed(created):
                 try:
-                    os.unlink(path)
+                    os.unlink(os.path.basename(path), dir_fd=directory_descriptor)
                 except FileNotFoundError:
                     pass
                 except OSError as exc:
