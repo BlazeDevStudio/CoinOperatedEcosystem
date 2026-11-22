@@ -3178,3 +3178,58 @@ These are hosted synthetic filesystem/unit-test results. No real ESP32/ESP8266 f
 5. Registry custodian restores authorized access to canonical private registry v11.
 
 No merge, signing with real keys, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC04 — close build-script descriptor when stream construction fails (2026-11-22)
+
+**Disposition:** one release-owned resource-lifecycle defect reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Finding and correction
+
+`generate_build_script()` creates the destination with `O_EXCL` at mode `0600` and retains both the raw script descriptor and parent-directory descriptor. The normal `with os.fdopen(...)` path transfers ownership of the script descriptor to the returned stream. If `os.fdopen()` raises before returning that stream, the existing outer `finally` closes the parent-directory descriptor but leaves the raw script descriptor open.
+
+The new regression injects an `os.fdopen()` construction error after exclusive creation, captures both descriptors, and requires both to be closed while the on-disk partial file remains non-executable at `0600`.
+
+The correction now catches the stream-construction exception only to close the still-raw script descriptor, treats `EBADF` as already closed, reports any other close failure without hiding the original exception, and re-raises. It catches `BaseException` solely to guarantee cleanup on interruption as well as ordinary errors. The parent-directory descriptor remains covered by the existing outer `finally`. No script content, execution mode ordering, path policy or publication semantics changed.
+
+### Test-first history
+
+- Initial regression attempt: [`3ae3de32`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3ae3de3263b0e99450889cbab3a3afaec1bf05ba). This test harness attempt failed before reaching the intended assertion because it monkeypatched `os.open` and thereby invalidated the production `os.supports_dir_fd` capability probe. Shared run [#44984130019](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984130019) is recorded as a harness failure, not expected RED.
+- Corrected test-only commit: [`035fb42f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/035fb42ff11f90fff002c04252d005fea60e2f33). It captures the two descriptors by wrapping the existing private create helper, leaving OS capability probes untouched.
+- Expected RED: shared run [#44984177747](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984177747), job `137091020489`: **172 tests, one expected failure** because `os.fstat(script_fd)` still succeeded after `fdopen()` raised; two intentional skips. The other descriptor was already closed by the existing `finally`.
+- Sandbox run [#44984177733](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984177733): host preflight **31/31 PASS**, then Bubblewrap missing / exit 125; namespace and mandatory sandbox packaging steps skipped. Case-collision [#44984177720](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984177720): **PASS**.
+- Source fix: [`2d914d8c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2d914d8ccb51fb5b162d35516d4ce92a7a0754fa).
+- Cleanup widened to `BaseException` before re-raising: final exact source/test SHA [`0a204374`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0a204374472d1990c8b1bdd412bfd4eb1f4abc59).
+
+### Exact-source CI at `0a204374`
+
+- Shared/firmware run [#44984347418](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984347418), job `137091533698`: firmware syntax and shared contracts **PASS**; packaging/tool suite **172 PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`. The subsequent ten-profile admission step **FAILED CLOSED** for missing approved site-scoped RFC 4193 ULA /48 authority; ESP32 and ESP8266 compile jobs **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Mandatory sandbox run [#44984347424](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984347424), job `137091533507`: host preflight **31/31 PASS**, then Bubblewrap unavailable / exit 125; namespace and mandatory sandbox packaging steps **SKIPPED**.
+- Case-collision guard [#44984347427](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44984347427): **PASS**.
+
+These are hosted synthetic filesystem/unit-test results. No ESP32/ESP8266 binary or OpenWrt ImageBuilder output was produced at this source head.
+
+### Exact branch and cross-repository boundary
+
+- COE [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`, parent #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- This increment changes only `tools/test_package_appliance_firmware.py` and `tools/package_appliance_firmware.py`; this handover is the third path for the UTC04 record. The accumulated 12-path PR still includes inherited `.github/workflows/hardware-ci.yml`, outside MASTER's RELEASE `reimplementation-review` route; PHX-HARDWARE / PHX-MASTER must resolve it. No hardware workflow was edited.
+- MASTER [#288](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/288) head `33deb02a55f4f1a3d9ea22cb96b4329dd9489626`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`. RELEASE route remains `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`.
+- Experiments RELEASE #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed build/handover, with signing and publication skipped.
+- Experiments RELEASE #291 remains `42797e2f3d65c30a1070caf49c93aebec149d897`, mixed-owner (21 RELEASE / 3 CORE / 2 PISONET). Full run [#44748671313](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44748671313) completed target and simulation/update-bundle jobs successfully; signing/publication skipped. Windows run [#44748671225](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44748671225) failed in inherited PISONET-owned `negative-selftest.ps1` because `$buildWorkflow` is unset; Windows build and publisher were skipped. Compatibility run [#44748671213](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44748671213) passed both ESP32 core matrix jobs. RELEASE did not edit #291.
+- COE integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR workflows remain QUEUED with no jobs executed.
+- Parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`: shared validation and both board compile/upload jobs passed; case-collision passed; mandatory sandbox failed at unprivileged UID-map setup (`Permission denied`, exit 125).
+- Cleanup-first #266 remains OPEN; seven-role checklist remains **0/7 complete**.
+- Canonical private Drive registry v11 was not found in the authorized Library metadata listing (1,422 entries paged) or exact-name search. No historical registry was substituted; no private content was copied.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the `fdopen()` failure regression and raw-descriptor cleanup at exact source/test SHA `0a204374`.
+2. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and same-site provisioning contract; RELEASE must not invent a prefix.
+3. **PHX-INFRA:** provide an authorized disposable runner with Bubblewrap and working unprivileged namespaces; no privileged install or unsandboxed fallback.
+4. **PHX-HARDWARE / PHX-MASTER:** resolve inherited `hardware-ci.yml` ownership before any merge decision.
+5. **PHX-MASTER:** reconcile the live PR-head index; retain `DRAFT_REVIEW_ONLY` ownership routes.
+6. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
