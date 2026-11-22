@@ -248,6 +248,44 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse((displaced_directory / MANIFEST_FILENAME).exists())
         self.assertTrue((displaced_directory / "firmware.bin").is_file())
 
+    def test_writer_rejects_nested_directory_replaced_with_symlink_before_file_open(self):
+        nested_dir = self.artifact_dir / "nested"
+        nested_dir.mkdir()
+        nested_payload = nested_dir / "extra.bin"
+        nested_payload.write_bytes(b"nested-firmware-payload")
+        displaced_dir = Path(self.temp.name) / "displaced-nested"
+        original_open = os.open
+        replaced = False
+
+        def replace_parent_before_open(path, flags, *args, **kwargs):
+            nonlocal replaced
+            candidate = os.fspath(path)
+            is_target = (
+                candidate == str(nested_payload)
+                or (
+                    candidate == nested_payload.name
+                    and kwargs.get("dir_fd") is not None
+                )
+            )
+            if is_target and not replaced:
+                nested_dir.rename(displaced_dir)
+                nested_dir.symlink_to(displaced_dir, target_is_directory=True)
+                replaced = True
+            return original_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(
+            manifest_writer.os, "open", side_effect=replace_parent_before_open
+        ):
+            with self.assertRaisesRegex(
+                ManifestError,
+                "artifact directory changed during scan|symlink",
+            ):
+                build_artifact_manifest_payloads(**self.kwargs())
+
+        self.assertTrue(replaced, "the deterministic parent-directory race must execute")
+        self.assertTrue(nested_dir.is_symlink())
+        self.assertTrue((displaced_dir / "extra.bin").is_file())
+
     def test_rejects_empty_firmware_binary(self):
         (self.artifact_dir / "firmware.bin").write_bytes(b"")
         with self.assertRaisesRegex(ManifestError, "non-empty .bin firmware payload"):
