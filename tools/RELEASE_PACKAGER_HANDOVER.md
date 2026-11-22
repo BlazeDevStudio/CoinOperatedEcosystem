@@ -3837,3 +3837,55 @@ These are hosted synthetic CI results. No Bubblewrap namespace, actual ImageBuil
 5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC16 — interrupt-safe ImageBuilder host preflight (2026-11-22)
+
+**Disposition:** one RELEASE-owned cleanup defect was reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the host-preflight helper, its focused regression tests, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER source or shared interface was modified.
+
+### Finding and bounded correction
+
+`tools/check_imagebuilder_sandbox_host.py::check_host()` called `process.communicate()` after launching Bubblewrap with `start_new_session=True`. It handled `TimeoutExpired` and ordinary `OSError`, but an operator `KeyboardInterrupt` or `SystemExit` during the wait bypassed the process-group cleanup path. A sandbox leader can already have exited while descendants remain in its process group, so checking only `process.poll()` is insufficient for interruption cleanup.
+
+The correction adds a `BaseException` cleanup-and-reraise path:
+- invoke the existing bounded `_terminate_process_groups()` helper whenever a process was created, even if the leader already exited;
+- preserve and re-raise the original interruption;
+- attach returned cleanup diagnostics to the original exception where `add_note()` is available, otherwise write the diagnostic to stderr;
+- do not convert an operator interruption into a normal “host not ready” result.
+
+The existing timeout, OSError, namespace policy, trusted Bubblewrap lookup, mount policy, and no-fallback behavior remain unchanged.
+
+### Test-first lineage and retained failures
+
+- Test-only regression commit [`17386462`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/173864628f5bf419097952a3a147cf195c2e9b57) added deterministic `KeyboardInterrupt` and `SystemExit` cases. Both deliberately report the process leader as already exited, ensuring cleanup is still attempted for a surviving process group.
+- Expected RED, PR [#45042959797](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45042959797) and push [#45042954203](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45042954203): **35 tests, 2 expected failures**. Both new tests failed because `_terminate_process_groups()` was called zero times. The remaining host-preflight tests passed. This is the intended source-defect reproduction, not a fixture/import failure.
+- Test-first case-collision guard [#45042959793](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45042959793): **PASS**.
+- Source correction [`3e44222a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3e44222a221c6f8dca627d4bf07673e3509e9540) adds cleanup on interruption while preserving the original exception.
+
+### Exact source/test-head Actions at `3e44222a`
+
+- Sandbox PR [#45043033907](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45043033907) and push [#45043028866](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45043028866): **35/35 host-preflight tests PASS**. The next Bubblewrap availability step **FAILED CLOSED** because `bwrap` is not installed (exit 125); unprivileged identity, namespace preflight and mandatory sandbox packaging steps were **SKIPPED**, not passed.
+- Shared/firmware PR [#45043033856](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45043033856) and push [#45043028918](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45043028918): firmware-hardening and shared-contract checks **PASS**; shared/profile unit suite **18 PASS**; packaging/tool suite **188 PASS**; `PHX-MANIFEST-DURABILITY-PASS`. The subsequent all-profile admission **FAILED CLOSED for all 10 appliance profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were **SKIPPED**. Overall shared workflow **FAILURE**, not green.
+- PR case-collision guard [#45043033896](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45043033896): **PASS**.
+
+These are hosted synthetic CI results. No Bubblewrap namespace was entered and no actual ImageBuilder run or firmware artifact was produced. No physical hardware, financial, signer or production evidence is implied.
+
+### Exact branch / live ownership snapshot
+
+- Child PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`, parent #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; source/test head `3e44222a221c6f8dca627d4bf07673e3509e9540`. This activation changed only `tools/check_imagebuilder_sandbox_host.py`, `tools/test_imagebuilder_sandbox_host.py` and this handover.
+- MASTER #288 live head `2dd7de41bfc6068057ece48f2d03e347a2b2b76e`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`. RELEASE's Experiments route `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml` remains `reimplementation-review`, not migration authorization.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) completed SUCCESS, but both portable executable and native Setup signing steps and release publication were skipped.
+- Experiments #291 remains `42797e2f3d65c30a1070caf49c93aebec149d897`; compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed 3/3. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at CORE-owned handover freshness after 14 target/Android build jobs passed; downstream simulations, candidate, signing and publication were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at shared handover freshness; Windows build and publisher were skipped. Its 26 accumulated paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); RELEASE did not modify #291.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero executed jobs. COE parent #31 remains draft at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; its earlier shared validation and both ESP compile jobs passed, but its sandbox failed at unprivileged UID-map preflight and mandatory packaging was skipped. That parent evidence does not override the child #35 ULA/Bubblewrap failures.
+- Cleanup-first #266 remains OPEN with all seven tracks unchecked. Canonical private Drive registry v11 was not surfaced by authorized Library search; older snapshots were not substituted and no private contents or identifiers were copied to GitHub.
+- #35 retains the inherited `.github/workflows/hardware-ci.yml` path from its parent stack. MASTER/HARDWARE must resolve that ownership collision before integration; RELEASE did not edit that file. #35 has zero submitted independent reviews and zero review threads.
+
+### Next owner actions / release limits
+
+1. PHX-QA independently reviews source/test head `3e44222a`, including interruption propagation and cleanup-diagnostic preservation.
+2. PHX-INFRA provides an authorized disposable, ephemeral, no-secret Bubblewrap runner with working unprivileged namespaces.
+3. PHX-CORE / PHX-MASTER approve durable site-scoped RFC 4193 ULA /48 authority; no synthetic prefix substitution.
+4. PHX-MASTER reconciles its own #172 live-head index and resolves inherited `hardware-ci.yml` ownership with HARDWARE.
+5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
