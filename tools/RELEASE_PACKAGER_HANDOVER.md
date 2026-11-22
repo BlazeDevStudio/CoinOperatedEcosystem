@@ -3889,3 +3889,53 @@ These are hosted synthetic CI results. No Bubblewrap namespace was entered and n
 5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC17 — interrupt-safe sandbox runner process-group cleanup after leader exit (2026-11-22)
+
+**Disposition:** TEST-FIRST RED REPRODUCED / RELEASE RUNNER FIX COMMITTED / HOST-PREFLIGHT TESTS PASS / MANDATORY BUBBLEWRAP EXECUTION BLOCKED / ALL-PROFILE ADMISSION BLOCKED / PRODUCTION NO-GO.
+
+### Defect and bounded correction
+
+In `tools/run_imagebuilder_sandbox.py::main()`, the runner waited through `_communicate_with_timeout()` after receiving the detached sandbox child process-group ID. Its final cleanup only called `_terminate_process_groups()` when `process.poll() is None`. If `KeyboardInterrupt` or `SystemExit` interrupted `communicate()` after the outer Bubblewrap leader had exited while a detached child group remained alive (for example, still holding inherited capture pipes), the leader-poll guard skipped process-group cleanup.
+
+This is distinct from the UTC16 correction in `check_imagebuilder_sandbox_host.py::check_host()`; UTC17 covers the actual ImageBuilder runner path.
+
+The runner now catches `KeyboardInterrupt` and `SystemExit` specifically around the communicate/wait operation and calls `_terminate_process_groups(process, sandbox_child_pgid)` without consulting the leader's poll state. Cleanup diagnostics are attached to the original interruption using `add_note()`, with stderr fallback for older Python; cleanup exceptions do not replace the original interruption. Ordinary `OSError` / `SubprocessError` handling remains on its existing path. The diagnostic separator is a real newline.
+
+### Test-first lineage and retained failures
+
+- Test-only regression commit [`603a855e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/603a855ec38f08bdd7bdcccf65d30db3fc91ead9) adds a focused `main()` regression for both `KeyboardInterrupt` and `SystemExit`, with the outer process leader already exited and a detached child PGID known. It requires process-group cleanup to be called and the original interruption to be re-raised.
+- Expected RED, exact test head `603a855e`: sandbox PR [#45048322926](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048322926) and push [#45048318943](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048318943) both **FAILED as expected**. The host suite ran **36 tests with exactly two new expected failures** (KeyboardInterrupt and SystemExit); both reported `_terminate_process_groups` called zero times. The other 34 tests passed. Shared PR [#45048323156](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048323156) and push [#45048318928](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048318928) also failed at those same two regressions (189 packaging/tool tests, 2 intentional skips); downstream profile/board jobs were skipped after validation failure. Case-collision [#45048322905](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048322905) **PASS**.
+- Initial source correction [`97faddb9`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/97faddb97d9939b9d2cd8c6b305f3c3738713298) adds interrupt cleanup and diagnostic preservation.
+- Narrow follow-up [`c795745c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c795745c668be995d2147c3ab942a98dfd9c6c49) corrects the cleanup diagnostic join separator to a real newline. The exact source/test anchor for this task is `c795745c668be995d2147c3ab942a98dfd9c6c49`.
+
+### Exact source/test-head Actions at `c795745c`
+
+- Sandbox PR [#45048757463](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048757463) and push [#45048752450](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048752450): host-preflight suite **36/36 PASS**. The next Bubblewrap availability gate **FAILED CLOSED** because `bwrap` is not installed (exit 125); unprivileged identity, namespace verification and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- Shared/firmware PR [#45048757559](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048757559) and push [#45048752402](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048752402): firmware-hardening and shared-contract checks **PASS**; packaging/tool suite **189 PASS / 2 intentional skips**. All ten appliance profiles **FAILED CLOSED** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32 and ESP8266 compile jobs were **SKIPPED** after profile admission failed. Overall shared workflow remains **FAILURE**, not green.
+- Case-collision PR [#45048757488](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45048757488): **PASS**.
+
+These are hosted synthetic CI results. No Bubblewrap namespace was entered, no mandatory sandbox packaging suite ran, no actual ImageBuilder firmware artifact was produced, and no physical or production evidence is implied.
+
+### Exact branch and ownership snapshot
+
+- COE child PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`, parent #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; source/test head `c795745c668be995d2147c3ab942a98dfd9c6c49`. Before this handover-only commit, the PR accumulated 12 paths. UTC17 source/test work changed only `tools/run_imagebuilder_sandbox.py` and `tools/test_imagebuilder_sandbox_host.py`; this section changes only the RELEASE handover.
+- PR #35 remains OPEN / DRAFT / UNMERGED. At the review refresh, there were **zero submitted independent reviews** and **zero review threads**. Its inherited `.github/workflows/hardware-ci.yml` path is not part of this UTC17 source task and still requires MASTER/HARDWARE ownership resolution.
+- MASTER #288 live head `0cbd4628d623a5ff358704be049a92e6f3d16ef2`; `coordination/phoenix/OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`. The PHX-RELEASE route `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml` remains `reimplementation-review`, not copy/move or migration authorization.
+- Experiments RELEASE #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) is SUCCESS, but real signing and release publication were skipped.
+- Experiments RELEASE #291 remains `42797e2f3d65c30a1070caf49c93aebec149d897`. Compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed 3/3. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the CORE-owned mandatory handover freshness gate after 14 target/Android build jobs passed; simulations, signing and publication were skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at shared handover freshness; Windows build and publisher were skipped. Its current `.github/PHX_RELEASE_HANDOVER.md` still carries an older source/test anchor (`1851f1d...`) than the live PR head; PHX-RELEASE must refresh its own handover in a later eligible activation, while PHX-CORE owns its project-handover freshness correction. The 26 accumulated paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no #291 path changed here.
+- COE integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflow types are queued, zero jobs executed.
+- COE parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Exact parent shared validation [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) and case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed; mandatory sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed at unprivileged UID-map preflight. Parent success does not override child #35 exact-head ULA and Bubblewrap blockers.
+- Cleanup-first issue #266 remains OPEN with **0/7 tracks complete**. Canonical private Drive registry v11 was not surfaced by authorized Library search; snapshots v3–v7 appeared but were not substituted. No private contents or identifiers were copied to GitHub. MASTER's #172 embedded PR-head index also needs reconciliation against current live heads.
+
+### Next owner actions and release limits
+
+1. PHX-QA independently reviews `603a855e` / `97faddb9` / `c795745c`, including the leader-exited child-group case and preservation of the original interruption.
+2. PHX-INFRA supplies an authorized disposable, ephemeral, no-secret runner with Bubblewrap and working unprivileged user namespaces; do not weaken the fail-closed gate.
+3. PHX-CORE / PHX-MASTER establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+4. PHX-MASTER and HARDWARE resolve inherited `hardware-ci.yml` ownership and refresh MASTER's own #172 PR-head index.
+5. PHX-RELEASE refreshes its stale #291 handover only in a separate eligible activation and only after re-reading live refs.
+6. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
