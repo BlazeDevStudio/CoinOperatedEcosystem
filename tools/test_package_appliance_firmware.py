@@ -1880,9 +1880,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         python_marker = os.path.join(self.temp_dir, "pinned-python-executed")
         fake_python = os.path.join(self.temp_dir, "pinned-python")
         original_python = (
-            "#!/bin/sh\\n"
-            f"printf trusted-python-used > {shlex.quote(python_marker)}\\n"
-            f"exec {shlex.quote(real_python)} \\"$@\\"\\n"
+            "#!/bin/sh\n"
+            f"printf trusted-python-used > {shlex.quote(python_marker)}\n"
+            f"exec {shlex.quote(real_python)} \"$@\"\n"
         ).encode("utf-8")
         with open(fake_python, "wb") as fp:
             fp.write(original_python)
@@ -1902,14 +1902,14 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(path_assignments, 1)
         self.assertEqual(digest_assignments, 1)
         with open(wrapper, "w", encoding="utf-8") as fp:
-            fp.write("\\n".join(wrapper_lines) + "\\n")
+            fp.write("\n".join(wrapper_lines) + "\n")
         os.chmod(wrapper, 0o755)
 
         # Simulate replacement after wrapper generation but before first interpreter use.
         tampered_python = (
-            "#!/bin/sh\\n"
-            f"printf tampered-python-executed > {shlex.quote(python_marker)}\\n"
-            f"exec {shlex.quote(real_python)} \\"$@\\"\\n"
+            "#!/bin/sh\n"
+            f"printf tampered-python-executed > {shlex.quote(python_marker)}\n"
+            f"exec {shlex.quote(real_python)} \"$@\"\n"
         ).encode("utf-8")
         with open(fake_python, "wb") as fp:
             fp.write(tampered_python)
@@ -1919,7 +1919,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         os.makedirs(builder)
         make_marker = os.path.join(self.temp_dir, "python-interpreter-make-ran")
         with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
-            fp.write("image:\\n\\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\\n")
+            fp.write("image:\n\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\n")
 
         env = os.environ.copy()
         env["OPENWRT_IMAGEBUILDER_DIR"] = builder
