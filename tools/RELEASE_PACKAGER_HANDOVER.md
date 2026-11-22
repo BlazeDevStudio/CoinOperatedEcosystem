@@ -3780,3 +3780,60 @@ These are hosted synthetic CI results. No real Bubblewrap namespace, ImageBuilde
 5. Registry custodian restores authorized provenance-only access to canonical private v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC15 — verify pinned Python before executing wrapper bootstrap (2026-11-22)
+
+**Disposition:** one RELEASE-owned wrapper bootstrap-ordering defect was reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the packager, its regression test and this narrow handover. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source/interface was modified.
+
+### Finding and bounded correction
+
+The generated wrapper embedded \`PYTHON_SHA256\`, but first executed \`"$PYTHON_PATH" -\` to verify the pinned \`sha256sum\` utility and only afterward compared the Python interpreter's digest. Replacing the pinned interpreter after wrapper generation therefore allowed the replacement to execute before the wrapper detected the mismatch.
+
+The new regression generates a wrapper, substitutes a test interpreter path and expected digest, replaces that executable before first invocation, and asserts that the wrapper refuses it without creating an execution marker or running the ImageBuilder Makefile.
+
+The correction establishes an explicit bootstrap trust order:
+
+1. Pin the absolute system \`sha256sum\` path separately as \`SHA256SUM_BOOTSTRAP_PATH\`.
+2. At generation, require the checksum executable and its parent system directory to be root-owned and not group/world writable.
+3. Use that absolute system checksum executable to verify the pinned Python bytes **before invoking Python**.
+4. Only after Python matches its generated digest, execute it to verify the pinned checksum utility bytes before subsequent use.
+5. Preserve the existing absolute paths, PATH-shadow resistance, pinned runner digest, no-privileged-install rule and mandatory Bubblewrap/no-fallback policy.
+
+**Trust boundary:** the root-owned system \`sha256sum\` is the bootstrap trust root for the first Python check; its content pin is checked by the now-verified Python before later use. This does not claim protection against a compromised root-owned system tool or a compromised host.
+
+### Test-first lineage and retained failures
+
+- Initial test-only commit [\`963c5abb\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/963c5abbfb3d4eb2166e2ba1048b3b6d17dbaad1) contained an incorrectly escaped shell-fixture string. Its PR run [#45036813195](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45036813195) failed during test-module import; this was a fixture failure, not product-defect evidence.
+- Fixture correction [\`615b7393\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/615b739396d5fbbd3489a96009b119b58887e4e6) produced the intended regression. PR run [#45036853954](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45036853954) ran **186 tests, one expected failure, two intentional skips**. The new test failed because the tampered interpreter execution marker was created before its digest mismatch was rejected.
+- Push run [#45036846801](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45036846801) on the same advertised corrected head failed at Python test-module import with a syntax error. This push/PR discrepancy is retained as a failed run and is not counted as a pass; the PR run above is the run that reached and reproduced the intended RED.
+- Source correction [\`acbe9965\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/acbe99651acfef66397ccf2a709df7867131e0af) verifies Python through the absolute bootstrap checksum utility before the first Python execution.
+
+### Exact source/test-head Actions at \`acbe9965\`
+
+- Shared/firmware push [#45037112426](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45037112426) and PR [#45037118424](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45037118424): packaging/tool suite **186 PASS / 2 intentional skips**; the new interpreter-replacement regression and existing checksum-utility replacement regression PASS; firmware-hardening/shared-contract checks PASS; \`PHX-MANIFEST-DURABILITY-PASS\`. The subsequent all-profile admission **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were **SKIPPED**. Overall shared workflow **FAILURE**, not green.
+- Sandbox push [#45037112499](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45037112499) and PR [#45037118446](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45037118446): host-preflight suite **33/33 PASS**; Bubblewrap availability then **FAILED CLOSED** because \`bwrap\` is absent (exit 125). Namespace verification and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- PR case-collision guard [#45037118422](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45037118422): **PASS**.
+
+These are hosted synthetic CI results. No Bubblewrap namespace, actual ImageBuilder execution, OpenWrt firmware artifact, approved target binary, physical hardware test or production release was performed.
+
+### Exact branch / live ownership snapshot
+
+- Child PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch \`phoenix/release-build-script-publication-safety-20261117\`, parent #31/base \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`.
+- Source/test anchor: \`acbe99651acfef66397ccf2a709df7867131e0af\`. This activation changed only \`tools/test_package_appliance_firmware.py\`, \`tools/package_appliance_firmware.py\` and this handover.
+- MASTER #288 live head \`63342787fc1e55a7a55289ef7bff5e8e36493c5e\`; \`OWNERSHIP_ROUTES.json\` remains \`DRAFT_REVIEW_ONLY\`. RELEASE's Experiments workflow route \`.github/workflows/blazepwifi-build.yml\` → \`.github/workflows/pisowifi-ci.yml\` remains \`reimplementation-review\`, not migration authorization.
+- Experiments #242 remains \`734b89d9e7792247e8376335c3f3685500ab3f89\`; its Windows build run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded, but Authenticode signing/publication were skipped.
+- Experiments #291 remains \`42797e2f3d65c30a1070caf49c93aebec149d897\`; compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) remain failed at owner-controlled freshness gates. Its 26 accumulated paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); no #291 path changed.
+- COE integration #26 remains frozen at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`, five workflow types queued / zero jobs. COE parent #31 remains \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`.
+- Cleanup-first #266 remains OPEN with all seven tracks unchecked. Authorized Library search surfaced registry snapshots v3–v7 but not canonical private Drive registry v11; no older snapshot was substituted and no private contents/identifiers were copied to GitHub.
+- #172's embedded PR-head index remains stale relative to some live PRs; MASTER owns that control-plane reconciliation. #35 still contains an inherited \`.github/workflows/hardware-ci.yml\` path from its parent stack; HARDWARE/MASTER ownership must be resolved before integration. RELEASE did not edit that path in this increment.
+
+### Next owner actions / release limits
+
+1. PHX-QA independently reviews source/test head \`acbe9965\`, especially the bootstrap trust-root assumption and the proof that a replaced Python executable is not invoked.
+2. PHX-INFRA supplies an authorized disposable, no-secret Bubblewrap-capable runner with working unprivileged user namespaces.
+3. PHX-CORE / PHX-MASTER approve site-scoped RFC 4193 ULA /48 authority; no synthetic prefix substitution.
+4. PHX-MASTER refreshes its own #172 PR-head index and resolves the inherited \`hardware-ci.yml\` ownership collision.
+5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
