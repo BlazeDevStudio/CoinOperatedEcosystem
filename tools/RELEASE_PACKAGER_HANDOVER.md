@@ -3690,3 +3690,48 @@ These are hosted synthetic CI results. No Bubblewrap namespace, real ImageBuilde
 5. Registry custodian restores authorized provenance-only access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC13 — close parent-directory descriptor when build-script creation is interrupted (2026-11-22)
+
+**Disposition:** one RELEASE-owned descriptor-leak defect was reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the packager, its regression test and this handover.
+
+### Finding and bounded correction
+
+\`_open_new_file_without_symlink_parents()\` pins the output parent directory before the exclusive \   `os.open(..., dir_fd=directory_fd)\` that creates the generated build script. If that final open is interrupted by \   `KeyboardInterrupt\` or \   `SystemExit\`, the old \   `except Exception\` did not run. The helper then propagated the interruption without closing the parent descriptor, and the caller never received the descriptor pair needed to close it.
+
+The helper now catches \   `BaseException\` only around that final creation attempt, closes the pinned parent descriptor, treats \   `EBADF\` as already closed, and reports a close failure without hiding the original open/interruption error. Script contents, exclusive creation, 0600-before-write / 0755-after-durable-write ordering, path checks and publication semantics are unchanged.
+
+### Test-first lineage and fixture correction
+
+- Initial test-only commit [\`81201891\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8120189124ec299da2d6703296c6a4097e780471) attempted to intercept \   `os.open\` before the POSIX dir_fd capability check. That replaced the function identity in \   `os.supports_dir_fd\`, so the test fixture failed before reaching the target open. Push [#45026681025](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026681025) and PR [#45026685150](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026685150) recorded two fixture errors; **not product-defect evidence**.
+- Corrected test-only commit [\`80c2897c\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/80c2897c669de04e6bc3077f4573f6b8fc7a24ba) obtains the real parent descriptor first, then intercepts only the final dir_fd-relative create call. Expected RED: push [#45026832892](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026832892) and PR [#45026838274](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026838274) each reproduced two failures (KeyboardInterrupt and SystemExit leave the parent descriptor open); 184 tests, two expected failures, two intentional skips.
+- Source correction [\`13c63abd\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/13c63abd33663630049fefc8442020b27bbb91d4) closes the descriptor for both interruption classes.
+
+### Exact source/test-head Actions at \   `13c63abd\`
+
+- PR shared/firmware [#45026969797](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026969797) and push [#45026964680](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026964680): packaging/tool suite **184 PASS / 2 intentional skips**; firmware-hardening and shared-contract checks **PASS**; \   `PHX-MANIFEST-DURABILITY-PASS\`. The following all-profile admission **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compile jobs were **SKIPPED**; overall shared workflow **FAILURE**, not green.
+- PR sandbox [#45026969814](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026969814) and push [#45026964758](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026964758): host-preflight tests **33/33 PASS**, then Bubblewrap availability **FAILED CLOSED** because \   `bwrap\` is absent (exit 125). Namespace verification and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- PR case-collision [#45026969795](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45026969795): **PASS**.
+
+These are hosted synthetic CI results. No real Bubblewrap namespace, ImageBuilder firmware, approved target binary, physical hardware test or production package was produced.
+
+### Live ownership / integration snapshot
+
+- COE child PR #35 branch \   `phoenix/release-build-script-publication-safety-20261117\`, source/test head \   `13c63abd33663630049fefc8442020b27bbb91d4\`, parent #31/base \   `59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`. The next commit is this handover only.
+- MASTER #288 live head \   `a65d96161319740d4a54f62b5637bf7d65fb8a7f\`; ownership routes remain \   `DRAFT_REVIEW_ONLY\`. RELEASE's Experiments workflow route remains \   `reimplementation-review\`, not migration authorization.
+- Experiments #242 remains \   `734b89d9e7792247e8376335c3f3685500ab3f89\`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded, but Authenticode signing and publication were skipped.
+- Experiments #291 remains \   `42797e2f3d65c30a1070caf49c93aebec149d897\`; compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed. Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at CORE-owned freshness after target jobs; Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at inherited PISONET \   `negative-selftest.ps1\` because \   `$buildWorkflow\` is unset. The 26-path diff remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); RELEASE did not edit #291.
+- COE integration #26 remains \   `b382d233ff06c8791b1028bed3c617cc7b670d12\`, with five queued workflow types and zero executed jobs. Parent #31 remains \   `59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`.
+- #266 remains OPEN with seven cleanup tracks unchecked. The canonical private Drive registry v11 was not surfaced through authorized Library search; only older v3–v7 snapshots appeared and none was substituted.
+- #172's embedded #35/#291 refs are stale relative to the live PR heads. MASTER should reconcile its own index. The existing #35 diff also contains an inherited \   `.github/workflows/hardware-ci.yml\` change (83 additions / 9 deletions from the #31 base); RELEASE did not modify that file in this increment. MASTER must resolve HARDWARE ownership before any integration. Independent #35 QA/Master review remains absent.
+
+### Next owner actions / release limits
+
+1. PHX-QA independently reviews source/test head \   `13c63abd\`, especially BaseException cleanup and descriptor-close failure reporting.
+2. PHX-INFRA provides an authorized disposable, ephemeral, no-secret Bubblewrap runner with working unprivileged user namespaces.
+3. PHX-CORE / PHX-MASTER approve durable site-scoped ULA /48 authority; no synthetic prefix is substituted.
+4. PHX-MASTER reconciles stale #172 refs and the inherited \   `hardware-ci.yml\` ownership collision without RELEASE editing HARDWARE source.
+5. Registry custodian restores authorized provenance-only access to canonical private v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
