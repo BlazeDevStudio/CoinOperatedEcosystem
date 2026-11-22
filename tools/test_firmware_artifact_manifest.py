@@ -288,6 +288,120 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
         self.assertTrue(manifest_path.exists())
 
+    def test_write_new_file_reports_interrupted_partial_output_rollback(self):
+        output_path = self.artifact_dir / "interrupted-rollback.bin"
+        directory_descriptor = os.open(
+            self.artifact_dir,
+            os.O_RDONLY | os.O_DIRECTORY,
+        )
+        self.addCleanup(os.close, directory_descriptor)
+        original_fsync = os.fsync
+        original_unlink = os.unlink
+        file_sync_calls = 0
+        directory_sync_states = []
+
+        def interrupt_file_sync(descriptor):
+            nonlocal file_sync_calls
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_sync_states.append(output_path.exists())
+                return original_fsync(descriptor)
+            file_sync_calls += 1
+            if file_sync_calls == 1:
+                raise KeyboardInterrupt("injected partial-output write interruption")
+            return original_fsync(descriptor)
+
+        def interrupt_output_unlink(path, *args, **kwargs):
+            if (
+                os.fspath(path) == output_path.name
+                and kwargs.get("dir_fd") == directory_descriptor
+            ):
+                raise KeyboardInterrupt("injected partial-output rollback interruption")
+            return original_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(
+            manifest_writer.os, "fsync", side_effect=interrupt_file_sync
+        ):
+            with mock.patch.object(
+                manifest_writer.os, "unlink", side_effect=interrupt_output_unlink
+            ):
+                with self.assertRaisesRegex(
+                    ManifestError,
+                    "partial artifact output rollback could not be confirmed",
+                ):
+                    manifest_writer._write_new_file(
+                        str(self.artifact_dir),
+                        output_path.name,
+                        b"partial output",
+                        directory_descriptor=directory_descriptor,
+                    )
+
+        self.assertTrue(output_path.exists())
+        self.assertEqual(
+            directory_sync_states,
+            [True],
+            "the failed unlink must still be followed by a directory sync attempt",
+        )
+
+    def test_writer_continues_manifest_pair_rollback_after_keyboard_interrupt(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_fsync = os.fsync
+        original_unlink = os.unlink
+        directory_fsync_calls = 0
+        directory_sync_states = []
+        unlink_names = []
+
+        def fail_publication_sync_then_observe_rollback(descriptor):
+            nonlocal directory_fsync_calls
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_fsync_calls += 1
+                if directory_fsync_calls == 1:
+                    raise OSError("injected publication directory fsync failure")
+                directory_sync_states.append(
+                    (manifest_path.exists(), checksums_path.exists())
+                )
+            return original_fsync(descriptor)
+
+        def interrupt_first_pair_unlink(path, *args, **kwargs):
+            name = os.fspath(path)
+            if kwargs.get("dir_fd") is not None and name in (
+                MANIFEST_FILENAME,
+                CHECKSUMS_FILENAME,
+            ):
+                unlink_names.append(name)
+                if len(unlink_names) == 1:
+                    raise KeyboardInterrupt("injected pair rollback interruption")
+            return original_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(
+            manifest_writer.os,
+            "fsync",
+            side_effect=fail_publication_sync_then_observe_rollback,
+        ):
+            with mock.patch.object(
+                manifest_writer.os, "unlink", side_effect=interrupt_first_pair_unlink
+            ):
+                with self.assertRaisesRegex(
+                    ManifestError, "rollback could not be confirmed"
+                ):
+                    write_artifact_manifest(**self.kwargs())
+
+        self.assertEqual(
+            unlink_names,
+            [CHECKSUMS_FILENAME, MANIFEST_FILENAME],
+            "rollback must continue to the remaining output after an interruption",
+        )
+        self.assertFalse(manifest_path.exists())
+        self.assertTrue(
+            checksums_path.exists(),
+            "the interrupted unlink must be reported as an unconfirmed leftover",
+        )
+        self.assertEqual(
+            directory_sync_states,
+            [(False, True)],
+            "directory sync must still be attempted after the interrupted unlink",
+        )
+
     def test_rejects_directory_entry_added_after_descriptor_listing_snapshot(self):
         original_listdir = os.listdir
         added = False
