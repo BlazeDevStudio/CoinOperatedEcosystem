@@ -479,6 +479,65 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             "sandbox checkout must not use a mutable version tag",
         )
 
+    def test_probe_timeout_kills_descendants_that_keep_capture_pipes_open(self):
+        helper = self.helper_or_skip()
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = os.path.join(directory, "descendant.pid")
+            child_script = (
+                "import os, signal, sys, time; "
+                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "open(sys.argv[1], 'w', encoding='ascii').write(str(os.getpid())); "
+                "time.sleep(6)"
+            )
+            command = (
+                f"{shlex.quote(sys.executable)} -c {shlex.quote(child_script)} "
+                f"{shlex.quote(pid_path)} &\\nwait\\n"
+            )
+            fake = self.make_fake_bwrap(directory, command)
+            started = time.monotonic()
+            ready, detail = helper.check_host(fake, timeout_seconds=0.5)
+            elapsed = time.monotonic() - started
+
+            self.assertFalse(ready)
+            self.assertIn("timed out", detail.lower())
+            self.assertLess(
+                elapsed,
+                2.5,
+                "preflight timeout must not wait for a descendant holding captured pipes",
+            )
+            self.assertTrue(os.path.isfile(pid_path), "fake descendant did not start")
+            with open(pid_path, "r", encoding="ascii") as pid_file:
+                child_pid = int(pid_file.read())
+
+            def child_is_running():
+                try:
+                    with open(f"/proc/{child_pid}/stat", "r", encoding="ascii") as stat_file:
+                        state = stat_file.read().rsplit(")", 1)[1].split()[0]
+                    return state not in ("Z", "X")
+                except FileNotFoundError:
+                    return False
+                except OSError:
+                    try:
+                        os.kill(child_pid, 0)
+                    except ProcessLookupError:
+                        return False
+                    return True
+
+            deadline = time.monotonic() + 1.0
+            while child_is_running() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            try:
+                self.assertFalse(
+                    child_is_running(),
+                    "preflight timeout left its descendant process running",
+                )
+            finally:
+                if child_is_running():
+                    try:
+                        os.kill(child_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
 
 def load_runner():
     spec = importlib.util.spec_from_file_location(
@@ -885,65 +944,6 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                         process, child_pgid=child_pgid, grace_seconds=2.0
                     )
 
-
-    def test_probe_timeout_kills_descendants_that_keep_capture_pipes_open(self):
-        helper = self.helper_or_skip()
-        with tempfile.TemporaryDirectory() as directory:
-            pid_path = os.path.join(directory, "descendant.pid")
-            child_script = (
-                "import os, signal, sys, time; "
-                "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                "open(sys.argv[1], 'w', encoding='ascii').write(str(os.getpid())); "
-                "time.sleep(6)"
-            )
-            command = (
-                f"{shlex.quote(sys.executable)} -c {shlex.quote(child_script)} "
-                f"{shlex.quote(pid_path)} &\\nwait\\n"
-            )
-            fake = self.make_fake_bwrap(directory, command)
-            started = time.monotonic()
-            ready, detail = helper.check_host(fake, timeout_seconds=0.5)
-            elapsed = time.monotonic() - started
-
-            self.assertFalse(ready)
-            self.assertIn("timed out", detail.lower())
-            self.assertLess(
-                elapsed,
-                2.5,
-                "preflight timeout must not wait for a descendant holding captured pipes",
-            )
-            self.assertTrue(os.path.isfile(pid_path), "fake descendant did not start")
-            with open(pid_path, "r", encoding="ascii") as pid_file:
-                child_pid = int(pid_file.read())
-
-            def child_is_running():
-                try:
-                    with open(f"/proc/{child_pid}/stat", "r", encoding="ascii") as stat_file:
-                        state = stat_file.read().rsplit(")", 1)[1].split()[0]
-                    return state not in ("Z", "X")
-                except FileNotFoundError:
-                    return False
-                except OSError:
-                    try:
-                        os.kill(child_pid, 0)
-                    except ProcessLookupError:
-                        return False
-                    return True
-
-            deadline = time.monotonic() + 1.0
-            while child_is_running() and time.monotonic() < deadline:
-                time.sleep(0.02)
-            try:
-                self.assertFalse(
-                    child_is_running(),
-                    "preflight timeout left its descendant process running",
-                )
-            finally:
-                if child_is_running():
-                    try:
-                        os.kill(child_pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
 
 
 if __name__ == "__main__":
