@@ -1004,16 +1004,15 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             os.path.join(self.temp_dir, "fdopen-failure-staging"),
         )
         script_path = os.path.join(self.temp_dir, "fdopen-failure-build.sh")
-        original_open = os.open
+        original_open_new = packager._open_new_file_without_symlink_parents
         original_fdopen = os.fdopen
         captured = {}
 
-        def capture_script_open(path, flags, mode=0o777, *, dir_fd=None):
-            descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
-            if path == os.path.basename(script_path) and dir_fd is not None:
-                captured["script_fd"] = descriptor
-                captured["parent_fd"] = dir_fd
-            return descriptor
+        def capture_script_open(path, flags, mode):
+            descriptors = original_open_new(path, flags, mode)
+            if os.path.abspath(path) == os.path.abspath(script_path):
+                captured["script_fd"], captured["parent_fd"] = descriptors
+            return descriptors
 
         def fail_script_fdopen(file_descriptor, mode="r", *args, **kwargs):
             if mode == "w" and file_descriptor == captured.get("script_fd"):
@@ -1021,7 +1020,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             return original_fdopen(file_descriptor, mode, *args, **kwargs)
 
         with mock.patch.object(
-            packager.os, "open", side_effect=capture_script_open
+            packager, "_open_new_file_without_symlink_parents",
+            side_effect=capture_script_open,
         ):
             with mock.patch.object(
                 packager.os, "fdopen", side_effect=fail_script_fdopen
