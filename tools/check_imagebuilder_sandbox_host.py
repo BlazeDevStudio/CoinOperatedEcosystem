@@ -126,9 +126,26 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
 
         return True, "unprivileged user namespace, masked host-data paths and tmpfs write probe passed"
     except OSError as exc:
-        if process is not None and process.poll() is None:
-            _terminate_process_groups(process, grace_seconds=0.25)
-        return False, f"could not execute bubblewrap namespace probe: {exc}"
+        cleanup_detail = ""
+        if process is not None:
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                    process, grace_seconds=0.25
+                )
+                cleanup_detail = "\n".join(
+                    part
+                    for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
+                    if part
+                ).strip()
+            except Exception as cleanup_error:
+                cleanup_detail = (
+                    "process-group cleanup raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+        message = f"could not execute bubblewrap namespace probe: {exc}"
+        if cleanup_detail:
+            message = f"{message}; cleanup: {cleanup_detail}"
+        return False, message
     except BaseException as interruption:
         # KeyboardInterrupt/SystemExit can arrive while communicate() is
         # waiting. Terminate the whole session even if the leader has already
