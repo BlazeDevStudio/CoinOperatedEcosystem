@@ -163,7 +163,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         def fdopen_after_profile_mutation(descriptor, mode, *args, **kwargs):
             profile_file = original_fdopen(descriptor, mode, *args, **kwargs)
-            if mode == "r" and not mutation["performed"]:
+            if mode == "rb" and not mutation["performed"]:
                 with open(custom_profile, "r+b") as replacement:
                     replacement.seek(original_content.index(b"ew1200g-pro"))
                     replacement.write(b"zzzzzzzzzzz")
