@@ -276,9 +276,10 @@ def generate_network_uci(profile: dict) -> str:
 def calculate_overlay_size(staging_dir: str) -> int:
     """Calculate overlay size through pinned no-follow directory/entry descriptors.
 
-    Every directory remains pinned until its descendants have been scanned. Its
-    metadata is compared at exit so membership changes cannot silently omit
-    staged entries. The root name is also revalidated through its pinned parent.
+    Each directory stays pinned until its descendants are scanned. At exit,
+    compare its entry names and the identities of every observed entry so an
+    addition, removal, or replacement cannot silently change the size result.
+    The staging-root name is revalidated through its pinned parent as well.
     """
     if (
         os.name != "posix"
@@ -299,7 +300,16 @@ def calculate_overlay_size(staging_dir: str) -> int:
             metadata.st_dev,
             metadata.st_ino,
             metadata.st_mode,
+        )
+
+    def entry_snapshot(metadata):
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_mode,
             metadata.st_nlink,
+            metadata.st_uid,
+            metadata.st_gid,
             metadata.st_size,
             metadata.st_mtime_ns,
             metadata.st_ctime_ns,
@@ -312,6 +322,26 @@ def calculate_overlay_size(staging_dir: str) -> int:
     total_bytes = 0
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     entry_flags = os.O_PATH | os.O_NOFOLLOW
+
+    def check_root_name(opened_root):
+        try:
+            current_root = os.stat(
+                root_name,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            raise ValueError(
+                f"Staging root changed during overlay size walk: {staging_root}"
+            ) from exc
+        if (
+            not stat.S_ISDIR(current_root.st_mode)
+            or (current_root.st_dev, current_root.st_ino)
+            != (opened_root.st_dev, opened_root.st_ino)
+        ):
+            raise ValueError(
+                f"Staging root changed during overlay size walk: {staging_root}"
+            )
 
     def push_directory(directory_fd, relative_directory):
         try:
@@ -331,6 +361,7 @@ def calculate_overlay_size(staging_dir: str) -> int:
             "relative": relative_directory,
             "snapshot": directory_snapshot(opened_directory),
             "names": names,
+            "entries": {},
             "index": 0,
         })
 
@@ -385,12 +416,47 @@ def calculate_overlay_size(staging_dir: str) -> int:
             relative_directory = frame["relative"]
 
             if frame["index"] >= len(frame["names"]):
+                if relative_directory == ".":
+                    check_root_name(opened_root)
+
                 final_directory = os.fstat(directory_fd)
                 if directory_snapshot(final_directory) != frame["snapshot"]:
+                    raise ValueError(
+                        "Staged directory identity or mode changed during overlay "
+                        f"size walk: {relative_directory}"
+                    )
+
+                try:
+                    current_names = os.listdir(directory_fd)
+                except OSError as exc:
+                    raise ValueError(
+                        "Staged directory could not be rechecked during overlay "
+                        f"size walk: {relative_directory}"
+                    ) from exc
+                if set(current_names) != set(frame["names"]):
                     raise ValueError(
                         "Staged directory changed during overlay size walk: "
                         f"{relative_directory}"
                     )
+
+                for entry_name, expected_entry in frame["entries"].items():
+                    try:
+                        current_entry = os.stat(
+                            entry_name,
+                            dir_fd=directory_fd,
+                            follow_symlinks=False,
+                        )
+                    except OSError as exc:
+                        raise ValueError(
+                            "Staged entry changed during overlay size walk: "
+                            f"{relative_directory}/{entry_name}"
+                        ) from exc
+                    if entry_snapshot(current_entry) != expected_entry:
+                        raise ValueError(
+                            "Staged entry changed during overlay size walk: "
+                            f"{relative_directory}/{entry_name}"
+                        )
+
                 os.close(directory_fd)
                 directory_stack.pop()
                 continue
@@ -437,6 +503,7 @@ def calculate_overlay_size(staging_dir: str) -> int:
                         "Staged entry changed while opening during overlay "
                         f"size walk: {relative_entry}"
                     )
+                frame["entries"][entry_name] = entry_snapshot(current_entry)
 
                 # Rootfs symlinks are intentional and excluded from the byte
                 # budget, but O_PATH pins the link itself so a symlink-to-file
@@ -479,25 +546,7 @@ def calculate_overlay_size(staging_dir: str) -> int:
             finally:
                 os.close(entry_fd)
 
-        try:
-            current_root = os.stat(
-                root_name,
-                dir_fd=parent_fd,
-                follow_symlinks=False,
-            )
-        except OSError as exc:
-            raise ValueError(
-                f"Staging root changed during overlay size walk: {staging_root}"
-            ) from exc
-        if (
-            not stat.S_ISDIR(current_root.st_mode)
-            or (current_root.st_dev, current_root.st_ino)
-            != (opened_root.st_dev, opened_root.st_ino)
-        ):
-            raise ValueError(
-                f"Staging root changed during overlay size walk: {staging_root}"
-            )
-
+        check_root_name(opened_root)
         return (total_bytes + 1023) // 1024
     finally:
         if root_fd >= 0:
