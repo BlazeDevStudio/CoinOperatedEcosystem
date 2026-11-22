@@ -493,12 +493,12 @@ def main() -> int:
                     for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
                     if part
                 )
+                process_groups_cleanup_complete = True
             except Exception as cleanup_error:
                 cleanup_parts.append(
                     "process-group cleanup raised "
                     f"{type(cleanup_error).__name__}: {cleanup_error}"
                 )
-            process_groups_cleanup_complete = True
 
         if cleanup_parts:
             note = "ImageBuilder runner process-group cleanup: " + "\n".join(cleanup_parts)
