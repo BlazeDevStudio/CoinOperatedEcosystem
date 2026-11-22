@@ -99,6 +99,19 @@ def _require_descriptor_scan_support() -> None:
         )
 
 
+def _directory_scan_snapshot(info: os.stat_result) -> tuple[int, ...]:
+    """Capture directory metadata that changes when its entry set is modified."""
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
 def _scan_artifact_directory_fd(
     directory_descriptor: int,
     relative_prefix: str,
@@ -106,6 +119,9 @@ def _scan_artifact_directory_fd(
 ) -> None:
     """Hash one directory using pinned descriptors, never path-based parent traversal."""
     try:
+        directory_before = os.fstat(directory_descriptor)
+        if not stat.S_ISDIR(directory_before.st_mode):
+            raise ManifestError("artifact descriptor is not a directory")
         names = os.listdir(directory_descriptor)
     except (OSError, TypeError, NotImplementedError) as exc:
         raise ManifestError(f"could not enumerate artifact directory: {exc}") from exc
@@ -177,7 +193,7 @@ def _scan_artifact_directory_fd(
                     ) from exc
                 if (
                     not stat.S_ISDIR(current.st_mode)
-                    or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+                    or _directory_scan_snapshot(opened) != _directory_scan_snapshot(current)
                 ):
                     raise ManifestError(
                         f"artifact directory changed during scan: {relative}"
@@ -266,6 +282,16 @@ def _scan_artifact_directory_fd(
                 "size": total,
                 "sha256": digest.hexdigest(),
             }
+        )
+
+    try:
+        directory_after = os.fstat(directory_descriptor)
+    except (OSError, TypeError, NotImplementedError) as exc:
+        raise ManifestError(f"could not verify artifact directory after scan: {exc}") from exc
+    if _directory_scan_snapshot(directory_before) != _directory_scan_snapshot(directory_after):
+        raise ManifestError(
+            "artifact directory changed while scanning: "
+            f"{relative_prefix or '.'}"
         )
 
 
