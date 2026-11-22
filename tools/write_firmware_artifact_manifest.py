@@ -90,15 +90,12 @@ def _validate_metadata(
 def _require_descriptor_scan_support() -> None:
     """Require the POSIX descriptor-relative operations used by the safe scanner."""
     if (
-        not hasattr(os, "O_DIRECTORY")
+        os.name != "posix"
+        or not hasattr(os, "O_DIRECTORY")
         or not hasattr(os, "O_NOFOLLOW")
-        or os.listdir not in getattr(os, "supports_fd", set())
-        or os.open not in getattr(os, "supports_dir_fd", set())
-        or os.stat not in getattr(os, "supports_dir_fd", set())
-        or os.stat not in getattr(os, "supports_follow_symlinks", set())
     ):
         raise ManifestError(
-            "safe artifact traversal requires descriptor-relative directory operations"
+            "safe artifact traversal requires POSIX descriptor-relative directory operations"
         )
 
 
@@ -110,7 +107,7 @@ def _scan_artifact_directory_fd(
     """Hash one directory using pinned descriptors, never path-based parent traversal."""
     try:
         names = os.listdir(directory_descriptor)
-    except OSError as exc:
+    except (OSError, TypeError, NotImplementedError) as exc:
         raise ManifestError(f"could not enumerate artifact directory: {exc}") from exc
 
     names.sort()
@@ -140,6 +137,7 @@ def _scan_artifact_directory_fd(
 
         if stat.S_ISLNK(before.st_mode):
             raise ManifestError(
+                "refusing symlink or non-regular artifact file; "
                 f"refusing symlink or non-directory artifact path: {relative}"
             )
 
@@ -150,7 +148,7 @@ def _scan_artifact_directory_fd(
                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                     dir_fd=directory_descriptor,
                 )
-            except OSError as exc:
+            except (OSError, TypeError, NotImplementedError) as exc:
                 raise ManifestError(
                     f"artifact directory changed during scan: {relative}: {exc}"
                 ) from exc
@@ -173,7 +171,7 @@ def _scan_artifact_directory_fd(
                         dir_fd=directory_descriptor,
                         follow_symlinks=False,
                     )
-                except OSError as exc:
+                except (OSError, TypeError, NotImplementedError) as exc:
                     raise ManifestError(
                         f"artifact directory changed during scan: {relative}: {exc}"
                     ) from exc
@@ -227,7 +225,7 @@ def _scan_artifact_directory_fd(
                     dir_fd=directory_descriptor,
                     follow_symlinks=False,
                 )
-            except OSError as exc:
+            except (OSError, TypeError, NotImplementedError) as exc:
                 raise ManifestError(
                     f"artifact file changed while hashing: {relative}: {exc}"
                 ) from exc
@@ -237,7 +235,7 @@ def _scan_artifact_directory_fd(
                 or current.st_nlink != 1
             ):
                 raise ManifestError(f"artifact file changed while hashing: {relative}")
-        except OSError as exc:
+        except (OSError, TypeError, NotImplementedError) as exc:
             raise ManifestError(f"could not safely hash artifact {relative}: {exc}") from exc
         finally:
             if descriptor >= 0:
@@ -417,16 +415,13 @@ def _write_new_file(
 def write_artifact_manifest(**kwargs) -> tuple[str, str]:
     """Publish manifest and SHA256SUMS into the same directory that was scanned."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
-    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
-        raise ManifestError(
-            "durable artifact publication requires O_DIRECTORY and O_NOFOLLOW support"
-        )
+    _require_descriptor_scan_support()
     try:
         directory_descriptor = os.open(
             artifact_dir,
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
         )
-    except OSError as exc:
+    except (OSError, TypeError, NotImplementedError) as exc:
         raise ManifestError(f"artifact directory cannot be opened for durable publication: {exc}") from exc
 
     try:
