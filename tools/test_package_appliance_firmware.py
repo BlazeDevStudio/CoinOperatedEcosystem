@@ -1220,6 +1220,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             os.path.join(self.temp_dir, "open-interrupted-staging"),
         )
         original_open = packager.os.open
+        original_parent_open = packager._open_parent_directory_without_symlink_parents
 
         for interruption_type in (KeyboardInterrupt, SystemExit):
             with self.subTest(interruption=interruption_type.__name__):
@@ -1228,20 +1229,40 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                     f"{interruption_type.__name__.lower()}-open-interrupted-build.sh",
                 )
                 captured = {}
+                open_patcher = None
 
-                def interrupt_script_open(path, flags, mode=0o777, *, dir_fd=None):
-                    if dir_fd is not None and path == os.path.basename(script_path):
-                        captured["parent_fd"] = dir_fd
-                        raise interruption_type("simulated build-script open interruption")
-                    return original_open(path, flags, mode, dir_fd=dir_fd)
+                def capture_parent_then_interrupt(*args, **kwargs):
+                    nonlocal open_patcher
+                    directory_fd, filename = original_parent_open(*args, **kwargs)
+                    captured["parent_fd"] = directory_fd
 
-                with mock.patch.object(
-                    packager.os, "open", side_effect=interrupt_script_open
-                ):
-                    with self.assertRaisesRegex(
-                        interruption_type, "simulated build-script open interruption"
+                    def interrupt_final_open(path, flags, mode=0o777, *, dir_fd=None):
+                        if dir_fd == directory_fd and path == filename:
+                            raise interruption_type(
+                                "simulated build-script open interruption"
+                            )
+                        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+                    open_patcher = mock.patch.object(
+                        packager.os, "open", side_effect=interrupt_final_open
+                    )
+                    open_patcher.start()
+                    return directory_fd, filename
+
+                try:
+                    with mock.patch.object(
+                        packager,
+                        "_open_parent_directory_without_symlink_parents",
+                        side_effect=capture_parent_then_interrupt,
                     ):
-                        generate_build_script(manifest, script_path)
+                        with self.assertRaisesRegex(
+                            interruption_type,
+                            "simulated build-script open interruption",
+                        ):
+                            generate_build_script(manifest, script_path)
+                finally:
+                    if open_patcher is not None:
+                        open_patcher.stop()
 
                 self.assertIn("parent_fd", captured)
                 try:
