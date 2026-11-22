@@ -3038,3 +3038,83 @@ The live COE #35 changed-file list also includes `.github/workflows/hardware-ci.
 No merge, real-key signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
 
 ---
+
+
+## PHX-RELEASE UTC02 — pin nested artifact traversal to directory descriptors (2026-11-22)
+
+**Disposition:** one RELEASE-owned firmware-manifest traversal race was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. Strict NO Codex.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- PR: [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first race regression: [`96a1fe34`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/96a1fe341e955e68a07c3501866798988c145521).
+- First descriptor-traversal implementation attempt: [`8c6e49b2`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8c6e49b22398e9b565416992c6d3e0ed8c34ac74) — failed three test cases; superseded, not treated as green.
+- Corrected source/test SHA: [`b2ddc03c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b2ddc03c9ea2e48a4353564c5683147e4d409553).
+- Scope: `tools/write_firmware_artifact_manifest.py`, `tools/test_firmware_artifact_manifest.py`, and this handover only. No workflow, firmware sketch, board profile, shared interface, network policy, or other-role runtime source changed in this increment.
+
+### Defect reproduced and correction
+
+The previous scanner used `os.walk(root)`, checked nested directory entries by pathname, then opened payload files by pathname with `O_NOFOLLOW`. That flag protects only the final file component; a parent directory component can still be replaced by a symlink between the directory check and payload open.
+
+The deterministic regression creates `nested/extra.bin`, then at the file-open boundary renames `nested` outside the artifact root and replaces `nested` with a symlink to the displaced directory. The old scanner followed the parent symlink, opened the same inode, passed its before/after file identity comparison, and returned a manifest entry for a payload no longer contained by the artifact tree. The test requires a `ManifestError` and fails against the prior source with `ManifestError not raised`.
+
+The correction uses descriptor-relative traversal:
+
+- Open and pin the artifact root; pass the same root descriptor from publication into payload scanning.
+- Enumerate each directory through its pinned descriptor.
+- Inspect entries with `os.stat(..., dir_fd=..., follow_symlinks=False)`.
+- Open child directories relative to their pinned parent with `O_DIRECTORY | O_NOFOLLOW`, compare the opened inode with the pre-open entry, recurse through the child descriptor, and revalidate the parent entry after traversal.
+- Open payload files relative to the pinned directory descriptor with `O_NOFOLLOW`, compare file identity and link count, and revalidate the directory entry after hashing.
+- Fail closed when POSIX directory-descriptor flags are unavailable or descriptor-relative operations fail.
+
+The manifest schema, source/event SHA binding, sorted relative paths, payload sizes and hashes, SHA256SUMS format, exclusive no-overwrite publication, durable rollback, and board workflow interfaces are unchanged. The existing root-directory identity checks remain in place.
+
+The prior unreadable-walk regression now injects a descriptor-listing error. Existing symlinked-file, symlinked-directory, hard-link, incomplete-enumeration, root-replacement, deterministic-output and rollback tests remain in the suite.
+
+### Test-first and exact-source Actions
+
+**Test-only commit `96a1fe34` — expected RED**
+
+- Push shared/firmware [#44975708250](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44975708250), job `137065018668`: **170 tests executed; exactly one failure** in `test_writer_rejects_nested_directory_replaced_with_symlink_before_file_open`, with `ManifestError not raised`. Two intentional skips. Firmware syntax and shared-contract checks passed before the packaging test step; profile admission and board builds were skipped after the expected test failure.
+- PR shared/firmware [#44975712400](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44975712400): same test-first failure at the same test-only head.
+- Case-collision [#44975712291](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44975712291): **PASS**.
+- Sandbox [#44975712368](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44975712368): host preflight **31/31 PASS**, then Bubblewrap unavailable / exit 125; namespace and mandatory sandbox packaging steps **SKIPPED**.
+
+**First implementation attempt `8c6e49b2` — failed validation, corrected immediately**
+
+- Push shared/firmware [#44975911302](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44975911302), job `137065664668`: **170 tests executed; 3 failed**. The descriptor-support probe compared monkeypatched OS functions by identity, preventing the injected directory-scan and race paths from reaching their intended assertions; the generic symlink diagnostic also did not satisfy the existing symlinked-file assertion. This was an implementation/test-harness integration failure, not a passing run. The next commit removed the brittle function-identity probe, retained runtime fail-closed handling for unsupported descriptor operations, and made the symlink diagnostic satisfy both file and directory rejection contracts.
+
+**Corrected source/test head `b2ddc03c`**
+
+- Push shared/firmware [#44976106605](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44976106605), job `137066297818`: **170 tests PASS / 2 intentional skips**; firmware syntax, shared contracts and manifest durability marker PASS. The following ten-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266 and ESP32 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- PR shared/firmware [#44976110414](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44976110414), job `137066309756`: same exact-source result — **170 PASS / 2 skips**, followed by the ten-profile ULA admission failure; both board compile jobs **SKIPPED**.
+- PR ImageBuilder sandbox [#44976110521](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44976110521), job `137066309409`: host preflight **31/31 PASS**, then Bubblewrap unavailable / exit 125; unprivileged identity, namespace and mandatory sandbox packaging steps **SKIPPED**.
+- Case-collision [#44976110381](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44976110381), job `137066309178`: **PASS**.
+
+These are hosted synthetic filesystem race and unit-test results. No real ESP32/ESP8266 artifact was built at this head, because profile admission failed before the board jobs. No Bubblewrap namespace or ImageBuilder execution occurred.
+
+### Live ownership, integration and provenance snapshot
+
+- MASTER PR #288 live head: `b2a9c028314ad7eb269bdf9145ce7c1b1c612a9b`. `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; the RELEASE route is `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`. It does not authorize the inherited `.github/workflows/hardware-ci.yml` path in COE #35. No route or ownership change was made.
+- Experiments RELEASE #242 live head: `734b89d9e7792247e8376335c3f3685500ab3f89`. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) completed SUCCESS; build, parity and negative signing controls passed, but actual Authenticode signing steps and GitHub Release publication were skipped.
+- Experiments RELEASE #291 live head: `42797e2f3d65c30a1070caf49c93aebec149d897`. ESP32 compatibility PR run [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed the provenance suite and both ESP32 core 3.3.13 / 4.0.0 jobs. Full run [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at the mandatory handover-freshness gate; 14/14 target/platform build jobs passed, while simulations, update bundle, signing and publication were skipped. Windows run [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the shared handover gate before Windows build/publisher; those jobs were skipped. The 26-path branch remains mixed-owner (21 RELEASE / 3 CORE / 2 PISONET); RELEASE did not edit it.
+- COE integration #26 live head: `b382d233ff06c8791b1028bed3c617cc7b670d12`; eight existing workflow runs (five PR and three push) remain QUEUED, with no jobs executed.
+- COE parent #31 live head/base for child #35: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Shared run [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed validation and both ESP board build/upload jobs; case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed. Sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed at unprivileged UID-map setup (`Permission denied`); mandatory sandbox packaging regressions were skipped.
+- COE child #35 remains OPEN / DRAFT / UNMERGED. The source/test head for this increment is `b2ddc03c9ea2e48a4353564c5683147e4d409553`; this handover commit will be the docs head. The accumulated 12-path PR still includes inherited `.github/workflows/hardware-ci.yml` (83 additions / 9 deletions), outside the current MASTER RELEASE route. This activation did not modify that workflow; PHX-HARDWARE and PHX-MASTER must explicitly confirm ownership and review the inherited changes before any merge decision.
+- Cleanup-first #266 remains OPEN, **0/7** tracks checked. Issue #172's embedded PR-head index remains stale against live PR API heads; PHX-MASTER owns that correction.
+- Canonical private Drive project registry v11 and newer corrections were not surfaced through the authorized Library listing/search. Older v3–v7 snapshots were not substituted; no private file contents or identifiers were copied to GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review exact source/test SHA `b2ddc03c9ea2e48a4353564c5683147e4d409553`, focusing on dir_fd traversal, nested-directory replacement, symlink/hard-link rejection, file identity checks and deterministic manifests.
+2. **PHX-CORE / site authority / PHX-MASTER:** define and approve the site-scoped RFC 4193 ULA /48 and same-site multi-appliance provisioning contract; RELEASE must not invent a prefix or bypass profile admission.
+3. **PHX-INFRA:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces; no privileged installation or unsandboxed fallback.
+4. **PHX-HARDWARE / PHX-MASTER:** resolve ownership and review the inherited `.github/workflows/hardware-ci.yml` changes before any merge decision.
+5. **PHX-MASTER:** refresh stale #172 PR-head references while retaining `DRAFT_REVIEW_ONLY` ownership routes.
+6. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+---
