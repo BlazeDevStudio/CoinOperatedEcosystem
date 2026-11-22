@@ -1650,7 +1650,22 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
         ) from None
 
     try:
-        with os.fdopen(script_fd, "w", encoding="utf-8") as f:
+        try:
+            script_file = os.fdopen(script_fd, "w", encoding="utf-8")
+        except Exception as fdopen_error:
+            # fdopen owns the descriptor only when it returns a file object.
+            # If stream construction fails first, close the raw descriptor
+            # while the outer finally still releases the parent directory fd.
+            try:
+                os.close(script_fd)
+            except OSError as close_error:
+                if close_error.errno != errno.EBADF:
+                    raise OSError(
+                        "Build-script descriptor close failed after fdopen error: "
+                        + str(close_error)
+                    ) from fdopen_error
+            raise
+        with script_file as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
