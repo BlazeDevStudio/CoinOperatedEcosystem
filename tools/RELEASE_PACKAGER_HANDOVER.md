@@ -3590,3 +3590,44 @@ These are hosted synthetic tests. No real Bubblewrap namespace or ImageBuilder e
 5. Registry custodian restores authorized provenance-only access to canonical private registry v11.
 
 No merge, real-key signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC11 — reject router-profile mutation during read (2026-11-22)
+
+**Disposition:** one RELEASE-owned profile-input integrity defect was reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source/interface was changed.
+
+### Finding and bounded correction
+
+`load_profile()` opened a custom router-profile file through no-follow directory descriptors and verified that the opened object was regular, but then returned `json.load()` without checking whether the opened inode changed while its bytes were being read. A same-inode, same-size rewrite after the initial `fstat()` could therefore be accepted as the profile content.
+
+The correction reads the pinned descriptor as bytes, captures a second `fstat()`, and rejects when device, inode, mode, link count, size, nanosecond mtime, nanosecond ctime, or bytes-read length differs from the initial descriptor snapshot. Only after the stability check does it decode UTF-8 and run `json.loads()` with the existing recursive duplicate-key rejection hook. The bytes are parsed from the already-read immutable buffer. This is a read-stability check, not an atomic filesystem snapshot; callers must still keep release input trees quiescent.
+
+### Test-first lineage and retained harness corrections
+
+- Initial test commit [`b1cb8423`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b1cb84231c34addbd0d2565ad59ec80c9ddc321e) contained a literal backslash-n fixture typo; [run #45016415535](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016415535) failed at JSON decoding, so this was **not** counted as the expected RED.
+- Fixture correction [`f424da2e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f424da2e9cbdb544c5b54465379d6416a8a60bb2) produced the intended RED: [run #45016520903](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016520903), **181 tests, one expected failure** — baseline returned the rewritten same-inode profile instead of raising `ValueError`.
+- Source correction [`e3b7300c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e3b7300c286859aae41ff03f5ba54737da3a7ab2) changed profile reading to binary mode and added the post-read identity/length check. Its first run [#45016606866](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016606866) still failed because the test injector was looking for text mode `r`, so it did not mutate the now-binary `rb` stream. This was a test-harness mismatch, not counted as a source pass.
+- Harness correction [`0ee31b93`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0ee31b93aedcf939602402056b1777a603b818e2) targets `rb`; the final source/test suite then passed.
+
+### Exact source/test-head Actions at `0ee31b93`
+
+- Shared/firmware PR [#45016717731](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016717731): firmware hardening and shared-contract checks **PASS**; packaging/tool suite **181 tests PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`. The following all-profile staging gate **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP8266/ESP32 compile jobs were skipped. Overall workflow **FAILURE**, not green.
+- Shared/firmware push [#45016714666](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016714666): same exact-source result — **181 PASS / 2 skips**, followed by the same ULA admission failure.
+- Sandbox PR [#45016717777](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016717777) and push [#45016714688](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016714688): host-preflight suite **33/33 PASS**; Bubblewrap availability then **FAILED CLOSED** because `bwrap` is absent (exit 125). Namespace identity/preflight and mandatory sandbox packaging tests were skipped, not passed.
+- Case-collision guard [#45016717743](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45016717743): **PASS**.
+
+These are hosted synthetic CI results. No Bubblewrap namespace, real ImageBuilder execution, OpenWrt firmware artifact, target binary, physical hardware test or production release was performed.
+
+### Live ownership and next actions
+
+- Child PR #35 remains stacked on parent #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; the current source/test head at this entry is `0ee31b93aedcf939602402056b1777a603b818e2`.
+- MASTER #288 ownership routes remain `DRAFT_REVIEW_ONLY`; no migration or route promotion is authorized.
+- Experiments #242 remains a draft with its historical Windows CI success; signing/publication remain unproven.
+- Experiments #291 remains a mixed-owner draft (21 RELEASE / 3 CORE / 2 PISONET); its latest compatibility success does not clear the failed Full/Windows gates. No #291 path was changed.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero executed jobs.
+- Cleanup-first #266 remains OPEN, 0/7 checked.
+- Authorized Library search did not surface canonical private Drive registry v11; historical v3–v7 snapshots were not substituted and no private contents/identifiers were copied.
+
+**Next owners:** PHX-QA independently reviews source/test head `0ee31b93`; PHX-INFRA supplies a disposable no-secret Bubblewrap-capable runner with unprivileged user namespaces; PHX-CORE/MASTER define approved site ULA /48 authority; MASTER refreshes its own stale control-plane head index; registry custodian restores canonical v11 access.
+
+No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
