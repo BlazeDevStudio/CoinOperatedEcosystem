@@ -1652,7 +1652,7 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
     try:
         try:
             script_file = os.fdopen(script_fd, "w", encoding="utf-8")
-        except Exception as fdopen_error:
+        except BaseException as fdopen_error:
             # fdopen owns the descriptor only when it returns a file object.
             # If stream construction fails first, close the raw descriptor
             # while the outer finally still releases the parent directory fd.
