@@ -1866,6 +1866,81 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "ImageBuilder Makefile must not run after checksum utility pin failure",
         )
 
+    def test_generated_wrapper_rejects_python_interpreter_changed_after_generation(self):
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "staging_python_interpreter")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "python-interpreter-build.sh")
+        generate_build_script(manifest, wrapper)
+
+        with open(wrapper, "r", encoding="utf-8") as fp:
+            content = fp.read()
+
+        real_python = os.path.realpath(sys.executable)
+        python_marker = os.path.join(self.temp_dir, "pinned-python-executed")
+        fake_python = os.path.join(self.temp_dir, "pinned-python")
+        original_python = (
+            "#!/bin/sh\\n"
+            f"printf trusted-python-used > {shlex.quote(python_marker)}\\n"
+            f"exec {shlex.quote(real_python)} \\"$@\\"\\n"
+        ).encode("utf-8")
+        with open(fake_python, "wb") as fp:
+            fp.write(original_python)
+        os.chmod(fake_python, 0o755)
+        expected_python_sha256 = hashlib.sha256(original_python).hexdigest()
+
+        wrapper_lines = content.splitlines()
+        path_assignments = 0
+        digest_assignments = 0
+        for index, line in enumerate(wrapper_lines):
+            if line.startswith("PYTHON_PATH="):
+                wrapper_lines[index] = "PYTHON_PATH=" + shlex.quote(fake_python)
+                path_assignments += 1
+            elif line.startswith("PYTHON_SHA256="):
+                wrapper_lines[index] = "PYTHON_SHA256=" + expected_python_sha256
+                digest_assignments += 1
+        self.assertEqual(path_assignments, 1)
+        self.assertEqual(digest_assignments, 1)
+        with open(wrapper, "w", encoding="utf-8") as fp:
+            fp.write("\\n".join(wrapper_lines) + "\\n")
+        os.chmod(wrapper, 0o755)
+
+        # Simulate replacement after wrapper generation but before first interpreter use.
+        tampered_python = (
+            "#!/bin/sh\\n"
+            f"printf tampered-python-executed > {shlex.quote(python_marker)}\\n"
+            f"exec {shlex.quote(real_python)} \\"$@\\"\\n"
+        ).encode("utf-8")
+        with open(fake_python, "wb") as fp:
+            fp.write(tampered_python)
+        os.chmod(fake_python, 0o755)
+
+        builder = os.path.join(self.temp_dir, "python-interpreter-imagebuilder")
+        os.makedirs(builder)
+        make_marker = os.path.join(self.temp_dir, "python-interpreter-make-ran")
+        with open(os.path.join(builder, "Makefile"), "w", encoding="utf-8") as fp:
+            fp.write("image:\\n\\t@printf 'MAKE-RAN' > " + shlex.quote(make_marker) + "\\n")
+
+        env = os.environ.copy()
+        env["OPENWRT_IMAGEBUILDER_DIR"] = builder
+        env.pop("PHX_IMAGEBUILDER_SANDBOX_ACTIVE", None)
+        env.pop("PHX_BWRAP_OWNER_PROBE", None)
+        result = self._run_generated_wrapper(wrapper, self.temp_dir, env)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "pinned Python interpreter SHA-256 differs",
+            result.stderr,
+        )
+        self.assertFalse(
+            os.path.exists(python_marker),
+            "the pinned Python interpreter must be verified before it is executed",
+        )
+        self.assertFalse(
+            os.path.exists(make_marker),
+            "ImageBuilder Makefile must not run after Python interpreter pin failure",
+        )
+
     def test_generated_wrapper_does_not_accept_forged_sandbox_environment(self):
         profile = load_profile("gl-mt1300")
         staging = os.path.join(self.temp_dir, "staging_forged_sandbox")
