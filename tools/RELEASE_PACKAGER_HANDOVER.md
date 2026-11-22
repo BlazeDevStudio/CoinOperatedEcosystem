@@ -3939,3 +3939,49 @@ These are hosted synthetic CI results. No Bubblewrap namespace was entered, no m
 6. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC18 — Bubblewrap startup interruption cleanup (2026-11-22T18Z)
+
+**Existing draft:** [COE PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`. Base is #31 branch `phoenix/release-imagebuilder-failclosed-20261115` at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. This handover update is append-only and RELEASE-owned.
+
+### Finding
+
+The runner's interruption handler previously covered only `_communicate_with_timeout()`. An operator interruption during Bubblewrap namespace-info acquisition (`select.select()` or the info-pipe read) escaped that handler. The finalizer only attempted cleanup while the outer Bubblewrap leader still reported as running; if the leader had exited while a detached namespace child remained, cleanup could be skipped before the child PGID was recorded.
+
+### Test-first and source commits
+
+- Test-first regression commit: [`5e39e742`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5e39e742a7b4af8bc4531a38d349b8af728e4ecc). Added KeyboardInterrupt and SystemExit cases at both the namespace-info wait and read stages, with the outer leader already exited and a recoverable child PID in the info pipe.
+- Expected RED exact-head sandbox run: [#45054501065](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45054501065). 37 tests ran; four new cases failed because process-group cleanup was called zero times; the remaining 33 tests passed.
+- Source correction: [`b277b105`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b277b10530c3a21617e103a93724e43b94103e5a). Added nonblocking child-PGID recovery from the Bubblewrap info pipe and a top-level KeyboardInterrupt/SystemExit cleanup path that preserves the original interruption.
+- Cleanup retry correction: [`47e63b53`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/47e63b53be4a9ab2a5e45858b0f7b64e39aae9b0). Keep the finalizer eligible to retry if process-group cleanup itself raises.
+
+### Exact-source CI at source/test HEAD `47e63b53be4a9ab2a5e45858b0f7b64e39aae9b0`
+
+- Sandbox [#45054709665](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45054709665): **37/37 host-preflight tests PASS**. The workflow then failed closed because Bubblewrap is absent (exit 125); unprivileged namespace verification and mandatory packaging regressions were skipped.
+- Shared firmware/packaging [#45054709669](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45054709669): hardening, shared-contract/profile syntax and packaging/tool suite passed; **190 tests PASS / 2 intentional skips**. Overall workflow FAILED at all ten appliance profile admissions because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compilation jobs were skipped.
+- Case-collision [#45054725413](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45054725413): **PASS**.
+
+The RED runs are retained as expected regression evidence, not counted as successful validation. These are hosted CI results only. No actual Bubblewrap namespace execution or ImageBuilder package build was completed.
+
+### Current cross-repository snapshot
+
+- MASTER #288: `f6fc375e02d63afd34f00bad3cbbb989d1474c18`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`, RELEASE route `reimplementation-review` only. No migration authorization.
+- RELEASE #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT.
+- RELEASE #291: `42797e2f3d65c30a1070caf49c93aebec149d897`, OPEN / DRAFT / mixed-owner. Its handover contains a transposed source SHA (`1851f1d...`); the current commit parent is `185f1d06648beed70695528f2799d57154a69237`. The #291 handover also retains an older COE #35 head. This is a separate RELEASE-owned documentation correction; not changed in this activation.
+- COE #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, FROZEN; five workflows queued, zero jobs executed.
+- COE #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`, OPEN / DRAFT parent.
+- COE #35 starting head: `7c1496778c9809d7b13ad27fc2dd98dd3272b81f`; source/test head: `47e63b53be4a9ab2a5e45858b0f7b64e39aae9b0`.
+
+Cleanup-first #266 remains OPEN / 0 of 7 tracks complete. Canonical private Drive project registry v11 remains unavailable through the authorized Library surface; older snapshots were not substituted and no private registry contents were copied to GitHub.
+
+### Next owner actions
+
+1. PHX-QA: independently review the startup-interruption regression and cleanup behavior at exact source/test HEAD `47e63b53`.
+2. PHX-INFRA: provide an authorized disposable runner with Bubblewrap and working unprivileged namespaces; do not install privileged fallbacks.
+3. PHX-CORE / MASTER: establish approved site-scoped ULA /48 authority; keep all ten profiles fail-closed until then.
+4. PHX-MASTER: reconcile stale #172 embedded PR refs and inherited Hardware workflow ownership; keep the RELEASE route review-only.
+5. PHX-RELEASE: correct the transposed #291 source SHA and stale COE #35 head in the RELEASE-owned #291 handover on a later eligible activation, after re-reading the live branch.
+6. Registry custodian: restore authorized access to canonical private registry v11.
+
+No merge, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
