@@ -201,6 +201,10 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
         def interrupt_checksum_write(directory, filename, content, *args, **kwargs):
             if filename == CHECKSUMS_FILENAME:
+                self.assertTrue(
+                    manifest_path.exists(),
+                    "the first manifest must exist before checksum publication is interrupted",
+                )
                 raise KeyboardInterrupt("simulated checksum publication interruption")
             return original_write(directory, filename, content, *args, **kwargs)
 
@@ -224,8 +228,8 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse(checksums_path.exists())
         self.assertEqual(
             directory_sync_states,
-            [(True, False), (False, False)],
-            "the first manifest and its rollback must each be directory-synced",
+            [(False, False)],
+            "the rollback must directory-sync the removed manifest",
         )
 
     def test_writer_durably_rolls_back_pair_after_directory_fsync_failure(self):
