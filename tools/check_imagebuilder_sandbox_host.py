@@ -129,6 +129,39 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
         if process is not None and process.poll() is None:
             _terminate_process_groups(process, grace_seconds=0.25)
         return False, f"could not execute bubblewrap namespace probe: {exc}"
+    except BaseException as interruption:
+        # KeyboardInterrupt/SystemExit can arrive while communicate() is
+        # waiting. Terminate the whole session even if the leader has already
+        # exited: descendants may still be alive in its process group.
+        if process is not None:
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                    process, grace_seconds=0.25
+                )
+                cleanup_detail = "\\n".join(
+                    part
+                    for part in (
+                        _as_text(cleanup_stdout),
+                        _as_text(cleanup_stderr),
+                    )
+                    if part
+                ).strip()
+            except Exception as cleanup_error:
+                cleanup_detail = (
+                    "process-group cleanup raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+
+            if cleanup_detail:
+                note = (
+                    "ImageBuilder host preflight process-group cleanup: "
+                    + cleanup_detail
+                )
+                if hasattr(interruption, "add_note"):
+                    interruption.add_note(note)
+                else:
+                    print(note, file=sys.stderr)
+        raise
 
 
 def main() -> int:
