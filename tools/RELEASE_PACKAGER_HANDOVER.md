@@ -4034,3 +4034,45 @@ The expected RED runs are retained as regression evidence. The final host tests 
 5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
 
 No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC23 — preflight OSError cleanup after an exited Bubblewrap leader
+
+**Disposition: source/test verified; host sandbox and appliance admission remain blocked; PRODUCTION NO-GO.**
+
+### Defect and bounded correction
+
+`check_imagebuilder_sandbox_host.py::check_host()` previously attempted process-group cleanup in its `except OSError` path only when `process.poll() is None`. A communication/read OSError after the outer Bubblewrap leader exited therefore skipped cleanup even though a detached child/session could remain. The preflight now attempts cleanup for every successfully spawned process, independent of the leader poll state. It preserves the original OSError as the primary failure, includes cleanup stdout/stderr diagnostics, and records cleanup exceptions without silently converting the failed preflight into success. No privileged fallback, UID/GID helper, namespace relaxation, or fail-open path was added.
+
+### Test-first lineage
+
+- Initial regression: [`1670b07f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1670b07f5d20872890cb8a614f4ef6a5c8496e51) adds an OSError during `communicate()` with an already-exited outer leader and requires cleanup plus diagnostics.
+- Assertion-order refinement: [`ac34b14b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ac34b14bde03f5e1de418d620b481ba5cd118a74) checks the cleanup call before checking its diagnostics, making the missing cleanup attempt the direct RED signal.
+- Expected RED at exact test head `ac34b14b`: sandbox [#45082638415](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45082638415), job `137394019641`: 38 tests, one expected failure; `_terminate_process_groups` was called zero times. Shared [#45082638421](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45082638421), job `137394019952`: 191 tests, one expected failure and two intentional skips. Case-collision [#45082638455](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45082638455): PASS.
+- Source correction: [`e183d50d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e183d50d71aead0cccaa924b4697c11e39d57f76) removes the exited-leader guard, captures cleanup output, and preserves the primary OSError if cleanup itself raises.
+
+### Exact-source Actions at source/test HEAD `e183d50d71aead0cccaa924b4697c11e39d57f76`
+
+- Sandbox [#45082741942](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45082741942), job `137394329097`: **38/38 host-preflight tests PASS**. Bubblewrap availability then **FAILED CLOSED** because `bwrap` is not installed (exit 125); runner identity, namespace probe, and mandatory sandbox packaging regressions were **SKIPPED**.
+- Shared/firmware [#45082741998](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45082741998), job `137394329533`: firmware hardening and shared-contract checks passed; packaging/tool suite **191 PASS / 2 intentional skips**. All **10/10 appliance profiles failed closed** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32 and ESP8266 compile jobs were **SKIPPED**; overall workflow FAILURE, not green.
+- Case-collision [#45082742000](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45082742000), job `137394329055`: **PASS**.
+
+These are hosted CI results only. No Bubblewrap namespace was entered, no mandatory sandbox-dependent package run completed, no approved ImageBuilder appliance artifact was produced, and no physical hardware acceptance is implied.
+
+### Current coordination and ownership
+
+- COE PR #35 remains OPEN / DRAFT / UNMERGED on `phoenix/release-build-script-publication-safety-20261117`; source/test HEAD `e183d50d71aead0cccaa924b4697c11e39d57f76`. This UTC23 increment changed only `tools/test_imagebuilder_sandbox_host.py` and `tools/check_imagebuilder_sandbox_host.py`, plus this RELEASE-owned handover append. The accumulated inherited `.github/workflows/hardware-ci.yml` overlap remains untouched.
+- COE parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; integration #26 remains `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN, with five queued workflows and zero executed jobs.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; RELEASE #291 remains `cb5e5450a4fc2afc7f38cf426e51b390859a1dd0` (27 accumulated paths: 22 RELEASE / 3 CORE / 2 PISONET). Its latest observed Full/Windows failures remain CORE-owned freshness gates; ESP32 compatibility passed. No CORE/PISONET path was modified.
+- MASTER #288 current observed HEAD `72f1c39a951229ba3c9d5337c0e28ff5eb01d852`, OPEN / DRAFT / UNMERGED; 177 paths under `coordination/phoenix/`. `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`; RELEASE's workflow route remains `reimplementation-review`, not migration authorization.
+- Cleanup-first #266 remains OPEN, 0/7. The canonical private Drive project registry v11 and newer corrections were not accessible through the authorized Library/connector surface; historical v3-v7 files were not substituted and no private registry content was copied to GitHub.
+
+### Next owner actions and release limits
+
+1. PHX-QA independently reviews the OSError cleanup regression and failure-diagnostic preservation at exact source/test HEAD `e183d50d`.
+2. PHX-INFRA provides an authorized disposable, ephemeral, no-secret runner with Bubblewrap and working unprivileged namespaces; do not weaken the fail-closed boundary.
+3. PHX-CORE / PHX-MASTER establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+4. PHX-MASTER reconciles the issue #172 embedded refs and mixed-owner path overlaps; the inherited hardware-ci.yml path is not RELEASE's to overwrite.
+5. Registry custodian restores authorized provenance-only access to canonical private registry v11.
+
+No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
