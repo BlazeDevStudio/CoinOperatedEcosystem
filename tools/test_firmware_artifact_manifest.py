@@ -397,5 +397,37 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
             self.assertIn(f"--core-version {core_version}", block)
 
 
+    def test_rejects_payload_mutated_in_place_while_hashing(self):
+        payload_path = self.artifact_dir / "firmware.bin"
+        chunk_size = 1024 * 1024
+        payload_path.write_bytes(b"A" * (chunk_size + 64))
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_read = os.read
+        read_calls = 0
+
+        def mutate_after_first_chunk(descriptor, size):
+            nonlocal read_calls
+            chunk = original_read(descriptor, size)
+            if read_calls == 0:
+                # Preserve inode and length while changing bytes already read.
+                with open(payload_path, "r+b") as payload:
+                    payload.write(b"B" * chunk_size)
+                    payload.flush()
+                    os.fsync(payload.fileno())
+            read_calls += 1
+            return chunk
+
+        with mock.patch.object(
+            manifest_writer.os, "read", side_effect=mutate_after_first_chunk
+        ):
+            with self.assertRaisesRegex(ManifestError, "changed while hashing"):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertGreaterEqual(read_calls, 2)
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(checksums_path.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
