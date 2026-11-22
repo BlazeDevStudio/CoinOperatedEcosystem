@@ -8,10 +8,13 @@ from contextlib import redirect_stdout
 from io import StringIO
 import os
 import re
+import stat
 import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
+
+import write_firmware_artifact_manifest as manifest_writer
 
 from write_firmware_artifact_manifest import (
     CHECKSUMS_FILENAME,
@@ -123,6 +126,91 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
         self.assertEqual(manifest.read_bytes(), original_manifest)
         self.assertEqual(checksums.read_bytes(), original_checksums)
+
+    def test_writer_durably_rolls_back_manifest_after_checksum_creation_failure(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_write = manifest_writer._write_new_file
+        original_fsync = os.fsync
+        directory_sync_states = []
+
+        def fail_checksum_write(directory, filename, content, *args, **kwargs):
+            if filename == CHECKSUMS_FILENAME:
+                raise FileExistsError("injected checksum creation failure")
+            return original_write(directory, filename, content, *args, **kwargs)
+
+        def observe_directory_fsync(descriptor):
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_sync_states.append((manifest_path.exists(), checksums_path.exists()))
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            manifest_writer, "_write_new_file", side_effect=fail_checksum_write
+        ):
+            with mock.patch.object(
+                manifest_writer.os, "fsync", side_effect=observe_directory_fsync
+            ):
+                with self.assertRaisesRegex(
+                    FileExistsError, "injected checksum creation failure"
+                ):
+                    write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(checksums_path.exists())
+        self.assertEqual(directory_sync_states, [(False, False)])
+
+    def test_writer_durably_rolls_back_pair_after_directory_fsync_failure(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_fsync = os.fsync
+        directory_sync_states = []
+
+        def fail_first_directory_fsync(descriptor):
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_sync_states.append((manifest_path.exists(), checksums_path.exists()))
+                if len(directory_sync_states) == 1:
+                    raise OSError("injected directory fsync failure")
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            manifest_writer.os, "fsync", side_effect=fail_first_directory_fsync
+        ):
+            with self.assertRaisesRegex(OSError, "injected directory fsync failure"):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(checksums_path.exists())
+        self.assertEqual(
+            directory_sync_states,
+            [(True, True), (False, False)],
+            "rollback must be directory-synced after both published names are removed",
+        )
+
+    def test_writer_reports_unconfirmed_rollback_when_output_removal_fails(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        original_write = manifest_writer._write_new_file
+        original_unlink = os.unlink
+
+        def fail_checksum_write(directory, filename, content, *args, **kwargs):
+            if filename == CHECKSUMS_FILENAME:
+                raise FileExistsError("injected checksum creation failure")
+            return original_write(directory, filename, content, *args, **kwargs)
+
+        def fail_manifest_unlink(path, *args, **kwargs):
+            if os.fspath(path) == str(manifest_path):
+                raise PermissionError("injected rollback unlink denial")
+            return original_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(
+            manifest_writer, "_write_new_file", side_effect=fail_checksum_write
+        ):
+            with mock.patch.object(
+                manifest_writer.os, "unlink", side_effect=fail_manifest_unlink
+            ):
+                with self.assertRaisesRegex(ManifestError, "rollback could not be confirmed"):
+                    write_artifact_manifest(**self.kwargs())
+
+        self.assertTrue(manifest_path.exists())
 
     def test_rejects_empty_firmware_binary(self):
         (self.artifact_dir / "firmware.bin").write_bytes(b"")
