@@ -109,10 +109,35 @@ def load_profile(profile_id_or_path: str) -> dict:
         if not stat.S_ISREG(profile_stat.st_mode):
             raise ValueError(f"Router profile is not a regular file: {path}")
 
-        with os.fdopen(profile_fd, "r", encoding="utf-8") as profile_file:
+        with os.fdopen(profile_fd, "rb") as profile_file:
             profile_fd = -1
-            return json.load(
-                profile_file,
+            content = profile_file.read()
+            after_read_stat = os.fstat(profile_file.fileno())
+            before_read_identity = (
+                profile_stat.st_dev,
+                profile_stat.st_ino,
+                profile_stat.st_mode,
+                profile_stat.st_nlink,
+                profile_stat.st_size,
+                profile_stat.st_mtime_ns,
+                profile_stat.st_ctime_ns,
+            )
+            after_read_identity = (
+                after_read_stat.st_dev,
+                after_read_stat.st_ino,
+                after_read_stat.st_mode,
+                after_read_stat.st_nlink,
+                after_read_stat.st_size,
+                after_read_stat.st_mtime_ns,
+                after_read_stat.st_ctime_ns,
+            )
+            if (
+                after_read_identity != before_read_identity
+                or len(content) != profile_stat.st_size
+            ):
+                raise ValueError(f"Router profile changed while reading: {path}")
+            return json.loads(
+                content.decode("utf-8"),
                 object_pairs_hook=_reject_duplicate_json_object_keys,
             )
     except FileNotFoundError as exc:
