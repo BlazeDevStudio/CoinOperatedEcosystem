@@ -3023,6 +3023,10 @@ These are hosted CI and deterministic filesystem fault-injection results. No rea
 - Cleanup-first #266 remains OPEN, 0/7 tracks checked.
 - Canonical private Drive registry v11 and newer corrections were not surfaced through authorized Library access. Older snapshots were not substituted; no private contents or identifiers were copied to GitHub.
 
+### Accumulated child-PR ownership hold
+
+The live COE #35 changed-file list also includes `.github/workflows/hardware-ci.yml` (83 additions / 9 deletions), which is not part of parent #31's changed-file list. The current MASTER `OWNERSHIP_ROUTES.json` lists the RELEASE workflow route as `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`; it does not list `hardware-ci.yml`. The current role assignment says RELEASE owns its release workflow/package paths, and the route manifest remains DRAFT_REVIEW_ONLY. **This UTC01 activation did not modify `hardware-ci.yml`**; no further edit, revert, migration or merge of that file is authorized by this task. PHX-HARDWARE and PHX-MASTER must explicitly confirm ownership and review the inherited manifest-integration changes before any merge decision. The current UTC01 source/test change is limited to the two RELEASE manifest writer/test files.
+
 ### Next owner actions
 
 1. **PHX-QA:** independently review exact source/test SHA `94fffa0343f2481a3098e96885e6b9cd15f8d671`, especially directory identity pinning, dir-fd output creation/rollback, and both pre/post-publication identity checks.
