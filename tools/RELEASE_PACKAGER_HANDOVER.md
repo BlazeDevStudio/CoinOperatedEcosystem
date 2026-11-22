@@ -3985,3 +3985,52 @@ Cleanup-first #266 remains OPEN / 0 of 7 tracks complete. Canonical private Driv
 6. Registry custodian: restore authorized access to canonical private registry v11.
 
 No merge, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC22 — finalizer cleanup for unexpected startup exceptions (2026-11-22T22Z)
+
+**Disposition:** TEST-FIRST RED REPRODUCED / SOURCE FIX COMMITTED / FINAL-HEAD HOST TESTS PASS / MANDATORY BUBBLEWRAP BLOCKED / SITE ULA ADMISSION BLOCKED / PRODUCTION NO-GO.
+
+Existing child draft: [COE PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`, based on parent #31 at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. PR remains OPEN / DRAFT / UNMERGED.
+
+### Finding
+
+The runner already handled `KeyboardInterrupt` and `SystemExit` during Bubblewrap namespace-info acquisition. A different exception class (reproduced with `RuntimeError`) during `select.select()` or the info-pipe read bypassed those handlers. The old finalizer then closed the namespace-info pipe first and attempted cleanup only while `process.poll() is None`. When the outer Bubblewrap leader had already exited, the finalizer skipped cleanup even though the detached child process group could remain alive.
+
+### Test-first and source commits
+
+- Test-only regression: [`0ff24d0e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/0ff24d0e6e9d5e8bc783b99d24328e20e0e25cf3). Extended the startup exception matrix to cover `RuntimeError` at both namespace-info wait and read stages, with an exited outer leader and child PID available in the info pipe.
+- Expected RED, PR sandbox [#45077498494](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077498494), job `137377896296`: 37 tests ran; exactly two new RuntimeError cases failed because `_terminate_process_groups` was called zero times. Push sandbox [#45077493369](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077493369), job `137377879946`, reproduced the same two failures. Shared PR [#45077498450](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077498450) and push [#45077493266](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077493266) also failed at the same packaging/tool regression; downstream profile/board jobs were skipped. Case-collision [#45077498506](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077498506) PASS.
+- Source correction: [`d5754bd2`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d5754bd2e96b4ae96b9dfc275d05c9e5ff3a4985). The finalizer now attempts process-group cleanup regardless of the outer leader poll state, recovers the child PGID before closing the info pipe, and attaches cleanup diagnostics to the active exception instead of replacing it.
+- Diagnostic-format follow-up: [`11634d25`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/11634d254f2e37beb07fed6a008bd327b2fc70f3) uses a real newline separator in finalizer cleanup notes.
+- Exact final source/test anchor: `11634d254f2e37beb07fed6a008bd327b2fc70f3`.
+
+### Exact-source Actions at final source/test HEAD `11634d254f2e37beb07fed6a008bd327b2fc70f3`
+
+- PR sandbox [#45077793364](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077793364), job `137378827133`: **37/37 host-preflight tests PASS**, including both new RuntimeError cases. The next Bubblewrap availability gate **FAILED CLOSED** because Bubblewrap is not installed (exit 125); identity, namespace and mandatory sandbox packaging steps were **SKIPPED**.
+- Push sandbox [#45077797126](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077797126), job `137378839946`: **37/37 host-preflight tests PASS**; Bubblewrap availability then **FAILED CLOSED** with exit 125; namespace and mandatory sandbox packaging steps were **SKIPPED**.
+- PR shared/hardware [#45077797143](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077797143), job `137378839754`: firmware-hardening/shared-contract checks passed; packaging/tool suite **190 PASS / 2 intentional skips**. All **10/10** appliance profiles then failed closed because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compile jobs were **SKIPPED** after profile admission failed.
+- Push shared/hardware [#45077793366](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077793366), job `137378827120`: same **190 PASS / 2 intentional skips**, followed by **10/10 profile admission failures** for the same missing ULA authority; board compile jobs **SKIPPED**.
+- Case-collision PR [#45077797103](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45077797103): **PASS**.
+
+The expected RED runs are retained as regression evidence. The final host tests are hosted CI evidence only. No Bubblewrap namespace was entered, no mandatory sandbox packaging suite ran, no approved ImageBuilder appliance artifact was produced, and no physical hardware acceptance is implied.
+
+### Live coordination snapshot and owner boundaries
+
+- MASTER #288: `1675fe82b12b5309f12df12ec1a4ab2d979d6ac4`, OPEN / DRAFT; `coordination/phoenix/OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`. RELEASE workflow route remains `reimplementation-review`; no migration/copy authorization.
+- Experiments RELEASE #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT.
+- Experiments RELEASE #291: `cb5e5450a4fc2afc7f38cf426e51b390859a1dd0`, OPEN / DRAFT / mixed-owner (27 paths: 22 RELEASE, 3 CORE, 2 PISONET). Its latest observed Full/Windows workflows fail at the CORE-owned freshness gate; ESP32 compatibility passed. No CORE or PISONET source was changed by this task.
+- COE integration #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN; five workflows queued, zero jobs executed.
+- COE parent #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`, OPEN / DRAFT.
+- COE child #35: final source/test head `11634d254f2e37beb07fed6a008bd327b2fc70f3`; this UTC22 task changed only the RELEASE-owned runner, its host test, and this handover.
+- Cleanup-first #266 remains OPEN, **0/7 tracks complete**. The canonical private Drive registry v11 was not surfaced by exact-name Library search; only checkpoint references and historical v3–v7 snapshots appeared. No older snapshot was substituted and no private registry contents or identifiers were copied to GitHub.
+
+### Next owner actions and release limits
+
+1. PHX-QA independently reviews the generic-exception cleanup and original-exception preservation at exact source/test HEAD `11634d25`.
+2. PHX-INFRA supplies an authorized disposable, ephemeral, no-secret runner with Bubblewrap and working unprivileged user namespaces; do not weaken the fail-closed boundary.
+3. PHX-CORE / PHX-MASTER define approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+4. PHX-CORE refreshes its own stale project handover; MASTER owns the #172 embedded-ref index and mixed-owner routing.
+5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11.
+
+No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
