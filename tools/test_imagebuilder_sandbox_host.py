@@ -323,11 +323,11 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
                 )
 
         self.assertFalse(ready)
+        popen.assert_called_once()
+        terminate.assert_called_once_with(process, grace_seconds=0.25)
         self.assertIn("could not execute bubblewrap namespace probe", detail)
         self.assertIn("capture pipe failed", detail)
         self.assertIn("detached child group cleanup diagnostic", detail)
-        popen.assert_called_once()
-        terminate.assert_called_once_with(process, grace_seconds=0.25)
 
 
     def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
