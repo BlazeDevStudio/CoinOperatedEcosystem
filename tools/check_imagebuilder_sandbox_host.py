@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import imagebuilder_bwrap_trust
+from run_imagebuilder_sandbox import _terminate_process_groups
 from imagebuilder_bwrap_trust import PRIVATE_HOST_PATHS, private_host_mount_args as _private_host_mount_args
 
 PROBE_TIMEOUT_SECONDS = 10
@@ -73,29 +74,61 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
     if timeout_seconds <= 0:
         return False, "bubblewrap preflight timeout must be positive"
 
+    process = None
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             build_probe_command(executable),
             cwd="/",
             env={"PATH": SANDBOX_PATH, "LANG": "C"},
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout_seconds,
-            check=False,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired as exc:
-        detail = (_as_text(exc.stderr) or _as_text(exc.stdout)).strip()
-        message = f"bubblewrap namespace probe timed out after {timeout_seconds:g} seconds"
-        return False, f"{message}: {detail}" if detail else message
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                process, grace_seconds=0.25
+            )
+            detail = "\\n".join(
+                part
+                for part in (
+                    _as_text(cleanup_stdout),
+                    _as_text(cleanup_stderr),
+                    _as_text(exc.stdout),
+                    _as_text(exc.stderr),
+                )
+                if part
+            ).strip()
+            message = f"bubblewrap namespace probe timed out after {timeout_seconds:g} seconds"
+            return False, f"{message}: {detail}" if detail else message
+
+        cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+            process, grace_seconds=0.25
+        )
+        stdout = stdout or cleanup_stdout
+        stderr = stderr or cleanup_stderr
+        cleanup_error_markers = (
+            "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
+            "RELEASE-BLOCKED: could not signal sandbox process group",
+            "could not kill bubblewrap process:",
+            "bubblewrap process did not exit after SIGKILL",
+        )
+        if any(marker in cleanup_stderr for marker in cleanup_error_markers):
+            detail = cleanup_stderr.strip()
+            return False, f"bubblewrap namespace probe cleanup failed: {detail}"
+
+        if process.returncode != 0:
+            detail = (stderr or stdout).strip()
+            message = f"bubblewrap namespace probe exited with status {process.returncode}"
+            return False, f"{message}: {detail}" if detail else message
+
+        return True, "unprivileged user namespace, masked host-data paths and tmpfs write probe passed"
     except OSError as exc:
+        if process is not None and process.poll() is None:
+            _terminate_process_groups(process, grace_seconds=0.25)
         return False, f"could not execute bubblewrap namespace probe: {exc}"
-
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        message = f"bubblewrap namespace probe exited with status {result.returncode}"
-        return False, f"{message}: {detail}" if detail else message
-
-    return True, "unprivileged user namespace, masked host-data paths and tmpfs write probe passed"
 
 
 def main() -> int:
