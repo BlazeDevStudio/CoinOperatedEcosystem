@@ -159,6 +159,75 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse(checksums_path.exists())
         self.assertEqual(directory_sync_states, [(False, False)])
 
+    def test_write_new_file_removes_partial_output_after_keyboard_interrupt(self):
+        output_path = self.artifact_dir / "interrupted.bin"
+        directory_descriptor = os.open(
+            self.artifact_dir,
+            os.O_RDONLY | os.O_DIRECTORY,
+        )
+        self.addCleanup(os.close, directory_descriptor)
+        original_fsync = os.fsync
+        fsync_calls = 0
+
+        def interrupt_first_sync(descriptor):
+            nonlocal fsync_calls
+            fsync_calls += 1
+            if fsync_calls == 1:
+                raise KeyboardInterrupt("simulated partial-output interruption")
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            manifest_writer.os, "fsync", side_effect=interrupt_first_sync
+        ):
+            with self.assertRaisesRegex(
+                KeyboardInterrupt, "simulated partial-output interruption"
+            ):
+                manifest_writer._write_new_file(
+                    str(self.artifact_dir),
+                    output_path.name,
+                    b"partial artifact bytes",
+                    directory_descriptor=directory_descriptor,
+                )
+
+        self.assertEqual(fsync_calls, 2, "partial-file removal must be directory-synced")
+        self.assertFalse(output_path.exists())
+
+    def test_writer_rolls_back_manifest_pair_after_keyboard_interrupt(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_write = manifest_writer._write_new_file
+        original_fsync = os.fsync
+        directory_sync_states = []
+
+        def interrupt_checksum_write(directory, filename, content, *args, **kwargs):
+            if filename == CHECKSUMS_FILENAME:
+                raise KeyboardInterrupt("simulated checksum publication interruption")
+            return original_write(directory, filename, content, *args, **kwargs)
+
+        def observe_directory_fsync(descriptor):
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_sync_states.append((manifest_path.exists(), checksums_path.exists()))
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            manifest_writer, "_write_new_file", side_effect=interrupt_checksum_write
+        ):
+            with mock.patch.object(
+                manifest_writer.os, "fsync", side_effect=observe_directory_fsync
+            ):
+                with self.assertRaisesRegex(
+                    KeyboardInterrupt, "simulated checksum publication interruption"
+                ):
+                    write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(checksums_path.exists())
+        self.assertEqual(
+            directory_sync_states,
+            [(True, False), (False, False)],
+            "the first manifest and its rollback must each be directory-synced",
+        )
+
     def test_writer_durably_rolls_back_pair_after_directory_fsync_failure(self):
         manifest_path = self.artifact_dir / MANIFEST_FILENAME
         checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
