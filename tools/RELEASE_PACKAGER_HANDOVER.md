@@ -3535,3 +3535,58 @@ These are hosted synthetic CI results. No actual Bubblewrap namespace, OpenWrt I
 5. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC10 — rollback cleanup interruptions (2026-11-22T10Z)
+
+One bounded RELEASE-owned manifest-publication defect was reproduced test-first and corrected on this existing draft branch. This does **not** establish that rollback can always remove files when the filesystem itself refuses/intercepts cleanup; it ensures cleanup interruptions are recorded, remaining cleanup operations are still attempted, directory durability is attempted, and the operation fails closed rather than letting a second KeyboardInterrupt/SystemExit abort the rollback loop silently.
+
+### Defect and correction
+
+The existing writer already caught `BaseException` around the primary partial-file write and manifest-pair publication. However, nested rollback operations caught only `OSError`. A `KeyboardInterrupt` or `SystemExit` raised by descriptor close, unlink, or directory fsync during rollback could escape the cleanup scope before the remaining rollback work and its durability attempt.
+
+The correction changes only those rollback cleanup handlers to catch `BaseException`, records the exception type and message, continues with remaining cleanup operations, and raises the existing `ManifestError` when rollback cannot be confirmed, chained from the original write/publication failure. No retry is claimed for an unlink that itself was interrupted; the residual file is explicitly reported as an unconfirmed rollback.
+
+### Test-first progression
+
+- Test-only regression commit: [`5d556ff5`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5d556ff5aba1ca31f3aa734a0bae1e55854af569).
+- Expected RED: shared/packaging [run #45013797904](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45013797904), job `137181652312`. The first new test reproduced an uncaught `KeyboardInterrupt` from partial-output unlink; the job exited 130. The second new regression was not reached because the uncaught interrupt aborted the unittest process. This is an expected baseline failure, not a pass.
+- Test-only case-collision [run #45013797895](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45013797895): PASS.
+- Test-only sandbox [run #45013797886](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45013797886): host preflight 33/33 PASS; Bubblewrap unavailable, exit 125; namespace and mandatory sandbox packaging tests SKIPPED.
+- Source correction: [`c1771e51`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c1771e5139ec9b70804d44fd96498ee188a58deb), limited to rollback exception handling in `tools/write_firmware_artifact_manifest.py`.
+
+### Exact source/test-head Actions at `c1771e51`
+
+- Shared/firmware [run #45013908817](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45013908817), job `137181997913`: **180 tests PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`. Firmware hardening and shared contracts PASS. All ten appliance profiles then **FAILED CLOSED** because approved site-scoped RFC 4193 ULA /48 authority remains undefined; ESP32/ESP8266 compile jobs SKIPPED. Overall workflow FAILURE, not green.
+- Mandatory sandbox [run #45013908869](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45013908869), job `137181998308`: host preflight **33/33 PASS**; Bubblewrap missing, exit 125; unprivileged identity, namespace probe and mandatory sandbox packaging regressions SKIPPED.
+- Case-collision [run #45013908859](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45013908859): PASS.
+
+These are hosted synthetic tests. No real Bubblewrap namespace or ImageBuilder execution occurred.
+
+### Exact branch / coordination state
+
+- PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`, parent #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-only commit: `5d556ff5aba1ca31f3aa734a0bae1e55854af569`.
+- Source/test commit: `c1771e5139ec9b70804d44fd96498ee188a58deb`.
+- This increment changes only `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this RELEASE handover.
+- The accumulated PR diff still includes inherited `.github/workflows/hardware-ci.yml`; it was not changed and remains outside the current RELEASE ownership route.
+- MASTER #288 current PR API head: `844337af4c6c7ff1833fa9a68414d3eba1b14005`; `OWNERSHIP_ROUTES.json` remains blob `e4db324315a1b3543fec17a148fbf960170fcb29`, `DRAFT_REVIEW_ONLY`; RELEASE's Experiments workflow route remains `reimplementation-review`.
+- Experiments #242 current head `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) SUCCESS.
+- Experiments #291 current PR API head `42797e2f3d65c30a1070caf49c93aebec149d897` (the #172 body has a stale embedded head). Compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) SUCCESS; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) FAILURE at CORE-owned project-handover freshness after target builds; Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) FAILURE at PISONET-owned `negative-selftest.ps1` because `$buildWorkflow` is unset. Signing/publishing skipped; no #291 paths changed.
+- COE #26 current head `b382d233ff06c8791b1028bed3c617cc7b670d12`; five PR workflows remain QUEUED with zero jobs executed.
+- COE #31 current head/base candidate `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; prior parent shared/case runs #44222517238/#44222517258 PASS; mandatory sandbox #44222517263 FAILED at unprivileged namespace UID-map setup. Those are #31 parent runs, not #35 exact-head acceptance.
+- PR #35 remains OPEN / DRAFT / UNMERGED. Independent PR reviews: 0; review threads: 0.
+- Control-plane #172 body still contains stale embedded PR-head references; MASTER should reconcile its own index. Cleanup-first #266 remains OPEN with all seven role checkboxes unchecked.
+- Canonical private Drive registry v11 was not found in authorized Library search; no older snapshot was substituted and no private contents were copied to GitHub.
+
+### Next actions / release limits
+
+1. PHX-QA independently reviews exact source/test SHA `c1771e51` and the two cleanup-interruption regressions.
+2. PHX-INFRA supplies an authorized disposable, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces.
+3. PHX-CORE / PHX-MASTER define approved site-scoped RFC 4193 ULA /48 authority; no synthetic prefix substitution.
+4. PHX-MASTER refreshes stale #172 PR-head references and preserves the review-only ownership route.
+5. Registry custodian restores authorized provenance-only access to canonical private registry v11.
+
+No merge, real-key signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
