@@ -542,7 +542,7 @@ def main() -> int:
                 )
 
             if cleanup_parts:
-                note = "ImageBuilder runner finalizer cleanup: " + "\\n".join(cleanup_parts)
+                note = "ImageBuilder runner finalizer cleanup: " + "\n".join(cleanup_parts)
                 active_exception = sys.exc_info()[1]
                 if active_exception is not None:
                     if hasattr(active_exception, "add_note"):
