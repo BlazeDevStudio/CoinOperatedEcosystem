@@ -996,6 +996,55 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "A partial generated script must never be published executable",
         )
 
+    def test_generate_build_script_closes_raw_descriptor_when_fdopen_fails(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile,
+            DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "fdopen-failure-staging"),
+        )
+        script_path = os.path.join(self.temp_dir, "fdopen-failure-build.sh")
+        original_open = os.open
+        original_fdopen = os.fdopen
+        captured = {}
+
+        def capture_script_open(path, flags, mode=0o777, *, dir_fd=None):
+            descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+            if path == os.path.basename(script_path) and dir_fd is not None:
+                captured["script_fd"] = descriptor
+                captured["parent_fd"] = dir_fd
+            return descriptor
+
+        def fail_script_fdopen(file_descriptor, mode="r", *args, **kwargs):
+            if mode == "w" and file_descriptor == captured.get("script_fd"):
+                raise OSError("simulated generated-script fdopen failure")
+            return original_fdopen(file_descriptor, mode, *args, **kwargs)
+
+        with mock.patch.object(
+            packager.os, "open", side_effect=capture_script_open
+        ):
+            with mock.patch.object(
+                packager.os, "fdopen", side_effect=fail_script_fdopen
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "simulated generated-script fdopen failure"
+                ):
+                    generate_build_script(manifest, script_path)
+
+        self.assertIn("script_fd", captured)
+        self.assertIn("parent_fd", captured)
+        for descriptor_name in ("script_fd", "parent_fd"):
+            with self.subTest(descriptor=descriptor_name):
+                with self.assertRaises(OSError):
+                    os.fstat(captured[descriptor_name])
+
+        self.assertTrue(os.path.isfile(script_path))
+        self.assertEqual(
+            os.stat(script_path).st_mode & 0o777,
+            0o600,
+            "A failed stream construction must leave the script non-executable",
+        )
+
     def test_generate_build_script_refuses_existing_file_without_overwriting(self):
         profile = load_profile("gl-mt1300")
         manifest = stage_overlay(
