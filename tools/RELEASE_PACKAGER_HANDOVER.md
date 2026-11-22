@@ -3481,3 +3481,57 @@ The new host regression launches a disposable fake preflight executable with a S
 6. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
 
 No merge, real-key signing, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC09 — reject artifact-directory membership changes during manifest scan (2026-11-22)
+
+**Disposition:** one RELEASE-owned firmware-manifest integrity defect reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+`tools/write_firmware_artifact_manifest.py::_scan_artifact_directory_fd()` enumerated a directory once with `os.listdir(directory_fd)`, then hashed only the returned names. It pinned individual file identity and nested directory identity, but did not compare directory-entry metadata around the full traversal. A file created after the listing snapshot but before traversal completion could therefore be omitted from both `artifact-manifest.json` and `SHA256SUMS` without an error.
+
+The RELEASE-owned correction records a descriptor `fstat` snapshot before enumeration and after each directory's full traversal. It compares device, inode, mode, link count, size, `mtime_ns` and `ctime_ns`; nested-directory metadata is rechecked after recursion. A detected membership/metadata change raises `ManifestError` and prevents manifest publication. This is mutation detection during traversal, not an atomic filesystem snapshot; the build output tree must remain quiescent, and concurrent writes after the final verification are not represented as impossible.
+
+### Test-first progression
+
+- Test-only regression: [`bd77b529`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bd77b529e489d7e6bc6fdc3813f5ec8c20657df7).
+- Expected RED: PR shared validation [#45007053469](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45007053469), job `137160862834`: 178 tests, the new `test_rejects_directory_entry_added_after_descriptor_listing_snapshot` failed because the baseline did not raise `ManifestError`; packaging/tool validation failed and board compilation was skipped. This is the intended regression reproduction, not a pass.
+- Source correction: [`5cac4dcc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5cac4dccd541df9200b3a3f564a77eddf9053546) adds descriptor-relative directory metadata snapshots and nested-directory rechecks.
+- Intermediate source-head run [#45007119342](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45007119342) confirmed the new regression passed but failed one pre-existing nested-directory test's diagnostic regex; it expected the older wording and did not accept the new `artifact directory changed while scanning` message.
+- Test assertion compatibility correction / final source-test anchor: [`7b1282c2`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7b1282c2aeb689c3eb59e3eed8db10ad24785369). The existing assertion now accepts the new fail-closed diagnostic without weakening the behavior check.
+
+### Exact-source GitHub Actions at `7b1282c2`
+
+- PR shared/firmware [#45007216238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45007216238), job `137161350889`: packaging/tool suite **178 tests PASS / 2 intentional skips**, including the new directory-membership regression; firmware-hardening and shared-contract steps PASS. The next all-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is not defined. ESP32 and ESP8266 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Push shared/firmware [#45007212403](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45007212403), job `137161339852`: same exact-source result — 178 tests PASS / 2 skips; all-profile admission failed closed; board compiles skipped.
+- PR ImageBuilder sandbox [#45007216218](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45007216218), job `137161351059`: host preflight **33/33 PASS**. The next mandatory gate **FAILED CLOSED** because Bubblewrap is not installed (exit 125); namespace checks and sandbox-dependent packaging tests were **SKIPPED**, not passed.
+- PR case-collision [#45007216224](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45007216224): **PASS**.
+
+These are hosted synthetic CI results. No actual Bubblewrap namespace, OpenWrt ImageBuilder appliance image, approved production binary, signer, hardware flash or physical acceptance is established.
+
+### Exact branch and cross-repository state
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`; PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31/base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Source/test anchor: `7b1282c2aeb689c3eb59e3eed8db10ad24785369`; this section is the narrow handover update.
+- Only RELEASE-owned paths changed during this task: `tools/write_firmware_artifact_manifest.py`, `tools/test_firmware_artifact_manifest.py`, and this handover. No workflow, firmware, profile, network, shared interface or other role-owned source changed.
+- MASTER #288 live head: `737af73dbc4d3ab3786b6f6b0b251106a5d1c7c3`; ownership manifest blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`. RELEASE's Experiments route `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml` remains `reimplementation-review`; no copy/migration authority.
+- Experiments #242 live head `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) handover/build PASS. Signing/publication are not established.
+- Experiments #291 live head `42797e2f3d65c30a1070caf49c93aebec149d897`, base #242; its accumulated 26 paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET). Compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) PASS; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) fails at the CORE-owned project-handover freshness gate after target build jobs pass; downstream simulation/sign/publish jobs are skipped. Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) fails at the same shared handover freshness gate; Windows build/publisher are skipped. No #291 path was changed.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows are QUEUED with zero jobs executed.
+- COE parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; shared validation [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) and case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) PASS; mandatory sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) fails at unprivileged namespace UID-map setup. This parent result is not #35 exact-head acceptance.
+- #172's embedded PR-head index is stale relative to the live PR API; MASTER should refresh its own control-plane body from current refs. Cleanup-first #266 remains OPEN, 0/7 tracks complete.
+- Canonical private Drive registry v11 was not found in authorized Library title search; only older v3–v7 snapshots were surfaced. No older snapshot was substituted and no private contents or identifiers were copied to GitHub.
+
+### Next owner actions and limits
+
+1. **PHX-QA:** independently review exact source/test SHA `7b1282c2` and the deterministic directory-membership regression.
+2. **PHX-INFRA:** provide an authorized disposable, ephemeral, no-secret runner with Bubblewrap and working unprivileged user namespaces; rerun mandatory sandbox packaging tests.
+3. **PHX-CORE / PHX-MASTER / site-prefix authority:** define the approved durable site-scoped ULA /48 source; do not substitute a synthetic test prefix.
+4. **PHX-MASTER:** refresh stale #172 PR-head references and preserve the review-only RELEASE ownership route.
+5. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
+
+No merge, real-key signing, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
