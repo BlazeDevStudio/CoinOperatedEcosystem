@@ -212,6 +212,39 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
         self.assertTrue(manifest_path.exists())
 
+    def test_writer_rejects_artifact_directory_replaced_after_scan(self):
+        original_directory = self.artifact_dir
+        displaced_directory = Path(self.temp.name) / "artifact-original"
+        replacement_directory = Path(self.temp.name) / "replacement"
+        replacement_directory.mkdir()
+
+        original_builder = manifest_writer.build_artifact_manifest_payloads
+
+        def scan_then_replace(**kwargs):
+            payloads = original_builder(**kwargs)
+            original_directory.rename(displaced_directory)
+            replacement_directory.rename(original_directory)
+            return payloads
+
+        with mock.patch.object(
+            manifest_writer,
+            "build_artifact_manifest_payloads",
+            side_effect=scan_then_replace,
+        ):
+            with self.assertRaisesRegex(
+                ManifestError,
+                "artifact directory changed during manifest scan",
+            ):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse(
+            (original_directory / MANIFEST_FILENAME).exists(),
+            "replacement directory must not receive a manifest for another directory's payloads",
+        )
+        self.assertFalse((original_directory / CHECKSUMS_FILENAME).exists())
+        self.assertFalse((displaced_directory / MANIFEST_FILENAME).exists())
+        self.assertTrue((displaced_directory / "firmware.bin").is_file())
+
     def test_rejects_empty_firmware_binary(self):
         (self.artifact_dir / "firmware.bin").write_bytes(b"")
         with self.assertRaisesRegex(ManifestError, "non-empty .bin firmware payload"):
