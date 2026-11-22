@@ -838,6 +838,71 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 b"KEEP-OPERATOR-OWNED-CONTENT" * 256,
             )
 
+    def test_calculate_overlay_size_rejects_directory_entry_added_after_listing_snapshot(self):
+        staging_dir = os.path.join(self.temp_dir, "overlay-size-entry-addition")
+        os.makedirs(staging_dir)
+        with open(os.path.join(staging_dir, "payload.bin"), "wb") as fp:
+            fp.write(b"x")
+
+        late_path = os.path.join(staging_dir, "late.bin")
+        original_listdir = os.listdir
+        added = {"value": False}
+
+        def listdir_then_add_entry(directory_fd):
+            names = original_listdir(directory_fd)
+            if not added["value"]:
+                with open(late_path, "wb") as fp:
+                    fp.write(b"late-overlay-entry" * 1024)
+                added["value"] = True
+            return names
+
+        with mock.patch.object(
+            packager.os, "listdir", side_effect=listdir_then_add_entry
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "Staged directory changed during overlay size walk",
+            ):
+                packager.calculate_overlay_size(staging_dir)
+
+        self.assertTrue(added["value"], "the post-listing directory mutation must execute")
+        self.assertTrue(os.path.isfile(late_path))
+
+    def test_calculate_overlay_size_rejects_staging_root_replaced_after_scan(self):
+        staging_dir = os.path.join(self.temp_dir, "overlay-size-root-replacement")
+        displaced_dir = os.path.join(self.temp_dir, "overlay-size-root-displaced")
+        replacement_dir = os.path.join(self.temp_dir, "overlay-size-root-replacement-new")
+        os.makedirs(staging_dir)
+        os.makedirs(replacement_dir)
+        with open(os.path.join(staging_dir, "original.bin"), "wb") as fp:
+            fp.write(b"original")
+        with open(os.path.join(replacement_dir, "replacement.bin"), "wb") as fp:
+            fp.write(b"replacement")
+
+        original_listdir = os.listdir
+        replaced = {"value": False}
+
+        def listdir_then_replace_root(directory_fd):
+            names = original_listdir(directory_fd)
+            if not replaced["value"]:
+                os.rename(staging_dir, displaced_dir)
+                os.rename(replacement_dir, staging_dir)
+                replaced["value"] = True
+            return names
+
+        with mock.patch.object(
+            packager.os, "listdir", side_effect=listdir_then_replace_root
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "Staging root changed during overlay size walk",
+            ):
+                packager.calculate_overlay_size(staging_dir)
+
+        self.assertTrue(replaced["value"], "the staging-root replacement must execute")
+        self.assertTrue(os.path.isfile(os.path.join(displaced_dir, "original.bin")))
+        self.assertTrue(os.path.isfile(os.path.join(staging_dir, "replacement.bin")))
+
     def test_flash_overflow_guard(self):
         staging_dest = os.path.join(self.temp_dir, "staging_overflow")
         p = load_profile("ew1200g-pro")
