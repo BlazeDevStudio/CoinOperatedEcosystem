@@ -3233,3 +3233,53 @@ These are hosted synthetic filesystem/unit-test results. No ESP32/ESP8266 binary
 6. **Registry custodian:** restore authorized access to canonical private registry v11.
 
 No merge, real-key signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC05 — reject source mutation during Rental staging copy (2026-11-22)
+
+**Disposition:** one RELEASE-owned packaging-copy integrity defect reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+`_copy_staging_file()` already rejected non-regular source files, symlinked parent components, and a final-file inode replacement between `lstat()` and descriptor open. It did not verify that the opened Rental source remained unchanged while its bytes were read. A same-inode, same-size in-place rewrite during `read()` could therefore be accepted and staged without a stable source snapshot.
+
+The new regression wraps only the source descriptor's reader, reads the original bytes, then rewrites the same inode with different same-length bytes before the copy routine accepts the read. It requires a fail-closed error and no staged destination file.
+
+The source now snapshots descriptor identity and metadata before reading, then compares device, inode, mode, link count, size, nanosecond mtime and ctime after reading; it also verifies the byte count against the original size. Any difference rejects the source before `_write_staging_bytes()` publishes it. No RENTAL-owned source file or behavior was changed.
+
+### Test-first and source commits
+
+- Test-first commit: [`a1e1258a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a1e1258a3999ad44e5a59bb4751b4394458cd4b7).
+- Expected RED, PR shared [#44988666568](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988666568), job `137104715802`: **173 tests, one expected failure** at `test_copy_staging_file_rejects_source_modified_during_read` (`ValueError not raised)); two intentional skips. Push shared [#44988663175](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988663175) reproduced the same failure.
+- Source correction: [`99d97538`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/99d97538e1990d22ab8fc81262cded8ddcc13ce4).
+
+### Exact-source CI at `99d97538`
+
+- PR shared/firmware [#44988666568](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988666568): firmware hardening and shared contracts **PASS**; packaging/tool suite **173 PASS / 2 intentional skips**. The next profile-admission step **FAILED CLOSED** for all 10 appliance profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined; ESP32/ESP8266 compile jobs **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Push shared/firmware [#44988663175](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988663175): same exact-source test and profile-admission result.
+- PR mandatory sandbox [#44988666263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988666263) and push [#44988663285](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988663285): host preflight **31/31 PASS**, then Bubblewrap missing / exit 125; namespace and mandatory sandbox packaging regressions **SKIPPED**, not passed. No privileged install or unsandboxed fallback.
+- PR case-collision guard [#44988666560](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988666560): **PASS**.
+
+These are hosted synthetic filesystem/unit-test results. No OpenWrt ImageBuilder output or approved board firmware binary was produced at this source head.
+
+### Branch, ownership and blockers
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`; PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`, parent #31/base `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Source/test SHA: `99d97538e1990d22ab8fc81262cded8ddcc13ce4`. This task changed only `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py`; this handover is the third path for this checkpoint.
+- MASTER #288 head at inspection: `76d3af43d864d4528aabfb24128ae9981ef48f2f`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY`. RELEASE's source workflow route remains `reimplementation-review`.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; #291 remains `42797e2f3d65c30a1070caf49c93aebec149d897` and its accumulated 26 paths remain mixed-owner (21 RELEASE / 3 CORE / 2 PISONET). RELEASE did not edit either branch.
+- COE #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- The accumulated #35 diff still contains inherited `.github/workflows/hardware-ci.yml` outside MASTER's current RELEASE route. PHX-HARDWARE / PHX-MASTER must resolve that ownership before integration; this activation did not edit it.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete. Canonical private Drive registry v11 was not surfaced through authorized Library search; historical snapshots were not substituted and no private contents were copied.
+
+### Next owner actions
+
+1. **PHX-QA:** independently review the source/test SHA `99d97538` and same-inode mutation regression.
+2. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 and same-site distribution contract; RELEASE must not invent a prefix.
+3. **PHX-INFRA:** provide an authorized disposable no-secret runner with Bubblewrap and working unprivileged namespaces.
+4. **PHX-HARDWARE / PHX-MASTER:** resolve inherited `hardware-ci.yml` ownership before any merge decision.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, signing with real keys, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
