@@ -517,18 +517,47 @@ def main() -> int:
             detail = f"{cleanup_stdout}\n{cleanup_stderr}".strip()
         return blocked(f"sandbox setup failed: {exc}", detail)
     finally:
+        if process is not None and not process_groups_cleanup_complete:
+            cleanup_parts: list[str] = []
+            if sandbox_child_pgid is None:
+                sandbox_child_pgid, recovery_detail = (
+                    _recover_available_namespace_child_pgid(info_read)
+                )
+                if recovery_detail:
+                    cleanup_parts.append(recovery_detail)
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                    process, sandbox_child_pgid
+                )
+                cleanup_parts.extend(
+                    part
+                    for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
+                    if part
+                )
+                process_groups_cleanup_complete = True
+            except Exception as cleanup_error:
+                cleanup_parts.append(
+                    "process-group cleanup raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+
+            if cleanup_parts:
+                note = "ImageBuilder runner finalizer cleanup: " + "\\n".join(cleanup_parts)
+                active_exception = sys.exc_info()[1]
+                if active_exception is not None:
+                    if hasattr(active_exception, "add_note"):
+                        active_exception.add_note(note)
+                    else:
+                        print(note, file=sys.stderr)
+                else:
+                    raise RuntimeError(note)
+
         for fd in (info_read, info_write):
             if fd >= 0:
                 try:
                     os.close(fd)
                 except OSError:
                     pass
-        if (
-            process is not None
-            and not process_groups_cleanup_complete
-            and process.poll() is None
-        ):
-            _terminate_process_groups(process, sandbox_child_pgid)
         if os.path.lexists(probe_path):
             try:
                 os.unlink(probe_path)
