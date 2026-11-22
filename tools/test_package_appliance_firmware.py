@@ -152,8 +152,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
     def test_load_profile_rejects_profile_modified_during_read(self):
         custom_profile = os.path.join(self.temp_dir, "profile-read-race.json")
-        original_content = b'{"profile_id":"ew1200g-pro"}\\n'
-        replacement_content = b'{"profile_id":"zzzzzzzzzzz"}\\n'
+        original_content = b'{"profile_id":"ew1200g-pro"}\n'
+        replacement_content = b'{"profile_id":"zzzzzzzzzzz"}\n'
         self.assertEqual(len(original_content), len(replacement_content))
         with open(custom_profile, "wb") as fp:
             fp.write(original_content)
