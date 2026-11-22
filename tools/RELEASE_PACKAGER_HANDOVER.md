@@ -3118,3 +3118,14 @@ These are hosted synthetic filesystem race and unit-test results. No real ESP32/
 No merge, real-key signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
 
 ---
+
+
+## UTC02 post-audit MASTER index reconciliation — read-only ownership finding
+
+After the main UTC02 handover was written, the live MASTER PR #288 files were re-read at head `b2a9c028314ad7eb269bdf9145ce7c1b1c612a9b`:
+
+- `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` still says `DRAFT_REVIEW_ONLY`; PHX-RELEASE remains limited to `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`.
+- MASTER `ROLE_ASSIGNMENTS.md` blob `69d360458c54eaff4dc6474777ae3675632e5385` does not contain the live COE #35 head `391663cfca336a78a09d23492363fdee554be074`; its latest RELEASE row still pins the older #35 head `048c6d2f11ef9635c93f22caa3258a25e819a644`.
+- MASTER `INTEGRATION_MATRIX.md` blob `b5dbbe7386799851eb2b0f40973048bb4a77b0cd` likewise contains older COE #35 pins (latest inspected row `0d6b9edce4caff16df64c15fedbd11e4640dfdde`), not the live head `391663cf`.
+
+This is a stale coordination/index finding only. PHX-RELEASE did not modify MASTER files, change the ownership route, or infer migration authority. PHX-MASTER owns refreshing its own role assignment, integration matrix and #172 exact-head index before using them for merge/release decisions. The inherited `.github/workflows/hardware-ci.yml` path remains outside the published RELEASE route and requires PHX-HARDWARE/PHX-MASTER review.
