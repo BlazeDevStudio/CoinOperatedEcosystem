@@ -150,6 +150,40 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(load_profile(custom_profile), expected_profile)
 
+    def test_load_profile_rejects_profile_modified_during_read(self):
+        custom_profile = os.path.join(self.temp_dir, "profile-read-race.json")
+        original_content = b'{"profile_id":"ew1200g-pro"}\\n'
+        replacement_content = b'{"profile_id":"zzzzzzzzzzz"}\\n'
+        self.assertEqual(len(original_content), len(replacement_content))
+        with open(custom_profile, "wb") as fp:
+            fp.write(original_content)
+
+        original_fdopen = packager.os.fdopen
+        mutation = {"performed": False}
+
+        def fdopen_after_profile_mutation(descriptor, mode, *args, **kwargs):
+            profile_file = original_fdopen(descriptor, mode, *args, **kwargs)
+            if mode == "r" and not mutation["performed"]:
+                with open(custom_profile, "r+b") as replacement:
+                    replacement.seek(original_content.index(b"ew1200g-pro"))
+                    replacement.write(b"zzzzzzzzzzz")
+                    replacement.flush()
+                    os.fsync(replacement.fileno())
+                mutation["performed"] = True
+            return profile_file
+
+        with mock.patch.object(
+            packager.os,
+            "fdopen",
+            side_effect=fdopen_after_profile_mutation,
+        ):
+            with self.assertRaisesRegex(ValueError, "changed while reading"):
+                load_profile(custom_profile)
+
+        self.assertTrue(mutation["performed"])
+        with open(custom_profile, "rb") as fp:
+            self.assertEqual(fp.read(), replacement_content)
+
     def test_load_profile_rejects_duplicate_json_object_keys(self):
         duplicate_documents = [
             (
