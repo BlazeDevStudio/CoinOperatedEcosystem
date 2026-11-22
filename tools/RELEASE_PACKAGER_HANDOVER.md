@@ -3252,7 +3252,8 @@ The source now snapshots descriptor identity and metadata before reading, then c
 ### Test-first and source commits
 
 - Test-first commit: [`a1e1258a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a1e1258a3999ad44e5a59bb4751b4394458cd4b7).
-- Expected RED, PR shared [#44988666568](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988666568), job `137104715802`: **173 tests, one expected failure** at `test_copy_staging_file_rejects_source_modified_during_read` (`ValueError not raised)); two intentional skips. Push shared [#44988663175](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988663175) reproduced the same failure.
+- Expected RED, PR shared [#44988567691](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988567691), job `137104421153`: **173 tests, one expected failure** at `test_copy_staging_file_rejects_source_modified_during_read` (`ValueError not raised`); two intentional skips. Push shared [#44988562987](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988562987) is the corresponding push validation.
+- Test-only case-collision [#44988567650](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988567650): **PASS**. Test-only sandbox [#44988567684](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44988567684): host preflight **31/31 PASS**, Bubblewrap absent / exit 125; namespace and mandatory sandbox packaging tests **SKIPPED**.
 - Source correction: [`99d97538`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/99d97538e1990d22ab8fc81262cded8ddcc13ce4).
 
 ### Exact-source CI at `99d97538`
