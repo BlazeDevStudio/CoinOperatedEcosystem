@@ -374,7 +374,7 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 ManifestError,
-                "artifact directory changed during scan|symlink",
+                "artifact directory changed during scan|artifact directory changed while scanning|symlink",
             ):
                 build_artifact_manifest_payloads(**self.kwargs())
 
