@@ -3129,3 +3129,52 @@ After the main UTC02 handover was written, the live MASTER PR #288 files were re
 - MASTER `INTEGRATION_MATRIX.md` blob `b5dbbe7386799851eb2b0f40973048bb4a77b0cd` likewise contains older COE #35 pins (latest inspected row `0d6b9edce4caff16df64c15fedbd11e4640dfdde`), not the live head `391663cf`.
 
 This is a stale coordination/index finding only. PHX-RELEASE did not modify MASTER files, change the ownership route, or infer migration authority. PHX-MASTER owns refreshing its own role assignment, integration matrix and #172 exact-head index before using them for merge/release decisions. The inherited `.github/workflows/hardware-ci.yml` path remains outside the published RELEASE route and requires PHX-HARDWARE/PHX-MASTER review.
+---
+
+## PHX-RELEASE UTC03 — reject in-place payload mutation during artifact hashing (2026-11-22)
+
+**Disposition:** one release-owned manifest-integrity defect reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Defect and correction
+
+The descriptor-relative scanner already pinned the payload inode, rejected symlinks/hard links, compared the directory entry before/after reading, and verified that the number of bytes read equaled the initial file size. It did not take a second descriptor metadata snapshot after the read loop. A same-inode, same-size in-place rewrite during hashing could therefore leave the pathname and size checks unchanged while the manifest represented bytes read before the rewrite rather than the file's final contents.
+
+The regression uses a payload larger than the 1 MiB read chunk, mutates the already-read first chunk in place without changing file length, and requires the writer to reject the file before either output manifest is published.
+
+The correction compares the opened descriptor's post-read snapshot against its pre-read snapshot: device, inode, mode, link count, size, nanosecond mtime and nanosecond ctime. It then compares the directory entry against that finished descriptor snapshot before recording the digest. The manifest schema, checksum format, source/event SHA binding, descriptor-relative traversal and publication/rollback behavior are unchanged.
+
+### Test-first and implementation history
+
+- Test-first regression: [commit 3a05f6a5](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3a05f6a5aaf83886edb2ec417b61669b226d56ce).
+- Expected RED: [PR validation #44979605926](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44979605926) — 171 tests executed, 1 expected failure (ManifestError not raised), 2 intentional skips. The mutation completed with the same inode and file length and was incorrectly accepted by the pre-fix scanner.
+- First source attempt: [commit 4b8bf24d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4b8bf24dca4a8ccac96e7272ea4e08e411ea4a57). It accidentally replaced the complete writer with a partial line-range response. Exact PR run [#44979674178](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44979674178) failed at import with IndentationError: unexpected indent; the push run was also failed. This was an implementation error, not a passing result.
+- Recovery and corrected source/test: [commit cafb202c](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/cafb202cfc7b779c1df929b3388bc31f392bcbdf). The complete 511-line pre-fix writer was restored from the immediately preceding test-only commit, then the 19-line stability check was applied to the full file (530 lines total).
+
+### Exact-source CI at cafb202c
+
+- Push shared validation [#44979728564](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44979728564): **171 packaging/tool tests PASS / 2 intentional skips**; manifest durability marker PASS. The subsequent 10-profile admission step **FAILED CLOSED** because approved site-scoped RFC 4193 ULA /48 authority is missing; ESP32 and ESP8266 compilation jobs were **SKIPPED**.
+- PR shared validation [#44979732651](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44979732651): same exact-source result — **171 PASS / 2 skips**, then 10/10 appliance profiles failed closed for missing approved site ULA authority; board compilation jobs **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Case-collision [#44979732640](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44979732640): **PASS**.
+- Mandatory ImageBuilder sandbox [#44979732649](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44979732649): host preflight **31/31 PASS**, then Bubblewrap was not installed / exit 125; namespace and mandatory sandbox packaging execution **SKIPPED**.
+
+These are hosted synthetic filesystem/unit-test results. No real ESP32/ESP8266 firmware artifact or OpenWrt ImageBuilder binary was produced at this head. No physical hardware acceptance is implied.
+
+### Live ownership and integration boundary
+
+- COE #35 branch: phoenix/release-build-script-publication-safety-20261117; parent #31/base: 59ed44d0b911e176f1a95b9cf5585ef811ffd31b; source/test SHA: cafb202cfc7b779c1df929b3388bc31f392bcbdf.
+- This activation changed only tools/test_firmware_artifact_manifest.py, tools/write_firmware_artifact_manifest.py, and this RELEASE handover. The inherited .github/workflows/hardware-ci.yml path remains in the accumulated PR diff and outside MASTER's current PHX-RELEASE reimplementation-review route; it was not edited in this activation. PHX-HARDWARE/PHX-MASTER ownership review remains required.
+- MASTER #288 routes remain DRAFT_REVIEW_ONLY; no migration or route promotion.
+- Experiments #242 remains a separate future SoftTimer signing draft; #291 remains a separate Windows publisher-isolation draft with mixed inherited ownership. No changes were made to either.
+- COE #26 remains FROZEN with five PR workflows queued / zero jobs. Parent #31's shared and board builds passed on its recorded head; its mandatory sandbox failed at unprivileged UID-map setup (Permission denied), exit 125.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete.
+- Canonical private Drive project registry v11 and newer corrections remain unavailable through the exposed Library/connector surface; no older snapshot was substituted and no private content was copied to GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the post-read metadata snapshot check and the same-size in-place mutation regression at cafb202c.
+2. PHX-CORE / PHX-MASTER / site authority defines the approved site-scoped ULA /48 before profile admission can pass; RELEASE must not invent or substitute a prefix.
+3. PHX-INFRA supplies an authorized disposable no-secret runner with Bubblewrap and working unprivileged namespaces; no privileged install or unsandboxed fallback.
+4. PHX-HARDWARE / PHX-MASTER resolve the inherited hardware-ci.yml ownership before any merge decision.
+5. Registry custodian restores authorized access to canonical private registry v11.
+
+No merge, signing with real keys, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
