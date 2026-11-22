@@ -233,20 +233,47 @@ def build_artifact_manifest_payloads(
     return manifest_bytes, checksums_bytes
 
 
-def _write_new_file(directory: str, filename: str, content: bytes) -> str:
+def _write_new_file(
+    directory: str,
+    filename: str,
+    content: bytes,
+    *,
+    directory_descriptor: int | None = None,
+) -> str:
+    """Create and sync one new output, durably removing it if writing fails."""
     path = os.path.join(directory, filename)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     descriptor = os.open(path, flags, 0o644)
     try:
-        with os.fdopen(descriptor, "wb") as output:
+        output = os.fdopen(descriptor, "wb")
+        descriptor = -1
+        with output:
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-    except Exception:
+    except Exception as write_error:
+        rollback_errors: list[str] = []
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError as exc:
+                rollback_errors.append(f"close partial output: {exc}")
         try:
             os.unlink(path)
-        except OSError:
+        except FileNotFoundError:
             pass
+        except OSError as exc:
+            rollback_errors.append(f"remove partial output: {exc}")
+        if directory_descriptor is not None:
+            try:
+                os.fsync(directory_descriptor)
+            except OSError as exc:
+                rollback_errors.append(f"sync partial-output rollback: {exc}")
+        if rollback_errors:
+            details = "; ".join(rollback_errors)
+            raise ManifestError(
+                f"partial artifact output rollback could not be confirmed for {filename}: {details}"
+            ) from write_error
         raise
     return path
 
@@ -255,25 +282,59 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
     """Publish manifest and SHA256SUMS without overwriting existing files."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
     manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**kwargs)
-    created: list[str] = []
-    directory_descriptor = -1
+
+    if not hasattr(os, "O_DIRECTORY"):
+        raise ManifestError("durable artifact publication requires O_DIRECTORY support")
     try:
-        created.append(_write_new_file(artifact_dir, MANIFEST_FILENAME, manifest_bytes))
-        created.append(_write_new_file(artifact_dir, CHECKSUMS_FILENAME, checksums_bytes))
-        if not hasattr(os, "O_DIRECTORY"):
-            raise ManifestError("durable artifact publication requires O_DIRECTORY support")
-        directory_descriptor = os.open(artifact_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        os.fsync(directory_descriptor)
-    except Exception:
-        for path in reversed(created):
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-        raise
+        directory_descriptor = os.open(
+            artifact_dir,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+    except OSError as exc:
+        raise ManifestError(f"artifact directory cannot be opened for durable publication: {exc}") from exc
+
+    created: list[str] = []
+    try:
+        try:
+            created.append(
+                _write_new_file(
+                    artifact_dir,
+                    MANIFEST_FILENAME,
+                    manifest_bytes,
+                    directory_descriptor=directory_descriptor,
+                )
+            )
+            created.append(
+                _write_new_file(
+                    artifact_dir,
+                    CHECKSUMS_FILENAME,
+                    checksums_bytes,
+                    directory_descriptor=directory_descriptor,
+                )
+            )
+            os.fsync(directory_descriptor)
+        except Exception as publication_error:
+            rollback_errors: list[str] = []
+            for path in reversed(created):
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    rollback_errors.append(f"remove {os.path.basename(path)}: {exc}")
+            if created:
+                try:
+                    os.fsync(directory_descriptor)
+                except OSError as exc:
+                    rollback_errors.append(f"sync artifact-pair rollback: {exc}")
+            if rollback_errors:
+                details = "; ".join(rollback_errors)
+                raise ManifestError(
+                    f"artifact publication failed; rollback could not be confirmed: {details}"
+                ) from publication_error
+            raise
     finally:
-        if directory_descriptor >= 0:
-            os.close(directory_descriptor)
+        os.close(directory_descriptor)
 
     return (
         os.path.join(artifact_dir, MANIFEST_FILENAME),
