@@ -189,8 +189,8 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                     directory_descriptor=directory_descriptor,
                 )
 
-        self.assertEqual(fsync_calls, 2, "partial-file removal must be directory-synced")
         self.assertFalse(output_path.exists())
+        self.assertEqual(fsync_calls, 2, "partial-file removal must be directory-synced")
 
     def test_writer_rolls_back_manifest_pair_after_keyboard_interrupt(self):
         manifest_path = self.artifact_dir / MANIFEST_FILENAME

@@ -382,7 +382,7 @@ def _write_new_file(
     *,
     directory_descriptor: int | None = None,
 ) -> str:
-    """Create and sync one new output, durably removing it if writing fails."""
+    """Create and sync one new output, durably removing it if writing fails or is interrupted."""
     path = os.path.join(directory, filename)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     if directory_descriptor is None:
@@ -401,7 +401,7 @@ def _write_new_file(
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-    except Exception as write_error:
+    except BaseException as write_error:
         rollback_errors: list[str] = []
         if descriptor >= 0:
             try:
@@ -432,7 +432,7 @@ def _write_new_file(
 
 
 def write_artifact_manifest(**kwargs) -> tuple[str, str]:
-    """Publish manifest and SHA256SUMS into the same directory that was scanned."""
+    """Publish the manifest pair, rolling back on failures and Python-level interruptions."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
     _require_descriptor_scan_support()
     try:
@@ -469,7 +469,7 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
             )
             os.fsync(directory_descriptor)
             _require_artifact_directory_identity(artifact_dir, directory_descriptor)
-        except Exception as publication_error:
+        except BaseException as publication_error:
             rollback_errors: list[str] = []
             for path in reversed(created):
                 try:
