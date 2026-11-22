@@ -1483,11 +1483,19 @@ def generate_build_script(manifest: dict, script_path: str) -> None:
     try:
         sha256sum_fd = os.open(sha256sum_path, os.O_RDONLY)
         sha256sum_stat = os.fstat(sha256sum_fd)
+        sha256sum_parent_stat = os.stat(os.path.dirname(sha256sum_path))
         if (
             not stat.S_ISREG(sha256sum_stat.st_mode)
             or not sha256sum_stat.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            or sha256sum_stat.st_uid != 0
+            or sha256sum_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+            or not stat.S_ISDIR(sha256sum_parent_stat.st_mode)
+            or sha256sum_parent_stat.st_uid != 0
+            or sha256sum_parent_stat.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
-            raise OSError("Safe ImageBuilder wrapper requires a regular executable sha256sum inode")
+            raise OSError(
+                "Safe ImageBuilder wrapper requires a root-owned, non-writable system sha256sum executable"
+            )
         with os.fdopen(sha256sum_fd, "rb") as sha256sum_file:
             sha256sum_fd = -1
             sha256sum_sha256 = hashlib.sha256(sha256sum_file.read()).hexdigest()
@@ -1510,6 +1518,7 @@ set -eu
 PYTHON_PATH={python_arg}
 PYTHON_SHA256={python_sha256}
 SHA256SUM_PATH={sha256sum_arg}
+SHA256SUM_BOOTSTRAP_PATH={sha256sum_arg}
 SHA256SUM_SHA256={sha256sum_sha256}
 RUNNER_PATH={runner_arg}
 RUNNER_SHA256={runner_sha256}
@@ -1518,10 +1527,24 @@ if [ ! -f "$SHA256SUM_PATH" ] || [ ! -x "$SHA256SUM_PATH" ]; then
     echo "RELEASE-BLOCKED: pinned sha256sum executable is missing or unsafe" >&2
     exit 1
 fi
+if [ ! -f "$SHA256SUM_BOOTSTRAP_PATH" ] || [ ! -x "$SHA256SUM_BOOTSTRAP_PATH" ]; then
+    echo "RELEASE-BLOCKED: bootstrap sha256sum executable is missing or unsafe" >&2
+    exit 1
+fi
 if [ ! -f "$PYTHON_PATH" ] || [ -L "$PYTHON_PATH" ] || [ ! -x "$PYTHON_PATH" ]; then
     echo "RELEASE-BLOCKED: pinned Python interpreter is missing or unsafe" >&2
     exit 1
 fi
+
+# The absolute root-owned system sha256sum is the bootstrap trust root. Verify
+# Python before executing it; Python then verifies the pinned checksum utility.
+PYTHON_DIGEST_LINE="$("$SHA256SUM_BOOTSTRAP_PATH" "$PYTHON_PATH")"
+ACTUAL_PYTHON_SHA256="${{PYTHON_DIGEST_LINE%% *}}"
+if [ "$ACTUAL_PYTHON_SHA256" != "$PYTHON_SHA256" ]; then
+    echo "RELEASE-BLOCKED: pinned Python interpreter SHA-256 differs from the generated wrapper" >&2
+    exit 1
+fi
+
 "$PYTHON_PATH" - "$SHA256SUM_PATH" "$SHA256SUM_SHA256" <<'PHX_SHA256SUM_VERIFY'
 import hashlib
 import os
@@ -1553,13 +1576,6 @@ if actual != expected:
         "RELEASE-BLOCKED: pinned sha256sum executable SHA-256 differs from the generated wrapper"
     )
 PHX_SHA256SUM_VERIFY
-PYTHON_DIGEST_LINE="$("$SHA256SUM_PATH" "$PYTHON_PATH")"
-ACTUAL_PYTHON_SHA256="${{PYTHON_DIGEST_LINE%% *}}"
-if [ "$ACTUAL_PYTHON_SHA256" != "$PYTHON_SHA256" ]; then
-    echo "RELEASE-BLOCKED: pinned Python interpreter SHA-256 differs from the generated wrapper" >&2
-    exit 1
-fi
-
 # Resolve remaining shell utilities and ImageBuilder tools only from trusted system paths.
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
