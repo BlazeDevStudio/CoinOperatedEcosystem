@@ -673,10 +673,10 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                     cleanup.assert_called_once_with(process, 202)
 
 
-    def test_runner_startup_interrupt_recovers_child_group_before_namespace_info(self):
+    def test_runner_startup_exception_recovers_child_group_before_namespace_info(self):
         runner = load_runner()
         for stage in ("select", "read"):
-            for interruption_type in (KeyboardInterrupt, SystemExit):
+            for interruption_type in (KeyboardInterrupt, SystemExit, RuntimeError):
                 with self.subTest(stage=stage, interruption=interruption_type.__name__):
                     with tempfile.TemporaryDirectory() as workspace:
                         builder = os.path.join(workspace, "builder")
@@ -690,11 +690,12 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                         # The outer Bubblewrap leader has already exited while
                         # its detached namespace child may still be alive.
                         process.poll.return_value = 0
-                        interruption = (
-                            interruption_type("startup interrupted")
-                            if interruption_type is KeyboardInterrupt
-                            else SystemExit(29)
-                        )
+                        if interruption_type is KeyboardInterrupt:
+                            interruption = KeyboardInterrupt("startup interrupted")
+                        elif interruption_type is SystemExit:
+                            interruption = SystemExit(29)
+                        else:
+                            interruption = RuntimeError("unexpected startup failure")
                         info_payload = b'{"child-pid": 222}'
 
                         with ExitStack() as stack:
