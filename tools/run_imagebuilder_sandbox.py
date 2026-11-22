@@ -38,6 +38,30 @@ def _as_text(value: object) -> str:
         return value.decode("utf-8", errors="replace")
     return str(value)
 
+
+def _recover_available_namespace_child_pgid(info_fd: int) -> tuple[int | None, str]:
+    """Best-effort nonblocking recovery of Bubblewrap's detached child PGID."""
+    if info_fd < 0:
+        return None, "namespace info pipe is already closed"
+    try:
+        os.set_blocking(info_fd, False)
+        payload = os.read(info_fd, 65536)
+    except BlockingIOError:
+        return None, "namespace info pipe had no available child-pid during interruption"
+    except OSError as exc:
+        return None, f"could not read namespace info pipe during interruption: {exc}"
+    if not payload:
+        return None, "namespace info pipe closed before child-pid recovery"
+
+    try:
+        namespace_info = json.loads(payload.decode("utf-8"))
+        child_pid = int(namespace_info["child-pid"])
+        if child_pid <= 0:
+            raise ValueError("child-pid must be a positive integer")
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return None, f"could not recover Bubblewrap child-pid during interruption: {exc}"
+    return child_pid, ""
+
 def _invoking_unprivileged_identity() -> tuple[int, int]:
     """Return the single host UID/GID allowed to own sandbox output."""
     uid = os.getuid()
@@ -378,6 +402,7 @@ def main() -> int:
     ]
     process = None
     sandbox_child_pgid = None
+    process_groups_cleanup_complete = False
     try:
         process = subprocess.Popen(
             command,
@@ -396,10 +421,12 @@ def main() -> int:
         )
         if not ready:
             _, stderr = _terminate_process_groups(process)
+            process_groups_cleanup_complete = True
             return blocked("timed out waiting for bubblewrap user namespace", stderr)
         info_payload = os.read(info_read, 65536)
         if not info_payload:
             _, stderr = _terminate_process_groups(process)
+            process_groups_cleanup_complete = True
             return blocked("bubblewrap exited before reporting its user namespace", stderr)
         try:
             namespace_info = json.loads(info_payload.decode("utf-8"))
@@ -409,41 +436,15 @@ def main() -> int:
             sandbox_child_pgid = child_pid
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             _, stderr = _terminate_process_groups(process)
+            process_groups_cleanup_complete = True
             return blocked(f"invalid bubblewrap namespace information: {exc}", stderr)
 
         # Bubblewrap's unprivileged user namespace maps only this invoking
         # host UID/GID to namespace root; no external mapping helper is used.
-        try:
-            (stdout, stderr), timed_out = _communicate_with_timeout(
-                process, args.timeout_seconds, sandbox_child_pgid
-            )
-        except (KeyboardInterrupt, SystemExit) as interruption:
-            # The outer bwrap leader may have exited while a detached sandbox
-            # child still holds inherited capture pipes. Do not use poll() as a
-            # reason to skip process-group cleanup on operator interruption.
-            cleanup_detail = ""
-            try:
-                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
-                    process, sandbox_child_pgid
-                )
-                cleanup_detail = "\n".join(
-                    part
-                    for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
-                    if part
-                ).strip()
-            except Exception as cleanup_error:
-                cleanup_detail = (
-                    "process-group cleanup raised "
-                    f"{type(cleanup_error).__name__}: {cleanup_error}"
-                )
-
-            if cleanup_detail:
-                note = "ImageBuilder runner process-group cleanup: " + cleanup_detail
-                if hasattr(interruption, "add_note"):
-                    interruption.add_note(note)
-                else:
-                    print(note, file=sys.stderr)
-            raise
+        (stdout, stderr), timed_out = _communicate_with_timeout(
+            process, args.timeout_seconds, sandbox_child_pgid
+        )
+        process_groups_cleanup_complete = True
         if timed_out:
             if "sandbox process group" in stderr.lower():
                 return blocked(
@@ -474,12 +475,45 @@ def main() -> int:
         finally:
             os.unlink(probe_path)
         return process.returncode
+    except (KeyboardInterrupt, SystemExit) as interruption:
+        cleanup_parts: list[str] = []
+        if process is not None and not process_groups_cleanup_complete:
+            if sandbox_child_pgid is None:
+                sandbox_child_pgid, recovery_detail = (
+                    _recover_available_namespace_child_pgid(info_read)
+                )
+                if recovery_detail:
+                    cleanup_parts.append(recovery_detail)
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                    process, sandbox_child_pgid
+                )
+                cleanup_parts.extend(
+                    part
+                    for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
+                    if part
+                )
+            except Exception as cleanup_error:
+                cleanup_parts.append(
+                    "process-group cleanup raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+            process_groups_cleanup_complete = True
+
+        if cleanup_parts:
+            note = "ImageBuilder runner process-group cleanup: " + "\n".join(cleanup_parts)
+            if hasattr(interruption, "add_note"):
+                interruption.add_note(note)
+            else:
+                print(note, file=sys.stderr)
+        raise
     except (OSError, subprocess.SubprocessError) as exc:
         detail = ""
         if process is not None:
             cleanup_stdout, cleanup_stderr = _terminate_process_groups(
                 process, sandbox_child_pgid
             )
+            process_groups_cleanup_complete = True
             detail = f"{cleanup_stdout}\n{cleanup_stderr}".strip()
         return blocked(f"sandbox setup failed: {exc}", detail)
     finally:
@@ -489,7 +523,11 @@ def main() -> int:
                     os.close(fd)
                 except OSError:
                     pass
-        if process is not None and process.poll() is None:
+        if (
+            process is not None
+            and not process_groups_cleanup_complete
+            and process.poll() is None
+        ):
             _terminate_process_groups(process, sandbox_child_pgid)
         if os.path.lexists(probe_path):
             try:
