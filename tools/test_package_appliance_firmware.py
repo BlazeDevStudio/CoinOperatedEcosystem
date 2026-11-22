@@ -1212,6 +1212,54 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "A failed stream construction must leave the script non-executable",
         )
 
+    def test_generate_build_script_closes_parent_descriptor_when_open_is_interrupted(self):
+        profile = load_profile("gl-mt1300")
+        manifest = stage_overlay(
+            profile,
+            DEFAULT_ROOTFS,
+            os.path.join(self.temp_dir, "open-interrupted-staging"),
+        )
+        original_open = packager.os.open
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                script_path = os.path.join(
+                    self.temp_dir,
+                    f"{interruption_type.__name__.lower()}-open-interrupted-build.sh",
+                )
+                captured = {}
+
+                def interrupt_script_open(path, flags, mode=0o777, *, dir_fd=None):
+                    if dir_fd is not None and path == os.path.basename(script_path):
+                        captured["parent_fd"] = dir_fd
+                        raise interruption_type("simulated build-script open interruption")
+                    return original_open(path, flags, mode, dir_fd=dir_fd)
+
+                with mock.patch.object(
+                    packager.os, "open", side_effect=interrupt_script_open
+                ):
+                    with self.assertRaisesRegex(
+                        interruption_type, "simulated build-script open interruption"
+                    ):
+                        generate_build_script(manifest, script_path)
+
+                self.assertIn("parent_fd", captured)
+                try:
+                    os.fstat(captured["parent_fd"])
+                except OSError:
+                    parent_closed = True
+                else:
+                    parent_closed = False
+                    os.close(captured["parent_fd"])
+                self.assertTrue(
+                    parent_closed,
+                    "the parent directory descriptor must close when exclusive script creation is interrupted",
+                )
+                self.assertFalse(
+                    os.path.lexists(script_path),
+                    "an interrupted open before file creation must not leave a generated script",
+                )
+
     def test_generate_build_script_refuses_existing_file_without_overwriting(self):
         profile = load_profile("gl-mt1300")
         manifest = stage_overlay(
