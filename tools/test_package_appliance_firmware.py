@@ -2553,6 +2553,54 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             self.assertEqual(fp.read(), "SOURCE-PRESERVED")
 
 
+    def test_rootfs_copy_rolls_back_partial_staging_on_process_interruption(self):
+        source_rootfs = os.path.join(self.temp_dir, "interrupted-copy-source")
+        os.makedirs(source_rootfs)
+        with open(os.path.join(source_rootfs, "source-marker.txt"), "w", encoding="utf-8") as fp:
+            fp.write("SOURCE-PRESERVED")
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                staging_dest = os.path.join(
+                    self.temp_dir,
+                    f"interrupted-copy-{interruption_type.__name__.lower()}",
+                )
+
+                def interrupt_after_partial_copy(source, destination, *args, **kwargs):
+                    partial_directory = os.path.join(destination, "etc")
+                    os.makedirs(partial_directory, exist_ok=True)
+                    with open(
+                        os.path.join(partial_directory, "partial.bin"),
+                        "wb",
+                    ) as partial_file:
+                        partial_file.write(b"partial rootfs bytes")
+                    raise interruption_type("simulated rootfs copy interruption")
+
+                with mock.patch.object(
+                    packager.shutil,
+                    "copytree",
+                    side_effect=interrupt_after_partial_copy,
+                ):
+                    with self.assertRaisesRegex(
+                        interruption_type,
+                        "simulated rootfs copy interruption",
+                    ):
+                        packager._copy_rootfs_to_new_staging_directory(
+                            source_rootfs,
+                            staging_dest,
+                        )
+
+                self.assertFalse(
+                    os.path.lexists(staging_dest),
+                    "interrupted rootfs copy must remove only its own partial staging directory",
+                )
+                with open(
+                    os.path.join(source_rootfs, "source-marker.txt"),
+                    "r",
+                    encoding="utf-8",
+                ) as source_file:
+                    self.assertEqual(source_file.read(), "SOURCE-PRESERVED")
+
     def test_stage_overlay_does_not_chmod_external_directory_symlink_target(self):
         # copytree preserves directory symlinks. Permission normalization must
         # not follow one and mutate an operator-owned directory outside staging.
