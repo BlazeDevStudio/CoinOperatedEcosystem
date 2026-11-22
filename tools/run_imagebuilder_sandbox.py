@@ -426,7 +426,7 @@ def main() -> int:
                 cleanup_stdout, cleanup_stderr = _terminate_process_groups(
                     process, sandbox_child_pgid
                 )
-                cleanup_detail = "\\n".join(
+                cleanup_detail = "\n".join(
                     part
                     for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
                     if part
