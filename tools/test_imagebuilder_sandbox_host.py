@@ -303,6 +303,33 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         popen.assert_called_once()
         terminate.assert_called_once_with(process, grace_seconds=0.25)
 
+    def test_probe_oserror_terminates_group_after_leader_exit_and_reports_cleanup(self):
+        helper = self.helper_or_skip()
+        process = mock.Mock()
+        process.pid = 814
+        process.poll.return_value = 0
+        process.communicate.side_effect = OSError("capture pipe failed")
+
+        with mock.patch.object(
+            helper.subprocess, "Popen", return_value=process
+        ) as popen:
+            with mock.patch.object(
+                helper,
+                "_terminate_process_groups",
+                return_value=("", "detached child group cleanup diagnostic"),
+            ) as terminate:
+                ready, detail = helper.check_host(
+                    "/usr/bin/bwrap", timeout_seconds=1
+                )
+
+        self.assertFalse(ready)
+        self.assertIn("could not execute bubblewrap namespace probe", detail)
+        self.assertIn("capture pipe failed", detail)
+        self.assertIn("detached child group cleanup diagnostic", detail)
+        popen.assert_called_once()
+        terminate.assert_called_once_with(process, grace_seconds=0.25)
+
+
     def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None) as which:
