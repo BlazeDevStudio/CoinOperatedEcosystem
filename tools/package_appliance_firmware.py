@@ -1306,26 +1306,44 @@ def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) 
             raise ValueError(
                 f"Staging destination changed during rootfs copy: {absolute_staging}"
             )
-    except Exception:
+    except BaseException as copy_error:
         # Remove only the directory still pinned by our descriptor. Never
         # follow or delete a replacement symlink or another directory entry.
-        if staging_created and staging_fd >= 0:
-            try:
-                current_entry = os.stat(
-                    staging_name,
-                    dir_fd=parent_fd,
-                    follow_symlinks=False,
+        cleanup_error = None
+        if staging_created:
+            if staging_fd < 0:
+                cleanup_error = RuntimeError(
+                    "staging directory was created but could not be pinned; "
+                    "refusing path-based rollback"
                 )
-                opened_entry = os.fstat(staging_fd)
-                if stat.S_ISDIR(current_entry.st_mode) and (
-                    current_entry.st_dev,
-                    current_entry.st_ino,
-                ) == (opened_entry.st_dev, opened_entry.st_ino):
+            else:
+                try:
+                    current_entry = os.stat(
+                        staging_name,
+                        dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                    opened_entry = os.fstat(staging_fd)
+                    if not stat.S_ISDIR(current_entry.st_mode) or (
+                        current_entry.st_dev,
+                        current_entry.st_ino,
+                    ) != (opened_entry.st_dev, opened_entry.st_ino):
+                        raise RuntimeError(
+                            "staging destination no longer names the pinned partial directory; "
+                            "replacement was left untouched"
+                        )
                     shutil.rmtree(
                         os.path.join(f"/proc/self/fd/{parent_fd}", staging_name)
                     )
-            except OSError:
-                pass
+                except BaseException as exc:
+                    cleanup_error = exc
+
+        if cleanup_error is not None:
+            raise OSError(
+                "Rootfs staging rollback could not be confirmed after "
+                f"{type(copy_error).__name__}: "
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            ) from copy_error
         raise
     finally:
         if staging_fd >= 0:
