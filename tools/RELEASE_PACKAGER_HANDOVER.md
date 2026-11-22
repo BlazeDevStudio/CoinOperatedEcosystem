@@ -1,3 +1,48 @@
+## PHX-RELEASE UTC14 — rollback interrupted rootfs staging copy (2026-11-22)
+
+**Disposition:** one RELEASE-owned staging-recovery defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the packager, its regression test and this handover.
+
+### Live control plane and ownership
+
+- Read live BLAZE-COMMS/1 control plane #172, cleanup-first issue #266, this handover, MASTER PR #288 and the requested release/integration PRs.
+- MASTER #288 current head: `b7c6bb66d5603447d06fb8559c61457ee587c372`; PR remains OPEN / DRAFT / UNMERGED, all 169 changed paths under `coordination/phoenix/`. `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE's Experiments workflow route is `reimplementation-review`, not migration authorization.
+- Experiments #242 exact head: `734b89d9e7792247e8376335c3f3685500ab3f89`, draft. Its Windows build/handover run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed; signing/publication remain unproven.
+- Experiments #291 exact head: `42797e2f3d65c30a1070caf49c93aebec149d897`, draft with 26 mixed-owner paths (21 RELEASE / 3 CORE / 2 PISONET). Compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at handover freshness. Downstream signing/publication were skipped. RELEASE did not modify #291.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`, five workflows queued / zero jobs. Parent #31/base is `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- COE child #35 branch is `phoenix/release-build-script-publication-safety-20261117`; it remains based on #31. The inherited `.github/workflows/hardware-ci.yml` path is outside this task and remains untouched.
+
+### Confirmed defect and correction
+
+`_copy_rootfs_to_new_staging_directory()` creates and pins a new staging directory, then copies the ImageBuilder rootfs through `/proc/self/fd/<staging_fd>`. Its rollback handler caught only `Exception`. If rootfs copying was interrupted by `KeyboardInterrupt` or `SystemExit`, the handler did not run; the partial staging directory remained and a later retry would be refused as an existing output.
+
+The correction catches `BaseException` only around the rollback boundary. It removes the partial tree only after confirming that the operator-visible name still identifies the same pinned directory. If the directory was not pinned, was replaced, disappeared, or cleanup itself fails, it refuses path-based deletion and raises an explicit `Rootfs staging rollback could not be confirmed` error chained to the original interruption. A replacement symlink/directory is never deleted.
+
+### Test-first lineage
+
+- Regression test commit [`9975711d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9975711daaba6a48292c9829275de2250e824b0d) added deterministic partial-copy interruption cases for both `KeyboardInterrupt` and `SystemExit`.
+- Expected RED: shared workflow [#45032763075](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45032763075), job `137239762353`: **185 tests ran, 2 failures / 2 intentional skips**. Both new cases failed because the partial staging destination still existed after interruption. This was a product-defect reproduction, not a fixture/setup failure.
+- Source correction [`cea8ec21`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/cea8ec21197f20084bcecc626a23447b9c106353) adds interruption-safe, identity-pinned rollback and explicit failure reporting.
+
+### Exact-source Actions at `cea8ec21`
+
+- PR shared/firmware [#45033026495](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45033026495), validation job `137240591702`: packaging/tool suite **185 PASS / 2 intentional skips**; firmware hardening, shared contracts and manifest durability marker **PASS**. The next all-profile admission **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compile jobs were **SKIPPED**; overall workflow **FAILURE**, not green.
+- PR sandbox [#45033026468](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45033026468), job `137240591615`: host-preflight suite **33/33 PASS**; Bubblewrap is absent, exit 125. Namespace verification and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- PR case-collision [#45033026523](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45033026523): **PASS**.
+
+These are hosted synthetic CI results. No real Bubblewrap namespace, ImageBuilder build, firmware artifact, approved target binary or physical hardware test was produced.
+
+### Remaining blockers and next owners
+
+1. PHX-QA independently reviews source/test SHA `cea8ec21`, especially BaseException rollback and replacement-path preservation.
+2. PHX-INFRA supplies an authorized disposable no-secret runner with pre-provisioned Bubblewrap and working unprivileged single-ID namespaces.
+3. PHX-CORE / PHX-MASTER establish approved site-scoped RFC 4193 ULA /48 authority; no synthetic prefix is substituted.
+4. PHX-MASTER reconciles its control-plane PR-head index and resolves inherited `hardware-ci.yml` ownership with HARDWARE; RELEASE does not edit that workflow.
+5. Registry custodian restores authorized provenance-only access to canonical private Drive registry v11. No older registry snapshot is substituted.
+
+#35 independent submitted reviews remain zero at the start of this increment. Cleanup-first #266 remains OPEN / 0 of 7 tracks complete. No merge, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+---
+
 ## PHX-RELEASE UTC21 — reject hard-linked firmware output admission (2026-11-19)
 
 **Disposition:** one release-owned packaging admission defect reproduced test-first and fixed on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
