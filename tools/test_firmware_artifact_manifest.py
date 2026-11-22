@@ -296,13 +296,14 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "at least one non-empty .bin"):
             build_artifact_manifest_payloads(**self.kwargs())
 
-    def test_rejects_unreadable_directory_during_artifact_walk(self):
-        def fail_walk(_path, **kwargs):
-            self.assertIn("onerror", kwargs)
-            kwargs["onerror"](PermissionError("permission denied"))
-            return iter(())
+    def test_rejects_unreadable_directory_during_descriptor_scan(self):
+        def fail_listdir(directory_descriptor):
+            self.assertIsInstance(directory_descriptor, int)
+            raise PermissionError("permission denied")
 
-        with mock.patch("write_firmware_artifact_manifest.os.walk", side_effect=fail_walk):
+        with mock.patch.object(
+            manifest_writer.os, "listdir", side_effect=fail_listdir
+        ):
             with self.assertRaisesRegex(ManifestError, "could not enumerate artifact directory"):
                 build_artifact_manifest_payloads(**self.kwargs())
 

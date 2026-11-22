@@ -87,98 +87,197 @@ def _validate_metadata(
     }
 
 
-def _raise_walk_error(error: OSError) -> None:
-    """Do not publish a partial manifest when directory enumeration is incomplete."""
-    raise ManifestError(f"could not enumerate artifact directory: {error}") from error
-
-
-def _scan_artifact_files(artifact_dir: str) -> list[dict]:
-    root = os.path.abspath(os.fspath(artifact_dir))
-    try:
-        root_stat = os.lstat(root)
-    except OSError as exc:
-        raise ManifestError(f"artifact directory is unavailable: {exc}") from exc
-    if not stat.S_ISDIR(root_stat.st_mode) or os.path.realpath(root) != root:
-        raise ManifestError("artifact root must be a real directory, not a symlink")
-
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise ManifestError("safe artifact hashing requires O_NOFOLLOW support")
-
-    records: list[dict] = []
-    for current, directories, filenames in os.walk(
-        root,
-        topdown=True,
-        onerror=_raise_walk_error,
-        followlinks=False,
+def _require_descriptor_scan_support() -> None:
+    """Require the POSIX descriptor-relative operations used by the safe scanner."""
+    if (
+        not hasattr(os, "O_DIRECTORY")
+        or not hasattr(os, "O_NOFOLLOW")
+        or os.listdir not in getattr(os, "supports_fd", set())
+        or os.open not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_dir_fd", set())
+        or os.stat not in getattr(os, "supports_follow_symlinks", set())
     ):
-        directories.sort()
-        filenames.sort()
+        raise ManifestError(
+            "safe artifact traversal requires descriptor-relative directory operations"
+        )
 
-        for directory in directories:
-            directory_path = os.path.join(current, directory)
-            try:
-                directory_stat = os.lstat(directory_path)
-            except OSError as exc:
-                raise ManifestError(f"artifact directory changed during scan: {directory_path}: {exc}") from exc
-            if not stat.S_ISDIR(directory_stat.st_mode):
-                raise ManifestError(f"refusing symlink or non-directory artifact path: {directory_path}")
 
-        for filename in filenames:
-            if filename in (MANIFEST_FILENAME, CHECKSUMS_FILENAME):
-                raise ManifestError(f"refusing pre-existing manifest output: {filename}")
-            path = os.path.join(current, filename)
-            try:
-                before = os.lstat(path)
-            except OSError as exc:
-                raise ManifestError(f"artifact file changed during scan: {path}: {exc}") from exc
-            if not stat.S_ISREG(before.st_mode):
-                raise ManifestError(f"refusing symlink or non-regular artifact file: {path}")
-            if before.st_nlink != 1:
-                raise ManifestError(f"refusing hard-linked artifact file: {path}")
+def _scan_artifact_directory_fd(
+    directory_descriptor: int,
+    relative_prefix: str,
+    records: list[dict],
+) -> None:
+    """Hash one directory using pinned descriptors, never path-based parent traversal."""
+    try:
+        names = os.listdir(directory_descriptor)
+    except OSError as exc:
+        raise ManifestError(f"could not enumerate artifact directory: {exc}") from exc
 
-            relative = os.path.relpath(path, root).replace(os.sep, "/")
-            parts = relative.split("/")
-            if (
-                relative.startswith("/")
-                or any(part in ("", ".", "..") for part in parts)
-                or not re.fullmatch(r"[A-Za-z0-9._/-]+", relative)
-            ):
-                raise ManifestError(f"artifact path cannot be represented safely in SHA256SUMS: {relative!r}")
+    names.sort()
+    for name in names:
+        if not name or name in (".", "..") or "/" in name:
+            raise ManifestError("artifact directory returned an unsafe entry name")
 
-            descriptor = -1
-            try:
-                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-                after = os.fstat(descriptor)
-                if (
-                    not stat.S_ISREG(after.st_mode)
-                    or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
-                    or after.st_nlink != 1
-                ):
-                    raise ManifestError(f"artifact identity changed while opening: {relative}")
-
-                digest = hashlib.sha256()
-                total = 0
-                while True:
-                    chunk = os.read(descriptor, 1024 * 1024)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-                    total += len(chunk)
-                if total != after.st_size:
-                    raise ManifestError(f"artifact size changed while hashing: {relative}")
-            except OSError as exc:
-                raise ManifestError(f"could not safely hash artifact {relative}: {exc}") from exc
-            finally:
-                if descriptor >= 0:
-                    os.close(descriptor)
-
-            records.append(
-                {
-                    "path": relative,
-                    "size": total,
-                    "sha256": digest.hexdigest(),
-                }
+        relative = f"{relative_prefix}/{name}" if relative_prefix else name
+        parts = relative.split("/")
+        if (
+            relative.startswith("/")
+            or any(part in ("", ".", "..") for part in parts)
+            or not re.fullmatch(r"[A-Za-z0-9._/-]+", relative)
+        ):
+            raise ManifestError(
+                f"artifact path cannot be represented safely in SHA256SUMS: {relative!r}"
             )
+        if name in (MANIFEST_FILENAME, CHECKSUMS_FILENAME):
+            raise ManifestError(f"refusing pre-existing manifest output: {name}")
+
+        try:
+            before = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+        except OSError as exc:
+            raise ManifestError(
+                f"artifact entry changed during scan: {relative}: {exc}"
+            ) from exc
+
+        if stat.S_ISLNK(before.st_mode):
+            raise ManifestError(
+                f"refusing symlink or non-directory artifact path: {relative}"
+            )
+
+        if stat.S_ISDIR(before.st_mode):
+            try:
+                child_descriptor = os.open(
+                    name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=directory_descriptor,
+                )
+            except OSError as exc:
+                raise ManifestError(
+                    f"artifact directory changed during scan: {relative}: {exc}"
+                ) from exc
+
+            try:
+                opened = os.fstat(child_descriptor)
+                if (
+                    not stat.S_ISDIR(opened.st_mode)
+                    or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
+                ):
+                    raise ManifestError(
+                        f"artifact directory changed while opening: {relative}"
+                    )
+
+                _scan_artifact_directory_fd(child_descriptor, relative, records)
+
+                try:
+                    current = os.stat(
+                        name,
+                        dir_fd=directory_descriptor,
+                        follow_symlinks=False,
+                    )
+                except OSError as exc:
+                    raise ManifestError(
+                        f"artifact directory changed during scan: {relative}: {exc}"
+                    ) from exc
+                if (
+                    not stat.S_ISDIR(current.st_mode)
+                    or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+                ):
+                    raise ManifestError(
+                        f"artifact directory changed during scan: {relative}"
+                    )
+            finally:
+                os.close(child_descriptor)
+            continue
+
+        if not stat.S_ISREG(before.st_mode):
+            raise ManifestError(
+                f"refusing symlink or non-regular artifact file: {relative}"
+            )
+        if before.st_nlink != 1:
+            raise ManifestError(f"refusing hard-linked artifact file: {relative}")
+
+        descriptor = -1
+        try:
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | os.O_NOFOLLOW,
+                dir_fd=directory_descriptor,
+            )
+            after = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(after.st_mode)
+                or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+                or after.st_nlink != 1
+            ):
+                raise ManifestError(f"artifact identity changed while opening: {relative}")
+
+            digest = hashlib.sha256()
+            total = 0
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                total += len(chunk)
+            if total != after.st_size:
+                raise ManifestError(f"artifact size changed while hashing: {relative}")
+
+            try:
+                current = os.stat(
+                    name,
+                    dir_fd=directory_descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise ManifestError(
+                    f"artifact file changed while hashing: {relative}: {exc}"
+                ) from exc
+            if (
+                not stat.S_ISREG(current.st_mode)
+                or (after.st_dev, after.st_ino) != (current.st_dev, current.st_ino)
+                or current.st_nlink != 1
+            ):
+                raise ManifestError(f"artifact file changed while hashing: {relative}")
+        except OSError as exc:
+            raise ManifestError(f"could not safely hash artifact {relative}: {exc}") from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+
+        records.append(
+            {
+                "path": relative,
+                "size": total,
+                "sha256": digest.hexdigest(),
+            }
+        )
+
+
+def _scan_artifact_files(
+    artifact_dir: str,
+    directory_descriptor: int | None = None,
+) -> list[dict]:
+    """Hash the artifact tree through pinned directory descriptors."""
+    root = os.path.abspath(os.fspath(artifact_dir))
+    _require_descriptor_scan_support()
+
+    owns_descriptor = directory_descriptor is None
+    if owns_descriptor:
+        try:
+            directory_descriptor = os.open(
+                root,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            )
+        except OSError as exc:
+            raise ManifestError(f"artifact directory is unavailable: {exc}") from exc
+
+    try:
+        _require_artifact_directory_identity(root, directory_descriptor)
+        records: list[dict] = []
+        _scan_artifact_directory_fd(directory_descriptor, "", records)
+        _require_artifact_directory_identity(root, directory_descriptor)
+    finally:
+        if owns_descriptor:
+            os.close(directory_descriptor)
 
     records.sort(key=lambda item: item["path"])
     if not records:
@@ -191,6 +290,7 @@ def _scan_artifact_files(artifact_dir: str) -> list[dict]:
 def build_artifact_manifest_payloads(
     *,
     artifact_dir: str,
+    artifact_directory_descriptor: int | None = None,
     repository: str,
     source_sha: str,
     event_sha: str,
@@ -217,7 +317,7 @@ def build_artifact_manifest_payloads(
         core_id=core_id,
         core_version=core_version,
     )
-    records = _scan_artifact_files(artifact_dir)
+    records = _scan_artifact_files(artifact_dir, directory_descriptor=artifact_directory_descriptor)
     manifest = {**metadata, "files": records}
     manifest_bytes = (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
@@ -330,7 +430,9 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
         raise ManifestError(f"artifact directory cannot be opened for durable publication: {exc}") from exc
 
     try:
-        manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**kwargs)
+        payload_kwargs = dict(kwargs)
+        payload_kwargs["artifact_directory_descriptor"] = directory_descriptor
+        manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**payload_kwargs)
         _require_artifact_directory_identity(artifact_dir, directory_descriptor)
 
         created: list[str] = []
