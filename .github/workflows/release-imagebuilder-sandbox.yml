@@ -22,6 +22,7 @@ on:
       - "tools/package_appliance_firmware.py"
       - "tools/test_package_appliance_firmware.py"
       - "tools/test_imagebuilder_sandbox_host.py"
+      - "tools/imagebuilder_bwrap_trust.py"
       - "tools/check_imagebuilder_sandbox_host.py"
       - "tools/run_imagebuilder_sandbox.py"
       - "tools/RELEASE_PACKAGER_HANDOVER.md"
