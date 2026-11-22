@@ -288,6 +288,29 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
         self.assertTrue(manifest_path.exists())
 
+    def test_rejects_directory_entry_added_after_descriptor_listing_snapshot(self):
+        original_listdir = os.listdir
+        added = False
+
+        def add_entry_after_snapshot(directory_descriptor):
+            nonlocal added
+            names = original_listdir(directory_descriptor)
+            if not added:
+                (self.artifact_dir / "late.bin").write_bytes(b"late firmware payload")
+                added = True
+            return names
+
+        with mock.patch.object(
+            manifest_writer.os, "listdir", side_effect=add_entry_after_snapshot
+        ):
+            with self.assertRaisesRegex(
+                ManifestError, "artifact directory changed while scanning"
+            ):
+                build_artifact_manifest_payloads(**self.kwargs())
+
+        self.assertTrue(added, "the deterministic post-listing mutation must execute")
+        self.assertTrue((self.artifact_dir / "late.bin").is_file())
+
     def test_writer_rejects_artifact_directory_replaced_after_scan(self):
         original_directory = self.artifact_dir
         displaced_directory = Path(self.temp.name) / "artifact-original"
