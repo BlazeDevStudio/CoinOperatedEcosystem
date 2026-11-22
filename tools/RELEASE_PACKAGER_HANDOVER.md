@@ -3374,3 +3374,56 @@ This is a documentation-only CI readback after the interrupt-safe manifest rollb
 - Canonical private Drive registry v11 was not found in the full Library metadata scan (1,396 entries); only historical registry snapshots v1 and v3–v7 surfaced. None was substituted as v11 and no private contents or identifiers were copied.
 
 Hosted CI is synthetic evidence only. No approved production firmware or ImageBuilder binary was produced. No real Bubblewrap namespace execution occurred. No signing, merge, publication, hardware flash, payment migration, or customer deployment occurred. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC07 — trigger sandbox validation for shared trust-policy changes (2026-11-22)
+
+**Disposition:** one release-owned CI trigger-coverage defect reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Finding and bounded correction
+
+The dedicated `.github/workflows/release-imagebuilder-sandbox.yml` imports and exercises the shared `tools/imagebuilder_bwrap_trust.py` policy through both the host preflight and runtime sandbox runner. Its `pull_request.paths` and `push.paths` filters listed the consumer/test files but omitted that shared policy module. A trust-policy-only edit could therefore bypass the dedicated sandbox regression workflow even though the generic `tools/**` suite might still run.
+
+The correction adds the helper path to both event filters and adds a host test that asserts both filters retain it. No sandbox implementation, trust decision, network behavior, shared interface, firmware profile, or Hardware workflow was changed.
+
+### Test-first and source commits
+
+- Test-only commit: [`8a6f5086`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8a6f508612a7b96427c4c5f1c27eb976e2a7061b).
+- Expected RED, PR sandbox [#44997601471](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997601471), job `137131904898`, and push sandbox [#44997596918](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997596918), job `137131891308`: **32 tests, exactly the new trigger-coverage assertion failed**. The PR event exposed the missing pull-request path; the push event exposed the missing push path.
+- Corresponding shared PR [#44997601475](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997601475) and push [#44997596899](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997596899) also failed at that same new test during generic tools discovery. ESP32/ESP8266 dependent jobs were skipped. Case-collision [#44997601436](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997601436) passed.
+- First workflow correction [`c699d096`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c699d096c3ab60a604d48116d9efaa82229d22fd) added the helper to the pull-request path filter. PR sandbox [#44997645270](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997645270) then passed all 32 host tests and reached the Bubblewrap gate; push sandbox [#44997640146](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997640146) correctly retained the failing push-filter regression. This intermediate commit is not the final fix.
+- Second workflow correction and exact source/test HEAD: [`c926780f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c926780fa51783de1246b943dd7c6ae995a48a04), which adds the helper to the push path filter as well.
+
+### Exact-source Actions at `c926780f`
+
+- PR sandbox [#44997695867](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997695867), job `137132188928`, and push sandbox [#44997691265](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997691265), job `137132175268`: **32/32 host tests PASS**, including the new two-event trigger assertion. The next required gate **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Unprivileged namespace and mandatory real-Bubblewrap packaging regressions were not run.
+- Shared/firmware PR [#44997695854](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997695854), job `137132188878`: **176 tests PASS / 2 intentional skips**, then all 10 appliance profiles **FAILED CLOSED** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32 and ESP8266 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- Case-collision [#44997695980](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44997695980): **PASS**.
+
+These are hosted synthetic CI results. No actual Bubblewrap namespace execution, OpenWrt ImageBuilder artifact, approved production binary, or physical hardware acceptance is established.
+
+### Branch, ownership and coordination
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`; PR [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31/base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Source/test HEAD: `c926780fa51783de1246b943dd7c6ae995a48a04`.
+- This task changes only `.github/workflows/release-imagebuilder-sandbox.yml` and `tools/test_imagebuilder_sandbox_host.py`; this section is the narrow handover update.
+- The accumulated #35 diff still includes inherited `.github/workflows/hardware-ci.yml` outside the current RELEASE route. It was not modified; PHX-HARDWARE / PHX-MASTER must resolve ownership before integration.
+- MASTER #288 `737af73dbc4d3ab3786b6f6b0b251106a5d1c7c3` remains OPEN / DRAFT; `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`. RELEASE's Experiments route remains reimplementation-review only.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`; its Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed, but signing/publication are not established.
+- Experiments #291 remains `42797e2f3d65c30a1070caf49c93aebec149d897`, mixed-owner (21 RELEASE / 3 CORE / 2 PISONET): compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) failed at CORE-owned handover freshness; Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at PISONET-owned `negative-selftest.ps1`. RELEASE made no changes to #291.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`, with five workflows queued and zero jobs executed.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete. Canonical private Drive registry v11 was not found in the authorized Library search results; older snapshots were not substituted and no private content was copied.
+
+### Next owner actions and limits
+
+1. **PHX-INFRA:** provide an authorized disposable, ephemeral, no-secret runner with pre-provisioned Bubblewrap and working unprivileged user namespaces; rerun the mandatory sandbox regressions.
+2. **PHX-CORE / PHX-MASTER / site authority:** define the approved site-scoped ULA /48 authority; do not substitute a synthetic test prefix.
+3. **PHX-QA:** independently review the exact source/test SHA `c926780f` and its trigger-coverage regression.
+4. **PHX-HARDWARE / PHX-MASTER:** resolve inherited `hardware-ci.yml` ownership before any integration decision.
+5. **PHX-MASTER:** refresh the stale #172 PR-head index from current PR API values.
+6. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
+
+No merge, signing with real keys, release tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
