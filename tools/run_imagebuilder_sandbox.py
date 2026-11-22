@@ -413,9 +413,37 @@ def main() -> int:
 
         # Bubblewrap's unprivileged user namespace maps only this invoking
         # host UID/GID to namespace root; no external mapping helper is used.
-        (stdout, stderr), timed_out = _communicate_with_timeout(
-            process, args.timeout_seconds, sandbox_child_pgid
-        )
+        try:
+            (stdout, stderr), timed_out = _communicate_with_timeout(
+                process, args.timeout_seconds, sandbox_child_pgid
+            )
+        except (KeyboardInterrupt, SystemExit) as interruption:
+            # The outer bwrap leader may have exited while a detached sandbox
+            # child still holds inherited capture pipes. Do not use poll() as a
+            # reason to skip process-group cleanup on operator interruption.
+            cleanup_detail = ""
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                    process, sandbox_child_pgid
+                )
+                cleanup_detail = "\\n".join(
+                    part
+                    for part in (_as_text(cleanup_stdout), _as_text(cleanup_stderr))
+                    if part
+                ).strip()
+            except Exception as cleanup_error:
+                cleanup_detail = (
+                    "process-group cleanup raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+
+            if cleanup_detail:
+                note = "ImageBuilder runner process-group cleanup: " + cleanup_detail
+                if hasattr(interruption, "add_note"):
+                    interruption.add_note(note)
+                else:
+                    print(note, file=sys.stderr)
+            raise
         if timed_out:
             if "sandbox process group" in stderr.lower():
                 return blocked(
