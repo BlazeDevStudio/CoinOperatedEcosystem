@@ -375,8 +375,9 @@ def calculate_overlay_size(staging_dir: str) -> int:
                 f"Staging root changed while opening: {staging_root}"
             )
 
-        push_directory(root_fd, ".")
+        root_to_push = root_fd
         root_fd = -1
+        push_directory(root_to_push, ".")
 
         while directory_stack:
             frame = directory_stack[-1]
