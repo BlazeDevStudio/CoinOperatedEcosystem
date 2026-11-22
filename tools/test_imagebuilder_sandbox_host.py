@@ -260,6 +260,49 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertFalse(ready)
         self.assertIn("timed out", detail.lower())
 
+    def test_probe_keyboard_interrupt_terminates_group_and_reraises_after_leader_exit(self):
+        helper = self.helper_or_skip()
+        process = mock.Mock()
+        process.pid = 812
+        process.poll.return_value = 0
+        interruption = KeyboardInterrupt()
+        process.communicate.side_effect = interruption
+
+        with mock.patch.object(
+            helper.subprocess, "Popen", return_value=process
+        ) as popen:
+            with mock.patch.object(
+                helper, "_terminate_process_groups", return_value=("", "")
+            ) as terminate:
+                with self.assertRaises(KeyboardInterrupt) as raised:
+                    helper.check_host("/usr/bin/bwrap", timeout_seconds=1)
+
+        self.assertIs(raised.exception, interruption)
+        popen.assert_called_once()
+        terminate.assert_called_once_with(process, grace_seconds=0.25)
+
+    def test_probe_system_exit_terminates_group_and_reraises_after_leader_exit(self):
+        helper = self.helper_or_skip()
+        process = mock.Mock()
+        process.pid = 813
+        process.poll.return_value = 0
+        interruption = SystemExit(23)
+        process.communicate.side_effect = interruption
+
+        with mock.patch.object(
+            helper.subprocess, "Popen", return_value=process
+        ) as popen:
+            with mock.patch.object(
+                helper, "_terminate_process_groups", return_value=("", "")
+            ) as terminate:
+                with self.assertRaises(SystemExit) as raised:
+                    helper.check_host("/usr/bin/bwrap", timeout_seconds=1)
+
+        self.assertIs(raised.exception, interruption)
+        self.assertEqual(raised.exception.code, 23)
+        popen.assert_called_once()
+        terminate.assert_called_once_with(process, grace_seconds=0.25)
+
     def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None) as which:
