@@ -2967,3 +2967,70 @@ No merge, real-key signing, release tag, publication, hardware flash, payment mi
 
 ---
 
+
+
+## PHX-RELEASE UTC01 — pin manifest publication to the scanned artifact directory (2026-11-22)
+
+**Disposition:** one RELEASE-owned artifact-integrity race reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- PR: [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), branch `phoenix/release-build-script-publication-safety-20261117`.
+- Parent #31 / base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first regression / expected RED: [`bc7550fc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bc7550fcc2c4920687017c2503407d77a6c1569a).
+- Corrected source/test SHA: [`94fffa03`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/94fffa0343f2481a3098e96885e6b9cd15f8d671).
+- Final handover is this documentation commit; no workflow, firmware sketch, board profile, shared interface, or other-role source was changed in this increment.
+
+### Defect reproduced and correction
+
+The manifest writer previously scanned artifact files by path, then opened the artifact directory by path only after the scan. A deterministic race replaced the scanned directory with a different real directory after payload enumeration but before publication. The old writer returned success and placed `artifact-manifest.json` and `SHA256SUMS` into the replacement directory, even though the recorded payload hashes came from the displaced original directory.
+
+The test-first regression renames the scanned artifact directory and installs a separate empty directory at the original path after the payload scan. The original writer did not reject the identity change.
+
+The correction:
+- Opens the artifact directory with `O_DIRECTORY | O_NOFOLLOW` before scanning.
+- Compares the path's `lstat` identity with the pinned descriptor's `fstat` identity after scanning and again after publication.
+- Requires the path to remain a real, non-symlink directory resolving to itself.
+- Creates and removes output names relative to the pinned directory descriptor (`dir_fd`), so a later pathname replacement cannot redirect publication or rollback into a different directory.
+- Rolls back a just-published pair and syncs the pinned directory if the post-publication identity check fails.
+
+The manifest schema, source/event SHA binding, payload inventory, SHA256SUMS format, no-overwrite behavior, and board workflow interfaces are unchanged.
+
+### Test-first and exact-source Actions
+
+**Test-only commit `bc7550fc` — expected RED**
+- Push shared/firmware [#44970909570](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44970909570), job `137050262247`: **169 tests executed; exactly one failure** in the new directory-replacement regression; two intentional skips. The failure was `ManifestError not raised`, confirming that the old writer accepted the replaced directory. Profile staging and board compilation were skipped after the packaging test step failed.
+- PR shared/firmware [#44970912621](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44970912621): same expected test-first failure at the same SHA.
+- Case-collision [#44970912622](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44970912622): **PASS**.
+- Sandbox [#44970912611](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44970912611): host preflight **31/31 PASS**, then Bubblewrap absent / exit 125; namespace and mandatory sandbox packaging tests **SKIPPED**.
+
+**Corrected source/test head `94fffa03`**
+- Push shared/firmware [#44971075013](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44971075013), job `137050761696`: **169 packaging/tool tests PASS / 2 intentional skips**; firmware syntax, shared contracts and manifest durability marker PASS. The following all-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compile jobs were **SKIPPED**. Overall workflow is **FAILURE**, not green.
+- PR shared/firmware [#44971080205](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44971080205), job `137050778865`: same **169 PASS / 2 skips**, followed by the same ten-profile ULA admission failure; both board compile jobs **SKIPPED**.
+- Sandbox PR [#44971080214](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44971080214), job `137050778975`: host preflight **31/31 PASS**, then Bubblewrap absent / exit 125; unprivileged namespace and mandatory sandbox packaging steps **SKIPPED**.
+- Case-collision [#44971080228](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44971080228): **PASS**.
+
+These are hosted CI and deterministic filesystem fault-injection results. No real OpenWrt ImageBuilder package, production firmware, target-device run, hardware flash, or physical acceptance is established.
+
+### Live cross-repository ownership and blockers
+
+- MASTER #288: `f4e375ffca2bd0a17160d1fd41ead7c50274cdab`; `OWNERSHIP_ROUTES.json` remains `DRAFT_REVIEW_ONLY` at blob `e4db324315a1b3543fec17a148fbf960170fcb29`; RELEASE route remains `reimplementation-review`.
+- RELEASE #242: `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded, while signing and publication remain skipped.
+- RELEASE #291: `42797e2f3d65c30a1070caf49c93aebec149d897`; ESP32 compatibility [#44894604453](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604453) passed 3/3; Full [#44894604464](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604464) and Windows [#44894604466](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/44894604466) failed at the CORE-owned handover freshness gate. The 26-path branch remains mixed-owner; RELEASE did not modify it.
+- COE integration #26 remains frozen at `b382d233ff06c8791b1028bed3c617cc7b670d12`, with five workflows queued and zero jobs.
+- COE parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 remains OPEN / DRAFT / UNMERGED at source/test SHA `94fffa03`.
+- Cleanup-first #266 remains OPEN, 0/7 tracks checked.
+- Canonical private Drive registry v11 and newer corrections were not surfaced through authorized Library access. Older snapshots were not substituted; no private contents or identifiers were copied to GitHub.
+
+### Next owner actions
+
+1. **PHX-QA:** independently review exact source/test SHA `94fffa0343f2481a3098e96885e6b9cd15f8d671`, especially directory identity pinning, dir-fd output creation/rollback, and both pre/post-publication identity checks.
+2. **PHX-CORE / site authority / PHX-MASTER:** define and approve the site-scoped RFC 4193 ULA /48 and same-site multi-appliance contract; RELEASE will not invent a prefix or bypass admission.
+3. **PHX-INFRA:** provide an authorized disposable, ephemeral, no-secret Bubblewrap runner with working unprivileged namespaces.
+4. **PHX-MASTER:** refresh stale #172 PR-head references and retain the DRAFT_REVIEW_ONLY ownership route.
+5. **Registry custodian:** restore authorized access to canonical private registry v11.
+
+No merge, real-key signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer/freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and the 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+---
