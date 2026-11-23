@@ -3684,6 +3684,63 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(os.stat(final_path).st_nlink, 2)
 
 
+    def test_open_parent_directory_closes_next_descriptor_when_previous_close_fails(self):
+        parent_dir = os.path.join(self.temp_dir, "descriptor-walk-parent")
+        os.makedirs(parent_dir)
+        requested_path = os.path.join(parent_dir, "profile.json")
+
+        opened = []
+        original_open = packager.os.open
+        original_close = packager.os.close
+        injected = {"raised": False}
+
+        def capture_open(path, flags, *args, **kwargs):
+            descriptor = original_open(path, flags, *args, **kwargs)
+            opened.append((os.fspath(path), descriptor))
+            return descriptor
+
+        def close_after_closing_root(descriptor):
+            if opened and descriptor == opened[0][1] and not injected["raised"]:
+                injected["raised"] = True
+                original_close(descriptor)
+                raise OSError("injected prior-directory close failure")
+            return original_close(descriptor)
+
+        caught = None
+        with mock.patch.object(
+            packager.os, "open", side_effect=capture_open
+        ), mock.patch.object(
+            packager.os, "close", side_effect=close_after_closing_root
+        ):
+            try:
+                packager._open_parent_directory_without_symlink_parents(
+                    requested_path,
+                    "Test file",
+                    "Safe parent walk is unavailable",
+                    "Invalid test filename",
+                )
+            except BaseException as exc:
+                caught = exc
+
+        leaked = []
+        for _, descriptor in opened:
+            try:
+                os.fstat(descriptor)
+            except OSError:
+                continue
+            leaked.append(descriptor)
+            original_close(descriptor)
+
+        self.assertTrue(injected["raised"], "the prior-directory close boundary was not reached")
+        self.assertIsInstance(caught, OSError)
+        self.assertIn("injected prior-directory close failure", str(caught))
+        self.assertEqual(
+            leaked,
+            [],
+            "the newly opened directory descriptor leaked when closing its predecessor failed",
+        )
+
+
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
         with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
