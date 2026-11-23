@@ -526,17 +526,38 @@ def calculate_overlay_size(staging_dir: str) -> int:
                             ) from exc
                         raise
 
-                    opened_child = os.fstat(child_fd)
-                    if (
-                        not stat.S_ISDIR(opened_child.st_mode)
-                        or (opened_entry.st_dev, opened_entry.st_ino)
-                        != (opened_child.st_dev, opened_child.st_ino)
-                    ):
-                        os.close(child_fd)
-                        raise ValueError(
-                            "Staged directory changed while opening during "
-                            f"overlay size walk: {relative_entry}"
-                        )
+                    # The child descriptor is not yet owned by directory_stack.
+                    # Keep ownership local until verification succeeds and push_directory
+                    # accepts it; otherwise an interruption here would leak the descriptor.
+                    try:
+                        opened_child = os.fstat(child_fd)
+                        if (
+                            not stat.S_ISDIR(opened_child.st_mode)
+                            or (opened_entry.st_dev, opened_entry.st_ino)
+                            != (opened_child.st_dev, opened_child.st_ino)
+                        ):
+                            raise ValueError(
+                                "Staged directory changed while opening during "
+                                f"overlay size walk: {relative_entry}"
+                            )
+                    except BaseException as child_open_error:
+                        try:
+                            os.close(child_fd)
+                        except BaseException as close_error:
+                            if not (
+                                isinstance(close_error, OSError)
+                                and close_error.errno == errno.EBADF
+                            ):
+                                note = (
+                                    "Could not close in-flight staged directory descriptor "
+                                    f"{child_fd} after {type(child_open_error).__name__}: "
+                                    f"{type(close_error).__name__}: {close_error}"
+                                )
+                                if hasattr(child_open_error, "add_note"):
+                                    child_open_error.add_note(note)
+                                else:
+                                    print(note, file=sys.stderr)
+                        raise
                     push_directory(child_fd, relative_entry)
                     continue
 
