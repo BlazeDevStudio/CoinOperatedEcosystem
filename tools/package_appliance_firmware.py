@@ -673,8 +673,17 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
                         "Staging directory path changed while opening: "
                         f"{os.path.join(current_path, component)}"
                     )
-            except Exception:
-                os.close(next_fd)
+            except BaseException as verification_error:
+                try:
+                    os.close(next_fd)
+                except BaseException as close_error:
+                    try:
+                        verification_error.add_note(
+                            "Also failed to close staged directory descriptor "
+                            f"{next_fd}: {close_error}"
+                        )
+                    except BaseException:
+                        pass
                 raise
 
             os.close(current_fd)
