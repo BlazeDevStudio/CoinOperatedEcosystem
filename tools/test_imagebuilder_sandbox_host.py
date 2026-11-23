@@ -330,6 +330,54 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertIn("detached child group cleanup diagnostic", detail)
 
 
+    def test_probe_oserror_cleanup_interruption_retries_once_and_reraises(self):
+        helper = self.helper_or_skip()
+        interruptions = (
+            KeyboardInterrupt("cleanup interrupted"),
+            SystemExit(24),
+        )
+        for interruption in interruptions:
+            with self.subTest(interruption=type(interruption).__name__):
+                process = mock.Mock()
+                process.pid = 815
+                process.poll.return_value = 0
+                process.communicate.side_effect = OSError("capture pipe failed")
+                cleanup_calls = []
+
+                def interrupt_first_cleanup(process_arg, grace_seconds):
+                    cleanup_calls.append((process_arg, grace_seconds))
+                    if len(cleanup_calls) == 1:
+                        raise interruption
+                    return ("retry cleanup stdout", "retry cleanup stderr")
+
+                with mock.patch.object(
+                    helper.subprocess, "Popen", return_value=process
+                ) as popen:
+                    with mock.patch.object(
+                        helper,
+                        "_terminate_process_groups",
+                        side_effect=interrupt_first_cleanup,
+                    ) as terminate:
+                        with self.assertRaises(type(interruption)) as raised:
+                            helper.check_host("/usr/bin/bwrap", timeout_seconds=1)
+
+                self.assertIs(raised.exception, interruption)
+                self.assertEqual(len(cleanup_calls), 2)
+                self.assertTrue(all(call == (process, 0.25) for call in cleanup_calls))
+                popen.assert_called_once()
+                self.assertEqual(terminate.call_count, 2)
+                if hasattr(raised.exception, "add_note"):
+                    notes = getattr(raised.exception, "__notes__", [])
+                    self.assertTrue(
+                        any("Original preflight OSError: capture pipe failed" in note for note in notes),
+                        "the re-raised interruption must retain the original preflight failure",
+                    )
+                    self.assertTrue(
+                        any("retry cleanup stdout" in note for note in notes),
+                        "the retry cleanup diagnostics must be attached to the interruption",
+                    )
+
+
     def test_probe_resolves_bubblewrap_from_trusted_system_path_only(self):
         helper = self.helper_or_skip()
         with mock.patch.object(helper.shutil, "which", return_value=None) as which:
