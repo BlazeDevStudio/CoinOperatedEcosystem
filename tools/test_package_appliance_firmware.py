@@ -733,6 +733,75 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "actual overlay usr/sbin utilities must remain executable",
         )
 
+    def test_calculate_overlay_size_closes_child_descriptor_when_fstat_is_interrupted(self):
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                staging_dir = os.path.join(
+                    self.temp_dir,
+                    f"overlay-size-child-fstat-{interruption_type.__name__.lower()}",
+                )
+                os.makedirs(os.path.join(staging_dir, "nested"))
+                captured = {"child_fd": None}
+                original_open = os.open
+                original_fstat = os.fstat
+
+                def capture_child_directory(path, flags, mode=0o777, *, dir_fd=None):
+                    descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+                    if (
+                        os.fspath(path) == "nested"
+                        and dir_fd is not None
+                        and flags & os.O_DIRECTORY
+                        and captured["child_fd"] is None
+                    ):
+                        captured["child_fd"] = descriptor
+                    return descriptor
+
+                def interrupt_child_fstat(descriptor):
+                    if descriptor == captured["child_fd"]:
+                        raise interruption_type(
+                            "simulated child directory fstat interruption"
+                        )
+                    return original_fstat(descriptor)
+
+                supported_dir_fd = set(os.supports_dir_fd)
+                with mock.patch.object(
+                    packager.os,
+                    "open",
+                    side_effect=capture_child_directory,
+                ) as patched_open:
+                    supported_dir_fd.add(patched_open)
+                    with mock.patch.object(
+                        packager.os,
+                        "supports_dir_fd",
+                        supported_dir_fd,
+                    ):
+                        with mock.patch.object(
+                            packager.os,
+                            "fstat",
+                            side_effect=interrupt_child_fstat,
+                        ):
+                            with self.assertRaisesRegex(
+                                interruption_type,
+                                "simulated child directory fstat interruption",
+                            ):
+                                packager.calculate_overlay_size(staging_dir)
+
+                self.assertIsNotNone(
+                    captured["child_fd"],
+                    "the child-directory open boundary was not reached",
+                )
+                try:
+                    original_fstat(captured["child_fd"])
+                except OSError:
+                    descriptor_closed = True
+                else:
+                    os.close(captured["child_fd"])
+                    descriptor_closed = False
+                self.assertTrue(
+                    descriptor_closed,
+                    "the in-flight child directory descriptor must close when fstat is interrupted",
+                )
+
     def test_calculate_overlay_size_does_not_follow_file_replaced_with_symlink_before_open(self):
         staging_dir = os.path.join(self.temp_dir, "overlay-size-race")
         os.makedirs(staging_dir)
