@@ -28,6 +28,9 @@ TRUSTED_SYSTEM_PATH = "/usr/bin:/bin"
 DEFAULT_ROOTFS = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 DEFAULT_RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
 
+# Bound untrusted/custom router profile input before JSON parsing.
+MAX_PROFILE_BYTES = 1024 * 1024
+
 # Intentionally unset until PHX-CORE/COE select a durable site-prefix authority
 # and MASTER approves the provisioning contract. Never use a vendor or per-device fallback.
 APPROVED_SITE_ULA_PREFIX = None
@@ -108,10 +111,18 @@ def load_profile(profile_id_or_path: str) -> dict:
         profile_stat = os.fstat(profile_fd)
         if not stat.S_ISREG(profile_stat.st_mode):
             raise ValueError(f"Router profile is not a regular file: {path}")
+        if profile_stat.st_size > MAX_PROFILE_BYTES:
+            raise ValueError(
+                f"Router profile exceeds maximum allowed size ({MAX_PROFILE_BYTES} bytes): {path}"
+            )
 
         with os.fdopen(profile_fd, "rb") as profile_file:
             profile_fd = -1
-            content = profile_file.read()
+            content = profile_file.read(MAX_PROFILE_BYTES + 1)
+            if len(content) > MAX_PROFILE_BYTES:
+                raise ValueError(
+                    f"Router profile exceeds maximum allowed size ({MAX_PROFILE_BYTES} bytes): {path}"
+                )
             after_read_stat = os.fstat(profile_file.fileno())
             before_read_identity = (
                 profile_stat.st_dev,
