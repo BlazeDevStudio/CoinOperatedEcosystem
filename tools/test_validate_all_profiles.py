@@ -129,8 +129,8 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
                 mock.patch.object(validator.tempfile, "mkdtemp", return_value=staging_dir),
                 mock.patch.object(validator, "validate_profile", return_value=result),
                 mock.patch.object(
-                    validator.shutil,
-                    "rmtree",
+                    validator.os,
+                    "rmdir",
                     side_effect=PermissionError("injected workspace cleanup failure"),
                 ),
                 mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
@@ -154,8 +154,8 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
                     side_effect=KeyboardInterrupt("primary profile interruption"),
                 ),
                 mock.patch.object(
-                    validator.shutil,
-                    "rmtree",
+                    validator.os,
+                    "rmdir",
                     side_effect=PermissionError("injected workspace cleanup failure"),
                 ),
                 mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
