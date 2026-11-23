@@ -736,5 +736,48 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         )
 
 
+    def test_writer_rolls_back_outputs_when_interrupted_after_helper_returns(self):
+        original_write = manifest_writer._write_new_file
+
+        for interrupted_filename in (MANIFEST_FILENAME, CHECKSUMS_FILENAME):
+            with self.subTest(filename=interrupted_filename):
+                with tempfile.TemporaryDirectory(
+                    prefix="phx-manifest-pair-return-interruption-"
+                ) as temporary:
+                    artifact_dir = Path(temporary)
+                    (artifact_dir / "firmware.bin").write_bytes(b"synthetic firmware")
+                    (artifact_dir / "sketch.ino").write_bytes(b"// synthetic source\\n")
+                    kwargs = self.kwargs()
+                    kwargs["artifact_dir"] = str(artifact_dir)
+
+                    def interrupt_after_creation(directory, filename, content, *args, **kwargs):
+                        output_path = original_write(
+                            directory, filename, content, *args, **kwargs
+                        )
+                        if filename == interrupted_filename:
+                            raise KeyboardInterrupt(
+                                f"simulated interruption after {filename} creation"
+                            )
+                        return output_path
+
+                    with mock.patch.object(
+                        manifest_writer,
+                        "_write_new_file",
+                        side_effect=interrupt_after_creation,
+                    ):
+                        with self.assertRaises(KeyboardInterrupt) as raised:
+                            write_artifact_manifest(**kwargs)
+
+                    self.assertIn(interrupted_filename, str(raised.exception))
+                    self.assertFalse(
+                        (artifact_dir / MANIFEST_FILENAME).exists(),
+                        "manifest-pair rollback left a partially published manifest",
+                    )
+                    self.assertFalse(
+                        (artifact_dir / CHECKSUMS_FILENAME).exists(),
+                        "manifest-pair rollback left a partially published checksum file",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()
