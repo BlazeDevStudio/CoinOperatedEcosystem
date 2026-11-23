@@ -693,8 +693,8 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         original_fdopen = os.fdopen
 
         class CloseFailingOutput:
-            def __init__(self, descriptor):
-                self.stream = original_fdopen(descriptor, "wb")
+            def __init__(self, descriptor, mode):
+                self.stream = original_fdopen(descriptor, mode)
 
             def __enter__(self):
                 return self
