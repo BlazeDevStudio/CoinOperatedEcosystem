@@ -3745,6 +3745,69 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
 
 
+    def test_open_or_create_directory_closes_next_descriptor_when_previous_close_is_interrupted(self):
+        target_dir = os.path.join(self.temp_dir, "descriptor-create-interruption", "nested")
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                opened = []
+                original_open = packager.os.open
+                original_close = packager.os.close
+                injected = {"raised": False}
+
+                def capture_open(path, flags, *args, **kwargs):
+                    descriptor = original_open(path, flags, *args, **kwargs)
+                    opened.append((os.fspath(path), descriptor))
+                    return descriptor
+
+                def close_after_closing_root(descriptor):
+                    if opened and descriptor == opened[0][1] and not injected["raised"]:
+                        injected["raised"] = True
+                        original_close(descriptor)
+                        raise interruption_type("injected predecessor close interruption")
+                    return original_close(descriptor)
+
+                caught = None
+                with mock.patch.object(
+                    packager.os, "open", new=capture_open
+                ), mock.patch.object(
+                    packager.os,
+                    "supports_dir_fd",
+                    set(os.supports_dir_fd) | {capture_open},
+                ), mock.patch.object(
+                    packager.os, "close", new=close_after_closing_root
+                ):
+                    try:
+                        packager._open_or_create_directory_without_symlink_parents(
+                            target_dir,
+                            "Test staging parent",
+                            "Safe directory creation is unavailable",
+                        )
+                    except BaseException as exc:
+                        caught = exc
+
+                leaked = []
+                for _, descriptor in opened:
+                    try:
+                        os.fstat(descriptor)
+                    except OSError:
+                        continue
+                    leaked.append(descriptor)
+                    original_close(descriptor)
+
+                self.assertTrue(
+                    injected["raised"],
+                    "the predecessor descriptor close boundary was not reached",
+                )
+                self.assertIsInstance(caught, interruption_type)
+                self.assertIn("injected predecessor close interruption", str(caught))
+                self.assertEqual(
+                    leaked,
+                    [],
+                    "the newly opened directory descriptor leaked when predecessor close was interrupted",
+                )
+
+
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
         with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
