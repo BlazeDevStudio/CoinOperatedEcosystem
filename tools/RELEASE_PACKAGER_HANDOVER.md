@@ -4764,3 +4764,50 @@ These are hosted CI results. The ImageBuilder namespace and actual sandbox packa
 4. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with working unprivileged Bubblewrap namespaces; no privileged mapping helper or unsandboxed fallback.
 
 No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No #26 migration was staged or authorized. No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC22 — bound staged appliance diagnostics in profile validation
+
+**Observed:** 2026-11-23T22:16Z–22:18Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Parent #31/base:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Prior task head:** `33f2d097d2eef4016ecf9df7089bec9a5483379f`.  
+**Source/test head:** `4ed1b211ec6896ead9888accae85dea5d642e521`.
+
+### Defect and correction
+
+`validate_all_profiles.py::validate_profile()` invoked `sh blaze-appliance-diag --json` through `subprocess.run()` without a timeout. A stuck diagnostics script could hold the profile-validation step and its shared CI job indefinitely.
+
+- Regression-only commit: [`43e7f05f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/43e7f05f8971dcba8519c1188058e39642b40bec).
+- Expected RED: push CI [#45278134845](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45278134845), job `138055177588`: `Ran 208 tests`; **1 failure / 1 error / 2 intentional skips**. The timeout assertion observed `None != 30`; the injected `subprocess.TimeoutExpired` escaped instead of becoming an actionable profile failure. Firmware syntax and shared-contract steps passed; the later profile-validation step was skipped because the unit-test step failed.
+- Source correction: [`4ed1b211`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4ed1b211ec6896ead9888accae85dea5d642e521).
+- Added a 30-second `DIAGNOSTICS_TIMEOUT_SECONDS`, a focused `run_appliance_diagnostics()` helper, the subprocess timeout, and a profile-specific `RuntimeError` on timeout. The existing exit-code and JSON/profile-ID checks remain unchanged. No CORE diagnostic script, router profile, network, financial or runtime implementation was modified.
+
+### Exact-source CI at `4ed1b211`
+
+- Push shared CI [#45278314010](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45278314010), job `138055796380`: **208 PASS / 2 intentional skips**. The following end-to-end profile-validation step **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compile jobs were **SKIPPED**; overall workflow **FAILURE**, not green.
+- PR shared CI [#45278326058](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45278326058), job `138055833769`: same **208 PASS / 2 skips**, same 10/10 ULA admission failures, and board compile jobs skipped.
+- PR sandbox [#45278325949](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45278325949), job `138055833677`: host preflight **40/40 PASS**; Bubblewrap unavailable / exit 125. Unprivileged identity, namespace probe and mandatory sandbox packaging tests were **SKIPPED**.
+- PR case-collision [#45278326261](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45278326261): PASS.
+
+The timeout branch was exercised with a mocked `TimeoutExpired`; no real hung diagnostic process was run. The full appliance profile diagnostic invocation was not reached because the independent ULA admission gate fails first. These are hosted CI results, not appliance or hardware evidence.
+
+### Current ownership and blockers
+
+- MASTER #288 observed head: `afafa4fc975587e8a8e82dff602438df3269338a`; OPEN / DRAFT. Ownership routes remain `DRAFT_REVIEW_ONLY`; RELEASE's route remains `reimplementation-review`. No migration authority was exercised.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT; Windows build [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded; signing and publishing skipped.
+- Experiments #291: `c5a566fd04a59a3c4a4bbbaa9524f8a9b97e6b7d`, OPEN / DRAFT; ESP32 compatibility [#45209288305](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288305) passed 3/3; Full [#45209288533](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288533) and Windows [#45209288746](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288746) failed at inherited CORE handover freshness; publisher/build steps skipped.
+- COE #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN; five workflows queued, zero jobs executed.
+- COE #31 parent: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; shared/board CI [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed; sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed its unprivileged namespace probe; case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete.
+- The canonical private Drive registry v11 was not surfaced through authorized Library retrieval. The only matching Library registry snapshot surfaced is dated 2026-10-26 / version 1; it was not substituted for v11 or used as authority.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the bounded-diagnostics regression and correction at exact source/test `4ed1b211`.
+2. **PHX-CORE / PHX-MASTER:** define approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or weaken fail-closed admission.
+3. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with working unprivileged Bubblewrap namespaces; no privileged mapping helper or unsandboxed fallback.
+4. **PHX-MASTER:** refresh #172's COE #35 child-head reference after this handover commit; preserve MASTER ownership.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No #26 migration was staged or authorized. No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
