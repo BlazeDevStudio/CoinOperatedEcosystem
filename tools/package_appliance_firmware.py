@@ -1228,9 +1228,11 @@ def _open_parent_directory_without_symlink_parents(
         raise ValueError(invalid_filename_message)
 
     directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    owned_descriptors = [directory_fd]
     try:
-        # Walk from the filesystem root one component at a time. O_NOFOLLOW
-        # protects every parent component, not only the final filename.
+        # Keep the newly opened component owned before closing its predecessor.
+        # If that close fails or is interrupted, cleanup still knows about the
+        # new descriptor and can attempt every remaining close exactly once.
         for component in parent_path.split(os.sep):
             if not component:
                 continue
@@ -1238,7 +1240,7 @@ def _open_parent_directory_without_symlink_parents(
                 next_fd = os.open(
                     component,
                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                    dir_fd=directory_fd,
+                    dir_fd=owned_descriptors[-1],
                 )
             except OSError as exc:
                 if exc.errno in (errno.ELOOP, errno.ENOTDIR):
@@ -1246,14 +1248,18 @@ def _open_parent_directory_without_symlink_parents(
                         f"{purpose} parent path contains a symlink or non-directory: {parent_path}"
                     ) from exc
                 raise
-            os.close(directory_fd)
-            directory_fd = next_fd
-        return directory_fd, filename
-    except Exception:
-        os.close(directory_fd)
+            owned_descriptors.append(next_fd)
+            previous_fd = owned_descriptors.pop(-2)
+            os.close(previous_fd)
+        return owned_descriptors.pop(), filename
+    except BaseException:
+        _close_overlay_descriptors_preserving_primary(
+            [
+                ("directory path walk", descriptor)
+                for descriptor in reversed(owned_descriptors)
+            ]
+        )
         raise
-
-
 def _open_or_create_directory_without_symlink_parents(
     path: str,
     purpose: str,
