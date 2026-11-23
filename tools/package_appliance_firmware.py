@@ -1164,7 +1164,13 @@ def stage_overlay(profile: dict, source_rootfs: str, staging_dir: str, include_r
 
     # Normalize through pinned descriptors. A path-based islink()+chmod()
     # sequence can follow a symlink inserted between the check and chmod.
-    for root, dirs, files in os.walk(staging_dir):
+    # os.walk() ignores traversal errors unless onerror is supplied; silently
+    # skipping a subtree would leave permissions unnormalized while reporting
+    # a successful staging result. Treat every scan failure as a hard failure.
+    def raise_walk_error(error: OSError) -> None:
+        raise error
+
+    for root, dirs, files in os.walk(staging_dir, onerror=raise_walk_error):
         for d in dirs:
             directory_path = os.path.join(root, d)
             # Keep the optional Rental configuration directory private.
