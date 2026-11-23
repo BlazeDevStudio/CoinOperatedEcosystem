@@ -4557,3 +4557,58 @@ Only the COE #35 release-packager implementation and its test were changed:
 4. **PHX-MASTER:** keep #172's COE #35 child-head reference and review-only route current.
 
 No merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. These are hosted synthetic CI results only. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC18 — preserve host-preflight interruption while retrying cleanup
+
+**Observed:** 2026-11-23T18:23Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Base parent #31:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Prior task head:** `b66b9634b08820f8e480710aed157667237d8ecf`.  
+**Current source/test head:** `5b6a8a74bb068cc8822661e879498d34a70209ef`.
+
+### Scope and defect
+
+A code-path review found that `check_imagebuilder_sandbox_host.py::check_host()` already attempted process-group cleanup when its preflight was interrupted, but its `except BaseException` cleanup branch caught ordinary `Exception` only. If cleanup itself received a second `KeyboardInterrupt` or `SystemExit`, that second interruption could replace the primary preflight interruption and prevent the preflight handler from completing its one-shot retry/diagnostic path. The adjacent `OSError` path already retries once when cleanup is interrupted.
+
+The release-owned correction retries process-group cleanup once after a cleanup-time `BaseException`, records the first interruption and retry output/error on the primary exception, then re-raises the original preflight interruption. A second cleanup interruption is recorded; there is no unbounded retry and no privileged fallback.
+
+Only these two release-owned paths changed in the code increment:
+
+- `tools/check_imagebuilder_sandbox_host.py`
+- `tools/test_imagebuilder_sandbox_host.py`
+
+No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, firmware, network-profile, financial, manifest-schema or cross-repository integration path changed.
+
+### Commit and test-fixture lineage — retain limitations accurately
+
+- Test draft commit [`9798fd40`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9798fd40862cfecc8f660cf58dfbec6a0e0feecc) initially placed the new test in the wrong test class. Exact-host runs [#45236951556](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45236951556) and [#45236962610](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45236962610) failed at the host unit-test step with `AttributeError: 'TestImageBuilderSandboxProcessCleanup' object has no attribute 'helper_or_skip'`. This was a test-fixture placement error, not a product RED.
+- Source correction [`5befd0d6`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5befd0d60427074e98402a406906df329833da92) added the bounded cleanup retry and primary-interruption diagnostics.
+- Placement attempt [`739938eb`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/739938ebf8c25a16dce87eba0507b835d4ce99b6) moved the method after the top-level `load_runner()` definition, so the test was not discovered. Run [#45237640384](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45237640384) ran 39 existing host tests; it is not credited as testing the new regression.
+- Corrected test placement [`5b6a8a74`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5b6a8a74bb068cc8822661e879498d34a70209ef) places the regression in `TestImageBuilderSandboxHostPreflight`. The final host-preflight run below discovered and executed it.
+- Because the first two attempts were fixture errors and the third did not discover the test, **no valid pre-fix product RED is claimed**. The defect was identified by control-flow inspection; the corrected regression is verified green against the fix.
+
+### Exact-source CI at source/test HEAD `5b6a8a74`
+
+- Mandatory sandbox [#45237906916](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45237906916), job `137914441354`: **40 host-preflight tests PASS / OK**, including `test_probe_baseexception_cleanup_interruption_retries_once_and_reraises_primary`. The next Bubblewrap availability step **FAILED CLOSED** because Bubblewrap is not installed on the hosted runner (exit 125). Single-ID identity, namespace probe and mandatory sandbox packaging regressions were **SKIPPED**, not passed. This is not sandbox acceptance.
+- Shared/firmware [#45237906890](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45237906890), job `137914442748`: **202 tests PASS**, including the host-preflight regression, manifest durability suite and `PHX-MANIFEST-DURABILITY-PASS`. The subsequent profile admission step **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32 and ESP8266 compile jobs were **SKIPPED**. Overall workflow **FAILURE**, not green.
+- The final exact-head case-collision workflow was not triggered for this two-file source/test increment; the preceding exact #35 docs-head collision guard [#45227805250](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45227805250) passed at prior head `b66b9634`, and is not represented as a final-head run.
+
+### Live coordination / provenance
+
+- MASTER #288 observed head: `3d4226bbff276a26066b3cb04e520b6eba252110`; `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29`, 11 routes, `DRAFT_REVIEW_ONLY`. RELEASE's explicit workflow route is `reimplementation-review`, not copy/move authorization.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT; prior Windows build [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed, with signing and publication skipped.
+- Experiments #291: `c5a566fd04a59a3c4a4bbbaa9524f8a9b97e6b7d`, OPEN / DRAFT. Exact #347 compatibility matrix [#45209288305](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288305) passed 3/3; integrated Full [#45209288533](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288533) and Windows [#45209288746](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288746) failed at inherited CORE handover freshness; downstream signing/publishing skipped.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. This #35 child does not unfreeze #26.
+- Cleanup-first #266 remains OPEN / 0-of-7. The #242 RELEASE cleanup track is separate and is not closed by this COE task.
+- Canonical private Drive registry v11 was not surfaced through authorized Library search. No older v3-v7 snapshot was substituted; no private registry content or identifiers were copied into GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the bounded preflight cleanup retry, primary-interruption preservation and the corrected test at the final docs head.
+2. **PHX-CORE / PHX-MASTER:** provide approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or weaken admission.
+3. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with working unprivileged Bubblewrap namespaces; do not install privileged mapping helpers or add a fallback.
+4. **PHX-MASTER:** refresh #172's COE #35 child-head reference from the prior `b66b9634` snapshot to the current head after this handover commit.
+
+No merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. These are hosted synthetic CI results only. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
