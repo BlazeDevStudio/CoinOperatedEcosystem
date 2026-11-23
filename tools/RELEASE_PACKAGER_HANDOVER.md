@@ -4131,3 +4131,53 @@ This handover append is the third path in the increment. The inherited `.github/
 5. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
 
 No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC07 — close an in-flight overlay child descriptor on interruption (2026-11-23)
+
+**Disposition:** one RELEASE-owned descriptor-lifecycle defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes the packager, its regression test and this handover only.
+
+### Live control plane and ownership
+
+- Refreshed BLAZE-COMMS/1 control-plane issue #172, cleanup-first #266, this handover, MASTER PR #288 ownership routes, Experiments #242/#291, COE #26/#31/#35 and exact current PR heads.
+- MASTER #288 current HEAD at inspection: `83e57736d1edb7b1cb175bf3b6db878e66c19221`, OPEN / DRAFT / UNMERGED, 184 coordination-only paths. `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE's Experiments workflow route is `reimplementation-review`, not migration authorization.
+- Experiments #242 HEAD: `734b89d9e7792247e8376335c3f3685500ab3f89`, draft. Experiments #291 HEAD: `886cabfc5080c3fbef03c2a3b1afe9d52dea6f60`, draft. Latest observed #291 compatibility matrix had a core 4.0.0 pinned Arduino CLI asset HTTP 403; Full/Windows also failed at the CORE-owned handover freshness gate. No CORE/PISONET files were changed here.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`, five workflows queued / zero jobs. Parent #31/base remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Child #35 branch is `phoenix/release-build-script-publication-safety-20261117`.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete.
+- Canonical private Drive project registry v11 was not surfaced through the authorized Library surface. Older snapshots/checkpoint metadata were not substituted and no private contents or identifiers were copied to GitHub.
+- Inspected branch metadata reports branch protection disabled / required checks off and empty ruleset lists for the relevant inspected branches; no protection settings were changed.
+
+### Defect and bounded correction
+
+In `calculate_overlay_size()`, a child directory is opened with `O_DIRECTORY|O_NOFOLLOW`, then verified with `os.fstat(child_fd)` before ownership transfers to `directory_stack`. If KeyboardInterrupt or SystemExit arrives during that verification, the child descriptor is not yet in the stack and the outer `finally` closes only the current entry descriptor, parent descriptor and stacked directories. The untracked child descriptor leaked.
+
+The correction keeps local ownership through `fstat()` and identity/type validation. Any `BaseException` in that boundary attempts to close the child descriptor, attaches a close diagnostic without masking the primary exception, and re-raises the original exception. Ownership transfers to `push_directory()` only after verification succeeds; that helper retains its existing cleanup behavior. No path traversal, overlay size, profile, ULA or ImageBuilder interface changed.
+
+### Test-first lineage
+
+- Test-first commit: [`1cd02bdc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1cd02bdc0d1181953bebe6a61e2196697941b5ce) adds KeyboardInterrupt and SystemExit subcases that capture the opened child directory descriptor and require it to be closed after interrupted `fstat()`.
+- Expected RED, PR shared/firmware [#45129789374](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45129789374), job `137542409131`: **193 tests ran; exactly two subtest failures**, one for KeyboardInterrupt and one for SystemExit. Both assertions proved the in-flight child descriptor remained open.
+- PR case-collision [#45129789359](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45129789359): PASS.
+- PR sandbox [#45129789364](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45129789364): host-preflight tests PASS; mandatory Bubblewrap availability failed closed because `bwrap` is absent (exit 125). Namespace and sandbox-dependent packaging tests were skipped, not passed.
+
+### Source correction and exact-source Actions
+
+- Source correction: [`f042b0ac`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f042b0ac5e5293c45427f9e692107f1b736975cf).
+- Exact source/test PR shared/firmware [#45129964325](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45129964325), validation job `137542965874`: **193 tests PASS / 2 intentional skips**; manifest durability marker PASS; all **10/10 appliance profiles then failed closed** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP32/ESP8266 compile jobs were skipped after profile admission failed; overall workflow **FAILURE**, not green.
+- Exact source/test PR sandbox [#45129964219](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45129964219), job `137542965560`: **39/39 host-preflight tests PASS**, then Bubblewrap availability failed closed (exit 125); runner identity, namespace probe and mandatory sandbox packaging tests were skipped.
+- Exact source/test PR case-collision [#45129964320](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45129964320): PASS.
+
+These are hosted CI results only. The overlay regression is verified in the shared tool suite; no real Bubblewrap namespace, ImageBuilder appliance build, firmware artifact, approved production binary or physical hardware acceptance was produced.
+
+### Scope and next owners
+
+- Test-first source/test HEAD: `1cd02bdc0d1181953bebe6a61e2196697941b5ce`.
+- Source-fix HEAD: `f042b0ac5e5293c45427f9e692107f1b736975cf`.
+- The increment's intended scope is exactly `tools/test_package_appliance_firmware.py`, `tools/package_appliance_firmware.py`, and this RELEASE-owned handover append. The inherited `.github/workflows/hardware-ci.yml` overlap remains untouched.
+1. **PHX-QA:** independently review descriptor ownership transfer and interruption cleanup at exact source/test SHA `f042b0ac`.
+2. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with Bubblewrap and working unprivileged single-ID namespaces; do not weaken the fail-closed boundary.
+3. **PHX-CORE / PHX-MASTER:** establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+4. **PHX-MASTER:** keep the ownership manifest and control-plane refs current; no workflow migration is authorized by the draft route.
+5. **Registry custodian:** restore authorized provenance-only access to canonical v11.
+
+No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
