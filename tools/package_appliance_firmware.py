@@ -284,6 +284,68 @@ def generate_network_uci(profile: dict) -> str:
     return "\n".join(out)
 
 
+def _close_overlay_descriptors_preserving_primary(descriptors):
+    """Attempt every owned overlay descriptor close without masking a scan error."""
+    primary_error = sys.exc_info()[1]
+    close_errors = []
+    cleanup_interruptions = []
+
+    for label, descriptor in descriptors:
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            if exc.errno != errno.EBADF:
+                close_errors.append((label, exc))
+        except BaseException as exc:
+            cleanup_interruptions.append((label, exc))
+
+    if cleanup_interruptions:
+        interruption = cleanup_interruptions[0][1]
+        details = "; ".join(
+            f"{label}: {type(exc).__name__}: {exc}"
+            for label, exc in cleanup_interruptions
+        )
+        if close_errors:
+            details += "; " + "; ".join(
+                f"{label}: {type(exc).__name__}: {exc}"
+                for label, exc in close_errors
+            )
+        if hasattr(interruption, "add_note"):
+            interruption.add_note(
+                "Additional overlay descriptor cleanup failures: " + details
+            )
+        raise interruption
+
+    if not close_errors:
+        return
+
+    details = "; ".join(
+        f"{label}: {type(exc).__name__}: {exc}"
+        for label, exc in close_errors
+    )
+    note = "Overlay descriptor cleanup encountered close errors: " + details
+    if primary_error is not None:
+        if hasattr(primary_error, "add_note"):
+            primary_error.add_note(note)
+        else:
+            try:
+                sys.stderr.write(note + "\\n")
+            except OSError:
+                pass
+        return
+
+    first_error = close_errors[0][1]
+    if hasattr(first_error, "add_note") and len(close_errors) > 1:
+        first_error.add_note(
+            "Additional overlay descriptor cleanup failures: "
+            + "; ".join(
+                f"{label}: {type(exc).__name__}: {exc}"
+                for label, exc in close_errors[1:]
+            )
+        )
+    raise first_error
+
+
 def calculate_overlay_size(staging_dir: str) -> int:
     """Calculate overlay size through pinned no-follow directory/entry descriptors.
 
@@ -363,18 +425,19 @@ def calculate_overlay_size(staging_dir: str) -> int:
                     f"{relative_directory}"
                 )
             names = os.listdir(directory_fd)
+            directory_stack.append({
+                "fd": directory_fd,
+                "relative": relative_directory,
+                "snapshot": directory_snapshot(opened_directory),
+                "names": names,
+                "entries": {},
+                "index": 0,
+            })
         except BaseException:
-            os.close(directory_fd)
+            _close_overlay_descriptors_preserving_primary(
+                [("staged directory", directory_fd)]
+            )
             raise
-
-        directory_stack.append({
-            "fd": directory_fd,
-            "relative": relative_directory,
-            "snapshot": directory_snapshot(opened_directory),
-            "names": names,
-            "entries": {},
-            "index": 0,
-        })
 
     try:
         parent_fd, root_name = _open_parent_directory_without_symlink_parents(
@@ -468,8 +531,10 @@ def calculate_overlay_size(staging_dir: str) -> int:
                             f"{relative_directory}/{entry_name}"
                         )
 
-                os.close(directory_fd)
-                directory_stack.pop()
+                completed_frame = directory_stack.pop()
+                _close_overlay_descriptors_preserving_primary(
+                    [("staged directory", completed_frame["fd"])]
+                )
                 continue
 
             entry_name = frame["names"][frame["index"]]
@@ -551,23 +616,10 @@ def calculate_overlay_size(staging_dir: str) -> int:
                                 "Staged directory changed while opening during "
                                 f"overlay size walk: {relative_entry}"
                             )
-                    except BaseException as child_open_error:
-                        try:
-                            os.close(child_fd)
-                        except BaseException as close_error:
-                            if not (
-                                isinstance(close_error, OSError)
-                                and close_error.errno == errno.EBADF
-                            ):
-                                note = (
-                                    "Could not close in-flight staged directory descriptor "
-                                    f"{child_fd} after {type(child_open_error).__name__}: "
-                                    f"{type(close_error).__name__}: {close_error}"
-                                )
-                                if hasattr(child_open_error, "add_note"):
-                                    child_open_error.add_note(note)
-                                else:
-                                    print(note, file=sys.stderr)
+                    except BaseException:
+                        _close_overlay_descriptors_preserving_primary(
+                            [("in-flight staged directory", child_fd)]
+                        )
                         raise
                     push_directory(child_fd, relative_entry)
                     continue
@@ -576,18 +628,24 @@ def calculate_overlay_size(staging_dir: str) -> int:
                 # read permission or opening a FIFO/device.
                 total_bytes += opened_entry.st_size
             finally:
-                os.close(entry_fd)
+                _close_overlay_descriptors_preserving_primary(
+                    [("staged entry", entry_fd)]
+                )
 
         check_root_name(opened_root)
         return (total_bytes + 1023) // 1024
     finally:
-        if root_fd >= 0:
-            os.close(root_fd)
-        if parent_fd >= 0:
-            os.close(parent_fd)
+        pending_descriptors = []
         while directory_stack:
             frame = directory_stack.pop()
-            os.close(frame["fd"])
+            pending_descriptors.append(("staged directory", frame["fd"]))
+        if root_fd >= 0:
+            pending_descriptors.append(("staging root", root_fd))
+            root_fd = -1
+        if parent_fd >= 0:
+            pending_descriptors.append(("staging parent", parent_fd))
+            parent_fd = -1
+        _close_overlay_descriptors_preserving_primary(pending_descriptors)
 
 def build_imagebuilder_cmd(profile: dict, files_dir: str, include_rental: bool = False) -> str:
     """Construct exact OpenWrt ImageBuilder command."""
