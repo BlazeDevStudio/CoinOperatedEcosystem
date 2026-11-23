@@ -668,6 +668,61 @@ def load_runner():
     return module
 
 
+    def test_probe_baseexception_cleanup_interruption_retries_once_and_reraises_primary(self):
+        helper = self.helper_or_skip()
+        cases = (
+            (
+                KeyboardInterrupt("preflight interrupted"),
+                KeyboardInterrupt("cleanup interrupted"),
+            ),
+            (SystemExit(23), SystemExit(24)),
+        )
+        for primary, cleanup_interruption in cases:
+            with self.subTest(primary=type(primary).__name__):
+                process = mock.Mock()
+                process.pid = 816
+                process.poll.return_value = 0
+                process.communicate.side_effect = primary
+                cleanup_calls = []
+
+                def interrupt_first_cleanup(process_arg, grace_seconds):
+                    cleanup_calls.append((process_arg, grace_seconds))
+                    if len(cleanup_calls) == 1:
+                        raise cleanup_interruption
+                    return ("retry cleanup stdout", "retry cleanup stderr")
+
+                with mock.patch.object(
+                    helper.subprocess, "Popen", return_value=process
+                ) as popen:
+                    with mock.patch.object(
+                        helper,
+                        "_terminate_process_groups",
+                        side_effect=interrupt_first_cleanup,
+                    ) as terminate:
+                        with self.assertRaises(type(primary)) as raised:
+                            helper.check_host("/usr/bin/bwrap", timeout_seconds=1)
+
+                self.assertIs(raised.exception, primary)
+                self.assertEqual(len(cleanup_calls), 2)
+                self.assertTrue(
+                    all(call == (process, 0.25) for call in cleanup_calls)
+                )
+                popen.assert_called_once()
+                self.assertEqual(terminate.call_count, 2)
+                if hasattr(primary, "add_note"):
+                    notes = getattr(primary, "__notes__", [])
+                    self.assertTrue(
+                        any(
+                            "Original preflight interruption" in note
+                            for note in notes
+                        ),
+                        "the primary interruption must remain authoritative",
+                    )
+                    self.assertTrue(
+                        any("retry cleanup stdout" in note for note in notes),
+                        "retry cleanup diagnostics must be attached to the primary interruption",
+                    )
+
 class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
     def test_runner_interrupt_cleans_detached_group_even_if_leader_exited(self):
         runner = load_runner()
@@ -1235,60 +1290,6 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
 
 
 
-    def test_probe_baseexception_cleanup_interruption_retries_once_and_reraises_primary(self):
-        helper = self.helper_or_skip()
-        cases = (
-            (
-                KeyboardInterrupt("preflight interrupted"),
-                KeyboardInterrupt("cleanup interrupted"),
-            ),
-            (SystemExit(23), SystemExit(24)),
-        )
-        for primary, cleanup_interruption in cases:
-            with self.subTest(primary=type(primary).__name__):
-                process = mock.Mock()
-                process.pid = 816
-                process.poll.return_value = 0
-                process.communicate.side_effect = primary
-                cleanup_calls = []
-
-                def interrupt_first_cleanup(process_arg, grace_seconds):
-                    cleanup_calls.append((process_arg, grace_seconds))
-                    if len(cleanup_calls) == 1:
-                        raise cleanup_interruption
-                    return ("retry cleanup stdout", "retry cleanup stderr")
-
-                with mock.patch.object(
-                    helper.subprocess, "Popen", return_value=process
-                ) as popen:
-                    with mock.patch.object(
-                        helper,
-                        "_terminate_process_groups",
-                        side_effect=interrupt_first_cleanup,
-                    ) as terminate:
-                        with self.assertRaises(type(primary)) as raised:
-                            helper.check_host("/usr/bin/bwrap", timeout_seconds=1)
-
-                self.assertIs(raised.exception, primary)
-                self.assertEqual(len(cleanup_calls), 2)
-                self.assertTrue(
-                    all(call == (process, 0.25) for call in cleanup_calls)
-                )
-                popen.assert_called_once()
-                self.assertEqual(terminate.call_count, 2)
-                if hasattr(primary, "add_note"):
-                    notes = getattr(primary, "__notes__", [])
-                    self.assertTrue(
-                        any(
-                            "Original preflight interruption" in note
-                            for note in notes
-                        ),
-                        "the primary interruption must remain authoritative",
-                    )
-                    self.assertTrue(
-                        any("retry cleanup stdout" in note for note in notes),
-                        "retry cleanup diagnostics must be attached to the primary interruption",
-                    )
 
 
 if __name__ == "__main__":
