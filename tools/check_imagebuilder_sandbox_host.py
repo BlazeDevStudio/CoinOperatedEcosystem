@@ -142,6 +142,41 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
                     "process-group cleanup raised "
                     f"{type(cleanup_error).__name__}: {cleanup_error}"
                 )
+            except BaseException as cleanup_interruption:
+                retry_detail = "process-group cleanup retry completed"
+                try:
+                    retry_stdout, retry_stderr = _terminate_process_groups(
+                        process, grace_seconds=0.25
+                    )
+                    retry_output = "\n".join(
+                        part
+                        for part in (_as_text(retry_stdout), _as_text(retry_stderr))
+                        if part
+                    ).strip()
+                    if retry_output:
+                        retry_detail = f"{retry_detail}: {retry_output}"
+                except Exception as retry_error:
+                    retry_detail = (
+                        "process-group cleanup retry raised "
+                        f"{type(retry_error).__name__}: {retry_error}"
+                    )
+                except BaseException as retry_interruption:
+                    retry_detail = (
+                        "process-group cleanup retry was interrupted by "
+                        f"{type(retry_interruption).__name__}: {retry_interruption}"
+                    )
+
+                note = (
+                    f"Original preflight OSError: {exc}; "
+                    "first process-group cleanup was interrupted by "
+                    f"{type(cleanup_interruption).__name__}: {cleanup_interruption}; "
+                    f"{retry_detail}"
+                )
+                if hasattr(cleanup_interruption, "add_note"):
+                    cleanup_interruption.add_note(note)
+                else:
+                    print(note, file=sys.stderr)
+                raise
         message = f"could not execute bubblewrap namespace probe: {exc}"
         if cleanup_detail:
             message = f"{message}; cleanup: {cleanup_detail}"
