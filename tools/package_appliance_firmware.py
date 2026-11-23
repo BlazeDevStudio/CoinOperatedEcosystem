@@ -1277,26 +1277,28 @@ def _open_or_create_directory_without_symlink_parents(
 
     absolute_path = os.path.abspath(path)
     directory_fd = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY)
+    owned_descriptors = [directory_fd]
     try:
         for component in absolute_path.split(os.sep):
             if not component:
                 continue
+            parent_fd = owned_descriptors[-1]
             try:
                 next_fd = os.open(
                     component,
                     os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                    dir_fd=directory_fd,
+                    dir_fd=parent_fd,
                 )
             except FileNotFoundError:
                 try:
-                    os.mkdir(component, 0o755, dir_fd=directory_fd)
+                    os.mkdir(component, 0o755, dir_fd=parent_fd)
                 except FileExistsError:
                     pass
                 try:
                     next_fd = os.open(
                         component,
                         os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                        dir_fd=directory_fd,
+                        dir_fd=parent_fd,
                     )
                 except OSError as exc:
                     if exc.errno in (errno.ELOOP, errno.ENOTDIR):
@@ -1310,11 +1312,22 @@ def _open_or_create_directory_without_symlink_parents(
                         f"{purpose} path contains a symlink or non-directory: {absolute_path}"
                     ) from exc
                 raise
-            os.close(directory_fd)
-            directory_fd = next_fd
-        return directory_fd
-    except Exception:
-        os.close(directory_fd)
+
+            # Transfer ownership of the new descriptor before closing its
+            # predecessor. If close is interrupted, cleanup still knows about
+            # the new descriptor and can attempt every remaining owned close.
+            owned_descriptors.append(next_fd)
+            previous_fd = owned_descriptors.pop(-2)
+            os.close(previous_fd)
+
+        return owned_descriptors.pop()
+    except BaseException:
+        _close_overlay_descriptors_preserving_primary(
+            [
+                ("directory creation path walk", descriptor)
+                for descriptor in reversed(owned_descriptors)
+            ]
+        )
         raise
 
 
