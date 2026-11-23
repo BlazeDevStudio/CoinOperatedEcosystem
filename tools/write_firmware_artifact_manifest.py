@@ -99,6 +99,25 @@ def _require_descriptor_scan_support() -> None:
         )
 
 
+def _close_descriptor_preserving_primary(descriptor: int, label: str) -> None:
+    """Close a descriptor without masking an active artifact-integrity failure."""
+    primary_error = sys.exc_info()[1]
+    try:
+        os.close(descriptor)
+    except OSError as close_error:
+        detail = (
+            f"could not close {label}: "
+            f"{type(close_error).__name__}: {close_error}"
+        )
+        if primary_error is not None:
+            if hasattr(primary_error, "add_note"):
+                primary_error.add_note(detail)
+            else:
+                print(detail, file=sys.stderr)
+            return
+        raise ManifestError(detail) from close_error
+
+
 def _directory_scan_snapshot(info: os.stat_result) -> tuple[int, ...]:
     """Capture directory metadata that changes when its entry set is modified."""
     return (
@@ -199,7 +218,9 @@ def _scan_artifact_directory_fd(
                         f"artifact directory changed during scan: {relative}"
                     )
             finally:
-                os.close(child_descriptor)
+                _close_descriptor_preserving_primary(
+                    child_descriptor, f"artifact child directory {relative}"
+                )
             continue
 
         if not stat.S_ISREG(before.st_mode):
@@ -274,7 +295,9 @@ def _scan_artifact_directory_fd(
             raise ManifestError(f"could not safely hash artifact {relative}: {exc}") from exc
         finally:
             if descriptor >= 0:
-                os.close(descriptor)
+                _close_descriptor_preserving_primary(
+                    descriptor, f"artifact file {relative}"
+                )
 
         records.append(
             {
@@ -320,7 +343,9 @@ def _scan_artifact_files(
         _require_artifact_directory_identity(root, directory_descriptor)
     finally:
         if owns_descriptor:
-            os.close(directory_descriptor)
+            _close_descriptor_preserving_primary(
+                directory_descriptor, "artifact root directory"
+            )
 
     records.sort(key=lambda item: item["path"])
     if not records:
@@ -526,7 +551,9 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
                 ) from publication_error
             raise
     finally:
-        os.close(directory_descriptor)
+        _close_descriptor_preserving_primary(
+            directory_descriptor, "artifact publication directory"
+        )
 
     return (
         os.path.join(artifact_dir, MANIFEST_FILENAME),
