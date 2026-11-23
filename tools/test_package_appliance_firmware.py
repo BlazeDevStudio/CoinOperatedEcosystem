@@ -407,6 +407,55 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
+    def test_ensure_staging_directory_closes_child_fd_on_baseexception_during_identity_check(self):
+        for exception_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=exception_type.__name__):
+                staging_root = os.path.join(
+                    self.temp_dir,
+                    f"ensure-interrupt-{exception_type.__name__.lower()}",
+                )
+                os.makedirs(staging_root)
+
+                child_fd = {"value": None}
+                interrupted = {"value": False}
+                original_open = os.open
+                original_fstat = os.fstat
+
+                def open_and_capture(path, flags, mode=0o777, *, dir_fd=None):
+                    descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+                    if os.fspath(path) == "etc" and dir_fd is not None:
+                        child_fd["value"] = descriptor
+                    return descriptor
+
+                def fstat_and_interrupt(descriptor):
+                    if (
+                        descriptor == child_fd["value"]
+                        and not interrupted["value"]
+                    ):
+                        interrupted["value"] = True
+                        raise exception_type("injected child identity interruption")
+                    return original_fstat(descriptor)
+
+                patched_open = mock.Mock(side_effect=open_and_capture)
+                supported_dir_fd = set(os.supports_dir_fd)
+                supported_dir_fd.add(patched_open)
+                with mock.patch.object(
+                    packager.os, "open", new=patched_open
+                ), mock.patch.object(
+                    packager.os, "fstat", side_effect=fstat_and_interrupt
+                ), mock.patch.object(
+                    packager.os, "supports_dir_fd", supported_dir_fd
+                ):
+                    with self.assertRaisesRegex(
+                        exception_type, "injected child identity interruption"
+                    ):
+                        packager._ensure_staging_directory(staging_root, "etc")
+
+                self.assertTrue(interrupted["value"])
+                self.assertIsInstance(child_fd["value"], int)
+                with self.assertRaises(OSError):
+                    original_fstat(child_fd["value"])
+
     def test_ensure_staging_directory_rejects_parent_swapped_to_symlink_during_walk(self):
         staging_root = os.path.join(self.temp_dir, "ensure-staging-root")
         etc_path = os.path.join(staging_root, "etc")
