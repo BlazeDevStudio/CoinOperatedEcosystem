@@ -639,5 +639,54 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse(checksums_path.exists())
 
 
+
+    def test_scanner_preserves_primary_error_when_root_descriptor_close_fails(self):
+        original_open = os.open
+        original_close = os.close
+        root_descriptor = None
+
+        def capture_root_descriptor(path, flags, *args, **kwargs):
+            nonlocal root_descriptor
+            descriptor = original_open(path, flags, *args, **kwargs)
+            if (
+                os.fspath(path) == os.path.abspath(str(self.artifact_dir))
+                and flags & os.O_DIRECTORY
+            ):
+                root_descriptor = descriptor
+            return descriptor
+
+        def close_then_fail(descriptor):
+            if descriptor == root_descriptor:
+                original_close(descriptor)
+                raise OSError("injected root descriptor close failure")
+            return original_close(descriptor)
+
+        def fail_scan(*args, **kwargs):
+            raise ManifestError("primary artifact scan failure")
+
+        with mock.patch.object(
+            manifest_writer.os, "open", side_effect=capture_root_descriptor
+        ), mock.patch.object(
+            manifest_writer.os, "close", side_effect=close_then_fail
+        ), mock.patch.object(
+            manifest_writer, "_scan_artifact_directory_fd", side_effect=fail_scan
+        ):
+            with self.assertRaisesRegex(
+                ManifestError, "primary artifact scan failure"
+            ) as raised:
+                manifest_writer._scan_artifact_files(str(self.artifact_dir))
+
+        self.assertIsNotNone(root_descriptor)
+        notes = getattr(raised.exception, "__notes__", [])
+        self.assertTrue(
+            any(
+                "artifact root directory" in note
+                and "injected root descriptor close failure" in note
+                for note in notes
+            ),
+            f"expected close failure to be attached to primary exception, got {notes!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
