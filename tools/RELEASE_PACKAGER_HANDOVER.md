@@ -4664,3 +4664,56 @@ These are hosted CI results. The ImageBuilder namespace and actual sandbox packa
 4. **PHX-MASTER:** refresh #172's COE #35 child reference after this handover commit.
 
 No merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC20 — fail closed when overlay permission-normalization traversal is incomplete
+
+**Observed:** 2026-11-23T20:12Z–20:14Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Parent #31/base:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Prior task head:** `be3d3e5aa2c91551b26b9018191743213e60a402`.  
+**Source/test head:** `daf08616ec001dae7013a8f029894153f597e1ae`.
+
+### Defect and test-first evidence
+
+`stage_overlay()` used `os.walk(staging_dir)` for the final permission-normalization pass without an `onerror` callback. Python's `os.walk` silently ignores directory-scan errors by default. A transient or permission-related scan failure could therefore skip a subtree and still return a successful staging manifest even though file/directory modes in that subtree were never normalized.
+
+- Test-only commit: [`77408bbd`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/77408bbd3578a0d4c5965c19ed43ad4ff0eab687).
+- Expected RED: shared PR run [#45256840088](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45256840088), validation job `137980774729`: **204 tests ran, exactly one expected failure, two intentional skips**. The new test injected `PermissionError` when `os.walk` scanned the staging root and observed `AssertionError: PermissionError not raised`. Firmware-hardening and shared-contract tests passed; the profile-admission step was skipped because the packaging test step failed.
+- Case-collision [#45256840097](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45256840097): PASS.
+- Sandbox [#45256840171](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45256840171): host-preflight passed; Bubblewrap was unavailable, exit 125; namespace and mandatory sandbox packaging tests were skipped.
+
+### Source correction
+
+- Source fix: [`daf08616`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/daf08616ec001dae7013a8f029894153f597e1ae).
+- The final normalization walk now supplies an `onerror` callback that re-raises the original scan error. A staging operation can no longer report success after silently skipping a subtree.
+- No directory modes, profile data, firmware bytes, ULA policy, manifest schema, financial behavior, shared interface, or non-RELEASE-owned source were changed.
+- **Recovery limitation:** this increment does not add automatic rollback of the staging tree if normalization fails. The newly created staging directory may remain incomplete; do not treat it as a successful output or reuse it. Inspect and remove only that known operator-selected staging destination before retrying.
+
+### Exact-source Actions at source/test head `daf08616`
+
+- Shared/firmware PR [#45256991175](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45256991175), validation job `137981301687`: **204 packaging/tool tests PASS / 2 intentional skips**; firmware hardening and shared contracts PASS. The subsequent profile admission step **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were **SKIPPED**; overall workflow **FAILURE**, not green.
+- Sandbox PR [#45256991158](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45256991158), job `137981301496`: host-preflight step PASS; Bubblewrap unavailable, exit 125. Unprivileged identity, namespace probe and mandatory sandbox packaging tests were **SKIPPED**, not passed.
+- Case-collision [#45256991157](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45256991157): PASS.
+
+These are hosted CI results only. No ImageBuilder namespace run, appliance image, approved binary, physical hardware acceptance, or production evidence is claimed.
+
+### Current coordination and blockers
+
+- MASTER #288 observed head: `ee3e0497faa519a49cc6ccd975f32479604dbf04`; `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29`, 11 routes, `DRAFT_REVIEW_ONLY`. RELEASE's route remains `reimplementation-review`; no copy/move authority.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT.
+- Experiments #291: `c5a566fd04a59a3c4a4bbbaa9524f8a9b97e6b7d`, OPEN / DRAFT; its narrow ESP32 compatibility pass is not full integration acceptance.
+- COE integration #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN.
+- COE parent #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; this child #35 remains separate and does not unfreeze #26.
+- Cleanup-first #266 remains OPEN / 0-of-7.
+- Canonical private Drive project registry v11 was not surfaced through authorized Library retrieval. An older Library registry snapshot is not a substitute and was not used as current provenance.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the new fail-closed traversal regression and the source change.
+2. **PHX-CORE / PHX-MASTER:** define approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or weaken admission.
+3. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with working unprivileged Bubblewrap namespaces; no privileged mapping helper or unsandboxed fallback.
+4. **PHX-MASTER:** refresh #172's COE #35 child-head reference after the handover-only commit.
+
+No merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
