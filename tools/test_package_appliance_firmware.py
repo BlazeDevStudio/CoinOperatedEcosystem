@@ -965,27 +965,32 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 raise OSError(errno.EIO, "injected parent descriptor close failure")
             return original_close(descriptor)
 
+        supported_dir_fd = set(os.supports_dir_fd)
         with mock.patch.object(
-            packager,
-            "_open_parent_directory_without_symlink_parents",
-            side_effect=capture_parent_descriptor,
-        ), mock.patch.object(
-            packager.os,
-            "listdir",
-            side_effect=capture_root_descriptor,
-        ), mock.patch.object(
             packager.os,
             "open",
             side_effect=fail_child_entry_open,
-        ), mock.patch.object(
-            packager.os,
-            "close",
-            side_effect=close_parent_then_fail,
-        ):
-            with self.assertRaisesRegex(
-                OSError, "primary overlay scan failure"
-            ) as raised:
-                packager.calculate_overlay_size(staging_dir)
+        ) as patched_open:
+            supported_dir_fd.add(patched_open)
+            with mock.patch.object(
+                packager.os, "supports_dir_fd", supported_dir_fd
+            ), mock.patch.object(
+                packager,
+                "_open_parent_directory_without_symlink_parents",
+                side_effect=capture_parent_descriptor,
+            ), mock.patch.object(
+                packager.os,
+                "listdir",
+                side_effect=capture_root_descriptor,
+            ), mock.patch.object(
+                packager.os,
+                "close",
+                side_effect=close_parent_then_fail,
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "primary overlay scan failure"
+                ) as raised:
+                    packager.calculate_overlay_size(staging_dir)
 
         self.assertEqual(raised.exception.errno, errno.EACCES)
         self.assertTrue(captured["parent_close_failed"])
