@@ -4276,3 +4276,48 @@ These are hosted CI results only. No real Bubblewrap namespace, ImageBuilder fir
 - **Registry custodian:** restore authorized provenance-only access to canonical v11.
 
 No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC10 — bound custom router-profile reads before JSON parsing
+
+**Disposition:** one RELEASE-owned profile-loader resource-boundary defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Live ownership and provenance
+
+- Re-read control-plane issue #172, cleanup-first #266, MASTER #288 ownership routes, RELEASE #242/#291, COE #26/#31/#35 and this handover before editing.
+- Exact observed starting heads: MASTER #288 `2214dc064cee24ddf6753f3fe3af2014f6915b0a`; RELEASE #242 `734b89d9e7792247e8376335c3f3685500ab3f89`; RELEASE #291 `886cabfc5080c3fbef03c2a3b1afe9d52dea6f60`; COE #26 `b382d233ff06c8791b1028bed3c617cc7b670d12`; COE #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; COE #35 starting head `9b300ea18886c11447ff6f0891d4ed9147454881`.
+- MASTER ownership manifest remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE workflow route is `reimplementation-review`, not migration authorization. COE #26 remains FROZEN. #266 remains OPEN / 0-of-7.
+- All ten current COE router-profile JSON files observed in the frozen #26 candidate tree are 795–1,033 bytes. The canonical private Drive registry v11 was not surfaced through authorized Library access; older snapshots were not substituted and no private contents/identifiers were copied.
+
+### Finding and correction
+
+`load_profile()` accepted custom JSON paths and read the entire file with unbounded `profile_file.read()` after opening a no-follow regular-file descriptor. A large file could consume unbounded runner memory before JSON parsing or the existing post-read identity check. A file that grew after the initial `fstat()` was also read in full before the size/identity mismatch was noticed.
+
+The correction defines `MAX_PROFILE_BYTES = 1 MiB`, rejects an initial descriptor size above the limit before opening a Python stream, reads at most `MAX_PROFILE_BYTES + 1` bytes to detect growth beyond the ceiling, and preserves the existing post-read descriptor identity/metadata check. Existing profile-ID/custom-path behavior, duplicate-key rejection and symlink defenses remain intact.
+
+### Test-first lineage
+
+- Test-only regression commit: [`74333ba0`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/74333ba04ce961f072597980c93b784c3528ca0c).
+- Expected RED: [shared/firmware PR run #45153626281](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45153626281), job `137620949913`: **197 tests ran; exactly two expected failures**, one for an oversized file that was still streamed into JSON parsing and one for a file grown after initial `fstat()` that was read without a byte limit. Two existing intentional skips. Firmware-hardening and shared-contract checks passed; the all-profile stage was skipped after the test failure.
+- Source fix: [`d59caf8c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d59caf8c6171b13369ae108fe9d717a564a910a9).
+
+### Exact-source CI at `d59caf8c`
+
+- PR shared/firmware [#45153752647](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45153752647), job `137621376972`: **197 tests PASS / 2 intentional skips**. Firmware-hardening and shared-contract checks passed. The subsequent all-profile staging gate **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority remains undefined; ESP8266/ESP32 compile jobs were skipped. Overall workflow **FAILURE**, not green.
+- PR sandbox [#45153752770](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45153752770), job `137621376611`: host preflight **39/39 PASS**; Bubblewrap is not installed (exit 125). Unprivileged identity, namespace probe and mandatory sandbox packaging tests were skipped, not passed.
+- PR case-collision [#45153752579](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45153752579): **PASS**.
+- Push shared/firmware [#45153742529](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45153742529): packaging suite passed; all-profile admission failed closed and board compile jobs were skipped.
+- Push sandbox [#45153742562](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45153742562): host preflight passed; Bubblewrap unavailable / exit 125.
+- Push and PR results above are hosted CI only. No ImageBuilder image, board firmware binary, real sandbox namespace or hardware acceptance was produced. Final handover-head CI must be checked separately after this append.
+
+### Scope, review and next owners
+
+- Starting head `9b300ea1` to source/test head `d59caf8c` changes exactly two RELEASE-owned paths: `tools/test_package_appliance_firmware.py` and `tools/package_appliance_firmware.py`. This handover is the only third path in the final documentation commit.
+- No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, shared-interface, financial or networking source was changed.
+- **PHX-QA:** independently review the 1 MiB bound, initial-size rejection, read-limit-plus-one growth detection and existing identity checks at the final PR head.
+- **PHX-INFRA / COE owner:** provide an authorized disposable runner with Bubblewrap and working unprivileged single-ID namespaces; do not weaken fail-closed behavior.
+- **PHX-CORE / PHX-MASTER:** establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+- **PHX-MASTER:** refresh the stale #172 embedded #288 head and maintain ownership routes; no workflow migration is authorized by the draft route.
+- **Registry custodian:** restore authorized provenance-only access to canonical v11.
+
+Rollback is limited to the test/source commits from this increment on the existing draft branch. No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
