@@ -150,7 +150,27 @@ def main():
                 failed = True
                 print(f"  [FAIL] {pf}: {e}", file=sys.stderr)
     finally:
-        shutil.rmtree(temp_base, ignore_errors=True)
+        primary_error = sys.exc_info()[1]
+        try:
+            shutil.rmtree(temp_base)
+        except FileNotFoundError:
+            pass
+        except BaseException as cleanup_error:
+            detail = (
+                f"validation workspace cleanup failed for {temp_base}: "
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            )
+            if primary_error is not None:
+                print(
+                    f"WARNING: {detail}; preserving primary "
+                    f"{type(primary_error).__name__}",
+                    file=sys.stderr,
+                )
+            elif isinstance(cleanup_error, OSError):
+                failed = True
+                print(f"ERROR: {detail}", file=sys.stderr)
+            else:
+                raise
 
     print("\n=== Appliance Packaging & Diagnostics Summary ===")
     print(f"Total Profiles Tested: {len(profile_files)}")
