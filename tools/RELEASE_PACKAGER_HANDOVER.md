@@ -4321,3 +4321,63 @@ The correction defines `MAX_PROFILE_BYTES = 1 MiB`, rejects an initial descripto
 - **Registry custodian:** restore authorized provenance-only access to canonical v11.
 
 Rollback is limited to the test/source commits from this increment on the existing draft branch. No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
+## PHX-RELEASE UTC11 — exhaust overlay descriptor cleanup after scan failures (2026-11-23T11Z)
+
+**Disposition:** one RELEASE-owned overlay-size traversal cleanup defect was reproduced test-first and corrected on the existing COE #35 child draft. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No Codex app, CLI, API, agent or workflow was used.
+
+### Live control plane, ownership and provenance
+
+- Re-read control-plane issue [#172](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/172), cleanup-first [#266](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/266), this handover, MASTER [#288](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/288), RELEASE #242/#291, COE #26/#31 and child #35.
+- Exact observed refs at task start: MASTER #288 `8eb2475c9dbfa2f53d9f11786c3f3d7503cb7132`; RELEASE #242 `734b89d9e7792247e8376335c3f3685500ab3f89`; RELEASE #291 `886cabfc5080c3fbef03c2a3b1afe9d52dea6f60`; COE #26 `b382d233ff06c8791b1028bed3c617cc7b670d12`; COE #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; COE #35 starting head `a0bb98d841182457c62b3c99853d4143a4a0550e`.
+- MASTER ownership manifest blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE's Experiments workflow route remains `reimplementation-review`, not workflow-copy or migration authorization.
+- #266 remains OPEN and its seven-role checklist is not complete. Its RELEASE track explicitly names Experiments #242; this COE #35 packaging child is separate and is **not** claimed as completion of the #242 track.
+- RELEASE #242 remains OPEN/DRAFT at `734b89d9...`; its read-only `PROJECT_HANDOVER.md` identifies tested source pin `253accaa...` and Windows run [#40882009358](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882009358), with later handover-only commits. Signing and publication remain skipped.
+- RELEASE #291 remains OPEN/DRAFT at `886cabfc...`, based on #242 `734b89d9...`. ESP32 core 3.3.13 passed; core 4.0.0 failed to download the pinned Arduino CLI v1.6.0 asset (HTTP 403) in [#45117006790](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45117006790). Windows and Full workflows failed their inherited CORE-owned `PROJECT_HANDOVER.md` freshness gate; Windows build/publisher and downstream Full stages were skipped. No CORE/PISONET files were changed.
+- COE #26 remains FROZEN at `b382d233...`; five workflows remain queued with zero jobs. Parent COE #31 remains at `59ed44d0...`; its earlier shared/board CI [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed the three jobs, while mandatory Bubblewrap sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed closed at unprivileged namespace preflight.
+- COE #35 branch protection is disabled in the live branch response (`protected=false`, protection `enabled=false`). Do not treat ordinary Actions success as a protected release gate. Independent PR reviews and review threads were zero at the last read.
+- Canonical private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json` was not surfaced through authorized Library search; only older v5/v6/v7 snapshots appeared. None was substituted or copied, and no private registry content was exposed.
+
+### Confirmed defect and correction
+
+In `calculate_overlay_size()`, the outer `finally` closed `parent_fd` before draining `directory_stack`. If a close raised after the descriptor had already been released, Python exited the cleanup block immediately: the original scan exception could be replaced by the close error and still-owned directory descriptors were not attempted. The traversal also closed a directory before removing its frame from the ownership stack, creating a second close attempt if `os.close()` reported an error after releasing the descriptor.
+
+The correction adds `_close_overlay_descriptors_preserving_primary()`:
+- attempts each currently owned descriptor close once and continues after an `OSError`;
+- ignores `EBADF` as already-closed state, never retrying an ambiguous close;
+- attaches cleanup diagnostics to an active primary exception, preserving that scan failure;
+- raises a close error only when there is no primary error; and
+- propagates a new KeyboardInterrupt/SystemExit after attempting the remaining closes.
+
+Directory frames are removed from the ownership stack before their close attempt. Final cleanup drains nested directory descriptors first, then any untransferred root descriptor, then the pinned parent. The helper is also used at the local entry/child/push cleanup boundaries. No overlay-size calculation, profile, network, finance, shared interface or firmware behavior was changed.
+
+### Test-first lineage
+
+- Test-first regression commit: [`d5f963a7`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d5f963a78c4048035aabdb1268f012299a19ed78).
+- First test run [#45163675710](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45163675710) was a **fixture/setup failure, not product RED**: the test patched `os.open` without adding the patched callable to `os.supports_dir_fd`, so the capability guard stopped before the intended path.
+- Fixture correction commit: [`135cf5e2`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/135cf5e2ae73ee4534e17efb000b3eb8be4817c1) registers the patched `os.open` in the test capability set.
+- Expected RED at corrected test-only head: shared [#45163898868](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45163898868), job `137655844967`: **198 tests ran, exactly one expected failure, two intentional skips**. The injected parent-close `OSError(EIO)` replaced the primary scan `OSError(EACCES)`; the new regression exposed the cleanup-order defect. Firmware hardening and shared-contract steps passed; profile admission and board compiles did not proceed after the expected test failure.
+- Source correction: [`e6d72671`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e6d72671cd76d5695497c9c48d8dad082827d9a6).
+- Portability correction for the pre-3.11 stderr diagnostic newline: [`d99a8027`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d99a80272af4b8172059b6f65a3ce56080ad453a).
+
+### Exact-source GitHub Actions at `d99a8027`
+
+- PR shared/firmware [#45164293628](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45164293628), validation job `137657152619`: firmware-hardening, shared-contract and packaging steps **PASS**; package/tool suite **198 PASS / 2 intentional skips**. The subsequent all-profile staging gate **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority is undefined. ESP8266/ESP32 compile jobs were **SKIPPED**. Overall workflow **FAILURE**, not green.
+- PR sandbox [#45164293595](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45164293595), job `137657152314`: host preflight **39/39 PASS**; Bubblewrap is absent on the hosted runner, exit 125. Namespace verification and mandatory sandbox packaging tests were **SKIPPED**, not passed.
+- Case-collision guard [#45164293746](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45164293746): **PASS**.
+- These are hosted synthetic CI results. No real Bubblewrap namespace, ImageBuilder image, approved target binary or physical hardware acceptance was produced. Exact final handover-head CI is recorded in the UTC11 control-plane checkpoint.
+
+### Scope, review and next owners
+
+- Compare from task base `a0bb98d8` to source/test head `d99a8027`: four commits ahead, zero behind, exactly two changed RELEASE-owned paths: `tools/package_appliance_firmware.py` and `tools/test_package_appliance_firmware.py`. This handover is the third path in the documentation commit.
+- No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source/coordination file was changed. No inherited `.github/workflows/hardware-ci.yml` or sandbox workflow file was edited.
+- **PHX-QA:** independently review close-error precedence, one-shot descriptor ownership and cleanup continuation at the final #35 head.
+- **PHX-INFRA / COE owner:** provide an authorized disposable runner with Bubblewrap and working unprivileged single-ID namespaces; do not install privileged dependencies or weaken fail-closed behavior.
+- **PHX-CORE / PHX-MASTER:** establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or change the admission gate.
+- **PHX-MASTER:** keep #288 ownership routes and #172 refs current; decide integration sequencing without migrating workflows or subsystem source.
+- **Registry custodian:** restore authorized provenance-only access to canonical private v11.
+
+Rollback is limited to this increment's test/source commits on the existing draft branch. No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
