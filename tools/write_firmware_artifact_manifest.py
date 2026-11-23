@@ -432,19 +432,12 @@ def _write_new_file(
     content: bytes,
     *,
     directory_descriptor: int | None = None,
+    created_paths: list[str] | None = None,
 ) -> str:
     """Create and sync one new output, durably removing it if writing fails or is interrupted."""
     path = os.path.join(directory, filename)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
-    if directory_descriptor is None:
-        descriptor = os.open(path, flags, 0o644)
-    else:
-        descriptor = os.open(
-            filename,
-            flags,
-            0o644,
-            dir_fd=directory_descriptor,
-        )
+    descriptor = -1
 
     def add_cleanup_note(
         primary_error: BaseException,
@@ -495,6 +488,27 @@ def _write_new_file(
             raise ManifestError(
                 f"partial artifact output rollback could not be confirmed for {filename}: {details}"
             ) from primary_error
+
+    # Register ownership inside this helper, before returning to the pair
+    # publisher. If the caller is interrupted after this helper completes but
+    # before its next bookkeeping bytecode, the outer rollback still knows
+    # which output name this invocation created.
+    try:
+        if directory_descriptor is None:
+            descriptor = os.open(path, flags, 0o644)
+        else:
+            descriptor = os.open(
+                filename,
+                flags,
+                0o644,
+                dir_fd=directory_descriptor,
+            )
+        if created_paths is not None:
+            created_paths.append(path)
+    except BaseException as creation_error:
+        if descriptor >= 0:
+            rollback(creation_error)
+        raise
 
     try:
         output = os.fdopen(descriptor, "wb")
@@ -551,21 +565,19 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
 
         created: list[str] = []
         try:
-            created.append(
-                _write_new_file(
-                    artifact_dir,
-                    MANIFEST_FILENAME,
-                    manifest_bytes,
-                    directory_descriptor=directory_descriptor,
-                )
+            _write_new_file(
+                artifact_dir,
+                MANIFEST_FILENAME,
+                manifest_bytes,
+                directory_descriptor=directory_descriptor,
+                created_paths=created,
             )
-            created.append(
-                _write_new_file(
-                    artifact_dir,
-                    CHECKSUMS_FILENAME,
-                    checksums_bytes,
-                    directory_descriptor=directory_descriptor,
-                )
+            _write_new_file(
+                artifact_dir,
+                CHECKSUMS_FILENAME,
+                checksums_bytes,
+                directory_descriptor=directory_descriptor,
+                created_paths=created,
             )
             os.fsync(directory_descriptor)
             _require_artifact_directory_identity(artifact_dir, directory_descriptor)
