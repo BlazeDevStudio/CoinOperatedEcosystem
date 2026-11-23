@@ -657,17 +657,6 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
                         pass
 
 
-def load_runner():
-    spec = importlib.util.spec_from_file_location(
-        "run_imagebuilder_sandbox", os.path.join(TOOLS_DIR, "run_imagebuilder_sandbox.py")
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Could not load release ImageBuilder sandbox runner")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
     def test_probe_baseexception_cleanup_interruption_retries_once_and_reraises_primary(self):
         helper = self.helper_or_skip()
         cases = (
@@ -722,6 +711,19 @@ def load_runner():
                         any("retry cleanup stdout" in note for note in notes),
                         "retry cleanup diagnostics must be attached to the primary interruption",
                     )
+
+def load_runner():
+    spec = importlib.util.spec_from_file_location(
+        "run_imagebuilder_sandbox", os.path.join(TOOLS_DIR, "run_imagebuilder_sandbox.py")
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load release ImageBuilder sandbox runner")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+
 
 class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
     def test_runner_interrupt_cleans_detached_group_even_if_leader_exited(self):
