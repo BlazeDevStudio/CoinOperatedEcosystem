@@ -445,14 +445,22 @@ def _write_new_file(
             0o644,
             dir_fd=directory_descriptor,
         )
-    try:
-        output = os.fdopen(descriptor, "wb")
-        descriptor = -1
-        with output:
-            output.write(content)
-            output.flush()
-            os.fsync(output.fileno())
-    except BaseException as write_error:
+
+    def add_cleanup_note(primary_error: BaseException, close_error: BaseException) -> None:
+        detail = (
+            "output close also failed: "
+            f"{type(close_error).__name__}: {close_error}"
+        )
+        try:
+            if hasattr(primary_error, "add_note"):
+                primary_error.add_note(detail)
+            else:
+                sys.stderr.write(detail + "\\n")
+        except BaseException:
+            # Diagnostics must never replace the original write/flush failure.
+            pass
+
+    def rollback(primary_error: BaseException) -> None:
         rollback_errors: list[str] = []
         if descriptor >= 0:
             try:
@@ -483,11 +491,41 @@ def _write_new_file(
             details = "; ".join(rollback_errors)
             raise ManifestError(
                 f"partial artifact output rollback could not be confirmed for {filename}: {details}"
-            ) from write_error
+            ) from primary_error
+
+    try:
+        output = os.fdopen(descriptor, "wb")
+    except BaseException as open_error:
+        rollback(open_error)
         raise
+    descriptor = -1
+
+    try:
+        output.write(content)
+        output.flush()
+        os.fsync(output.fileno())
+    except BaseException as write_error:
+        cleanup_interruption = None
+        try:
+            output.close()
+        except OSError as close_error:
+            add_cleanup_note(write_error, close_error)
+        except BaseException as close_error:
+            cleanup_interruption = close_error
+            add_cleanup_note(write_error, close_error)
+
+        rollback(write_error)
+        if cleanup_interruption is not None:
+            raise cleanup_interruption from write_error
+        raise
+
+    try:
+        output.close()
+    except BaseException as close_error:
+        rollback(close_error)
+        raise
+
     return path
-
-
 def write_artifact_manifest(**kwargs) -> tuple[str, str]:
     """Publish the manifest pair, rolling back on failures and Python-level interruptions."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
