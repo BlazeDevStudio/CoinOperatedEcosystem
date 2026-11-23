@@ -1,3 +1,62 @@
+## PHX-RELEASE UTC16 — register manifest outputs inside the writer (2026-11-23)
+
+**Disposition:** one RELEASE-owned manifest-pair recovery defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the manifest regression test, manifest writer and this handover.
+
+### Live control plane and ownership
+
+- Re-read the owner's `06_RELEASE_ENGINEERING(1).txt`, live issue #172 control plane, cleanup-first #266, MASTER PR #288 ownership routes, Experiments #242/#291, COE #26/#31 and active child #35.
+- MASTER #288 exact observed head: `3d4226bbff276a26066b3cb04e520b6eba252110`; route manifest remains `DRAFT_REVIEW_ONLY`. PHX-RELEASE owns packaging/manifests and its Phoenix-specific build workflows; no migration or cross-role source authority was inferred.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT. Experiments #291: `c5a566fd04a59a3c4a4bbbaa9524f8a9b97e6b7d`, OPEN / DRAFT; exact HARDWARE #347 compatibility matrix is green, but integrated Full/Windows remain blocked by CORE-owned handover freshness.
+- COE integration #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, FROZEN. Parent release packager #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Active child #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Current HARDWARE #347 source/test anchor remains `275057aa28375223a32da099420f52696d9b667c`; its latest PR/docs head is `fa7115f7bc15c6c885de8cf0af1469cf5d71bf84`. RELEASE did not edit Hardware source or Master coordination.
+- Canonical private Drive registry v11 was not surfaced through authorized Library access. No older registry snapshot was substituted or copied.
+
+### Confirmed defect and test-first reproduction
+
+`write_artifact_manifest()` previously recorded a successfully created output only after `_write_new_file()` returned, using `created.append(_write_new_file(...))`. A Python-level interruption after the helper had fully created and synced an output but before the caller executed `list.append` left that output absent from the rollback list.
+
+The regression exercises both publication boundaries:
+- interruption after `artifact-manifest.json` creation left the manifest behind;
+- interruption after `SHA256SUMS` creation left the checksum file behind while the first output was rolled back.
+
+Test-first commit: [`7137999d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7137999d30a2ca28bdbc07770b277d78e5f79808).
+
+Expected RED: [push #45215357804](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45215357804), validation job `137834913860`: **200 tests ran, exactly two new subtest failures** (manifest and checksum return-to-caller interruption), with two intentional skips. Firmware-hardening and shared-contract suites passed. Profile validation and board builds were skipped after the packaging test failure. This was a product-defect reproduction, not a fixture/setup failure.
+
+### Source correction
+
+Source fix: [`b3af24c3`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b3af24c371efd7c8c3c763023949c13888827887).
+
+`_write_new_file()` now accepts an optional caller-owned `created_paths` list and registers the successfully opened output inside the helper, before returning to the pair publisher. The pair publisher no longer wraps the helper return in a separate `created.append(...)` operation. Existing exclusive creation, no-follow behavior, per-file sync, pair rollback and primary-exception handling remain intact.
+
+### Exact-source Actions at `b3af24c3`
+
+- PR shared/firmware [#45215649955](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45215649955), validation job `137835947363`: packaging/tool suite **200 tests PASS / 2 intentional skips**; firmware-hardening and shared-contract suites PASS. The subsequent all-profile admission **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were **SKIPPED**; overall workflow **FAILURE**, not green.
+- Push shared/firmware [#45215634584](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45215634584), validation job `137835889733`: same exact-source result — packaging/tool suite **200 PASS / 2 intentional skips**, firmware-hardening/shared-contract suites PASS, all 10 profiles fail closed for the missing approved ULA /48, board compile jobs skipped.
+- PR sandbox [#45215650029](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45215650029), job `137835944187`: host-preflight suite **39/39 PASS**; Bubblewrap is not installed on the hosted runner, exit 125. Namespace verification and mandatory sandbox-dependent packaging tests were **SKIPPED**, not passed.
+- Case-collision guard [#45215649904](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45215649904), job `137835942391`: **PASS**.
+
+These are hosted synthetic CI results. No site profile was admitted, no ESP32/ESP8266 compile ran in this workflow, no ImageBuilder output or approved target binary was produced, and no real Bubblewrap namespace was established.
+
+### Changed paths, blockers and next owners
+
+The UTC16 increment from prior #35 head `4234ee00b1fbb02167a977383a737fe5f3917e3a` is three commits ahead / zero behind and changes exactly:
+- `tools/test_firmware_artifact_manifest.py`
+- `tools/write_firmware_artifact_manifest.py`
+- `tools/RELEASE_PACKAGER_HANDOVER.md`
+
+No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, or COE integration destination source was modified.
+
+1. PHX-QA independently reviews the new return-to-caller interruption cases and the writer's rollback ownership tracking.
+2. PHX-CORE / PHX-MASTER provide approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent or substitute a prefix.
+3. PHX-INFRA provides an authorized disposable, no-secret runner with Bubblewrap and working unprivileged single-ID namespaces; no privileged or unsandboxed fallback.
+4. PHX-MASTER maintains the #288 ownership/reimplementation routes and frozen #26 disposition.
+5. Registry custodian restores authorized provenance-only access to canonical private Drive v11.
+
+Cleanup-first #266 remains OPEN / 0 of 7 tracks complete. No merge, rebase, migration, real-key signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Independent QA/MASTER approval, protected signer/freshness witness, durable financial accounting/migration, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO**.
+
+---
+
 ## PHX-RELEASE UTC14 — rollback interrupted rootfs staging copy (2026-11-22)
 
 **Disposition:** one RELEASE-owned staging-recovery defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the packager, its regression test and this handover.
