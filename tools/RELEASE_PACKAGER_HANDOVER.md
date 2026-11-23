@@ -4076,3 +4076,58 @@ These are hosted CI results only. No Bubblewrap namespace was entered, no mandat
 5. Registry custodian restores authorized provenance-only access to canonical private registry v11.
 
 No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC06 — retry sandbox process-group cleanup after interruption (2026-11-23T06:26Z)
+
+**Disposition:** the RELEASE-owned cleanup regression is reproduced and corrected; exact-source host-preflight tests pass. The mandatory Bubblewrap sandbox and all-profile appliance admission remain blocked independently. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Live control plane and ownership
+
+- Read live control-plane issue #172, cleanup-first #266, this handover, Experiments RELEASE #242/#291, COE integration #26, parent #31 and child #35.
+- MASTER PR #288 exact live HEAD at read: `98bd48df64759b0cd1ddafc9fc77ad9fc66bf136`, OPEN / DRAFT / UNMERGED. Its exact `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; the PHX-RELEASE workflow route remains `reimplementation-review`, not copy/migration authorization.
+- The #172 issue body still embeds the older MASTER head `8750d615cbb39aa70c1b12847479acb594fe5e3c`; MASTER owns refreshing that control-plane reference.
+- Experiments #242 is `734b89d9e7792247e8376335c3f3685500ab3f89`; #291 is `886cabfc5080c3fbef03c2a3b1afe9d52dea6f60`, both OPEN / DRAFT.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent #31 is `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; this child #35 is the active RELEASE-owned packager branch.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete.
+- The canonical private Drive project registry v11 was not available through the authorized Library surface. Search surfaced checkpoint metadata and historical v3–v7 registry snapshots only; none was substituted or copied into GitHub.
+
+### Defect and bounded correction
+
+In `check_imagebuilder_sandbox_host.py::check_host()`, a communication/read `OSError` enters the preflight cleanup handler and calls `_terminate_process_groups()`. If that cleanup call itself is interrupted by `KeyboardInterrupt` or `SystemExit`, the existing nested `except Exception` does not catch it. The interruption escaped immediately, so a detached Bubblewrap child process group could remain without a second best-effort cleanup attempt.
+
+The correction catches `BaseException` only around this cleanup boundary, retries process-group termination once, attaches the original preflight `OSError` and retry diagnostics to the interruption, and re-raises the same interruption. Ordinary cleanup exceptions retain their existing diagnostic path. No privileged fallback, namespace relaxation, or fail-open result was added.
+
+### Test-first lineage
+
+- Test-only commit: [`f256d88d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f256d88d1ed9ba45040069edf8ad89924190d272) adds KeyboardInterrupt and SystemExit subcases for interruption during the OSError cleanup handler.
+- Expected RED, PR sandbox [#45123906055](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45123906055), job `137523750379`: **39 tests ran; two subtest failures**. Both interruptions stopped after one cleanup call instead of retrying.
+- Expected RED, PR shared/firmware [#45123906045](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45123906045), job `137523750433`: **192 tests, two failures / two intentional skips**; the two new cleanup-interruption subcases failed for the same missing retry.
+- PR case-collision [#45123906065](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45123906065): PASS.
+
+### Source correction and exact-source Actions
+
+- Source correction: [`a12e6244`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a12e6244336218cf5dd253a2127b5b25add386a8).
+- Exact-source PR sandbox [#45124035326](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45124035326) and push sandbox [#45124029917](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45124029917): **39/39 host-preflight tests PASS**, including both new interruption cases. The workflow then **FAILED CLOSED** at Bubblewrap availability because `bwrap` is not installed (exit 125); runner identity, namespace preflight and mandatory sandbox-dependent packaging regressions were **SKIPPED**.
+- Exact-source PR shared/firmware [#45124035322](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45124035322), validation job `137524153270`: packaging/tool suite **192 tests PASS / 2 intentional skips** and manifest durability marker PASS. All **10/10 appliance profiles failed closed** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were SKIPPED; overall workflow FAILURE, not green.
+- Push shared/firmware [#45124029964](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45124029964) reports the same packaging/tool-suite PASS followed by profile-admission failure.
+- PR case-collision [#45124035251](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45124035251): PASS.
+
+These are hosted CI results only. No Bubblewrap namespace was entered, no ImageBuilder build or appliance firmware was produced, and no physical hardware acceptance is implied.
+
+### Scope, rollback and next owners
+
+Compare from task base `16c0e140cbfd52d4cb572b7121189866763c77b2` to source/test HEAD `a12e6244336218cf5dd253a2127b5b25add386a8` contains exactly two changed paths, both RELEASE-owned:
+
+- `tools/test_imagebuilder_sandbox_host.py`
+- `tools/check_imagebuilder_sandbox_host.py`
+
+This handover append is the third path in the increment. The inherited `.github/workflows/hardware-ci.yml` overlap remains untouched.
+
+1. **PHX-QA:** independently review the one-retry cleanup behavior, exception-note preservation and re-raise semantics at exact source/test SHA `a12e6244336218cf5dd253a2127b5b25add386a8`.
+2. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with Bubblewrap and working unprivileged single-ID namespaces; do not weaken the fail-closed boundary.
+3. **PHX-CORE / PHX-MASTER:** establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+4. **PHX-MASTER:** refresh the stale #172 embedded #288 head and resolve inherited workflow path ownership; RELEASE did not edit Master or Hardware files.
+5. **Registry custodian:** restore authorized provenance-only access to canonical private registry v11.
+
+No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
