@@ -779,5 +779,81 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                     )
 
 
+    def test_scanner_preserves_primary_error_when_root_descriptor_close_is_interrupted(self):
+        original_open = os.open
+        original_close = os.close
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                root_descriptor = None
+
+                def capture_root_descriptor(path, flags, *args, **kwargs):
+                    nonlocal root_descriptor
+                    descriptor = original_open(path, flags, *args, **kwargs)
+                    if (
+                        os.fspath(path) == os.path.abspath(str(self.artifact_dir))
+                        and flags & os.O_DIRECTORY
+                    ):
+                        root_descriptor = descriptor
+                    return descriptor
+
+                def close_then_interrupt(descriptor):
+                    if descriptor == root_descriptor:
+                        original_close(descriptor)
+                        raise interruption_type("injected descriptor-close interruption")
+                    return original_close(descriptor)
+
+                def fail_scan(*args, **kwargs):
+                    raise ManifestError("primary artifact scan failure")
+
+                with mock.patch.object(
+                    manifest_writer.os, "open", side_effect=capture_root_descriptor
+                ), mock.patch.object(
+                    manifest_writer.os, "close", side_effect=close_then_interrupt
+                ), mock.patch.object(
+                    manifest_writer, "_scan_artifact_directory_fd", side_effect=fail_scan
+                ):
+                    with self.assertRaisesRegex(
+                        ManifestError, "primary artifact scan failure"
+                    ) as raised:
+                        manifest_writer._scan_artifact_files(str(self.artifact_dir))
+
+                self.assertIsNotNone(root_descriptor)
+                notes = getattr(raised.exception, "__notes__", [])
+                self.assertTrue(
+                    any(
+                        "artifact root directory" in note
+                        and interruption_type.__name__ in note
+                        for note in notes
+                    ),
+                    f"expected close interruption to be attached to primary error, got {notes!r}",
+                )
+
+    def test_descriptor_close_interrupt_propagates_without_primary_error(self):
+        original_close = os.close
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                descriptor = os.open(
+                    self.artifact_dir,
+                    os.O_RDONLY | os.O_DIRECTORY,
+                )
+
+                def close_then_interrupt(candidate):
+                    if candidate == descriptor:
+                        original_close(candidate)
+                        raise interruption_type("injected standalone close interruption")
+                    return original_close(candidate)
+
+                with mock.patch.object(
+                    manifest_writer.os, "close", side_effect=close_then_interrupt
+                ):
+                    with self.assertRaises(interruption_type):
+                        manifest_writer._close_descriptor_preserving_primary(
+                            descriptor, "test artifact descriptor"
+                        )
+
+
+
 if __name__ == "__main__":
     unittest.main()
