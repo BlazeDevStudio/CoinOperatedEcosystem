@@ -4181,3 +4181,45 @@ These are hosted CI results only. The overlay regression is verified in the shar
 5. **Registry custodian:** restore authorized provenance-only access to canonical v11.
 
 No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC08 — close staged-directory descriptor on interruption (2026-11-23)
+
+**Disposition:** one RELEASE-owned descriptor-lifecycle defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. This increment changes only the packager, its regression test, and this handover.
+
+### Live ownership and provenance refresh
+
+- Re-read control-plane issue #172, cleanup-first #266, MASTER PR #288 ownership routes, RELEASE #242/#291, COE #26/#31 and child #35. Current observed heads at task start: MASTER #288 `fbbd4f79b15714ec499209cea3831ef30031b0fa`; RELEASE #242 `734b89d9e7792247e8376335c3f3685500ab3f89`; RELEASE #291 `886cabfc5080c3fbef03c2a3b1afe9d52dea6f60`; COE #26 `b382d233ff06c8791b1028bed3c617cc7b670d12`; COE #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; COE #35 starting HEAD `ead1c3b4ab84acc69eef6b63bfd7d224b4cbbecc`.
+- MASTER #288 remains OPEN / DRAFT / UNMERGED, 185 coordination-only paths. `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; the RELEASE workflow route is `reimplementation-review`, not migration authorization.
+- COE #26 remains FROZEN. Cleanup-first #266 remains OPEN with 0/7 tracks checked.
+- Canonical private Drive project registry v11 was not available through authorized Library access. Older snapshots were not substituted and no private registry contents or identifiers were copied.
+
+### Defect and correction
+
+In `_ensure_staging_directory()`, a child directory descriptor was opened and then verified using `os.stat()` / `os.fstat()`. The local cleanup handler caught `Exception`, not `BaseException`. A KeyboardInterrupt or SystemExit during verification escaped before `next_fd` was assigned to `current_fd`, so the outer `finally` did not own or close the child descriptor.
+
+The correction catches `BaseException` only around that verification boundary, attempts to close the still-local child descriptor, attaches cleanup diagnostics if close itself fails, and re-raises the original exception. Ownership transfer and the existing symlink/identity checks are unchanged.
+
+### Test-first lineage and exact-source CI
+
+- Test-first regression: [`1f7deb0a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1f7deb0a2adab564c3844b687599c90f35b618b2) adds KeyboardInterrupt and SystemExit cases and asserts the opened child descriptor is closed.
+- Expected RED: [shared/firmware run #45137322833](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45137322833), job `137566596694`: **194 tests ran; exactly two subtest failures**, one per interruption. Both failed because `original_fstat(child_fd)` succeeded after the exception (`AssertionError: OSError not raised`), proving the descriptor remained open. Two existing intentional skips. The independent case-collision run [#45137322886](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45137322886) passed.
+- Source fix: [`6b07a974`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6b07a974572382ea79e04ed66d94f3ddb25b88ae).
+- Exact source/test shared/firmware run [#45137442528](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45137442528), job `137566995391`: packaging/tool suite **194 PASS / 2 intentional skips**. The subsequent all-profile staging gate failed closed **10/10** because approved site-scoped RFC 4193 ULA /48 authority is undefined; ESP32/ESP8266 compile jobs were skipped. Overall workflow **FAILURE**, not green.
+- Exact source/test sandbox run [#45137442543](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45137442543), job `137566995012`: host-preflight **39/39 PASS**; Bubblewrap is not installed (exit 125), so unprivileged identity, namespace probe and mandatory sandbox packaging tests were skipped, not passed.
+- Exact source/test case-collision guard [#45137442753](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45137442753): **PASS**.
+
+These are hosted CI results only. No real Bubblewrap namespace, ImageBuilder appliance image, firmware artifact, approved production binary, or physical hardware acceptance was produced. Final handover-head CI is separately checked after this update and recorded in the control-plane checkpoint.
+
+### Exact scope, review and next owners
+
+- Test-first commit: `1f7deb0a2adab564c3844b687599c90f35b618b2`.
+- Source/test commit: `6b07a974572382ea79e04ed66d94f3ddb25b88ae`.
+- Changed paths relative to starting HEAD: `tools/test_package_appliance_firmware.py`, `tools/package_appliance_firmware.py`, and this handover only. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or shared-interface path changed.
+- **PHX-QA:** independently review the interruption boundary, descriptor ownership and cleanup-error diagnostics at the final PR head.
+- **PHX-INFRA / COE owner:** provide an authorized disposable runner with pre-provisioned Bubblewrap and working unprivileged user namespaces; do not weaken the fail-closed boundary.
+- **PHX-CORE / PHX-MASTER:** establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+- **PHX-MASTER:** maintain current ownership routes and control-plane references; no workflow migration is authorized by the draft route.
+- **Registry custodian:** restore authorized provenance-only access to canonical v11.
+
+No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
