@@ -478,6 +478,25 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         mode = os.stat(cgi_path).st_mode
         self.assertTrue(bool(mode & 0o111), "cgi-bin/blazerental must be executable (0755)")
 
+    def test_stage_overlay_fails_closed_when_permission_normalization_walk_errors(self):
+        staging_dest = os.path.join(self.temp_dir, "staging-normalization-walk-error")
+        original_scandir = packager.os.scandir
+
+        def fail_staging_scan(path):
+            if os.path.abspath(os.fspath(path)) == os.path.abspath(staging_dest):
+                raise PermissionError("injected permission-normalization scan failure")
+            return original_scandir(path)
+
+        with mock.patch.object(
+            packager.os, "scandir", side_effect=fail_staging_scan
+        ):
+            with self.assertRaisesRegex(
+                PermissionError,
+                "injected permission-normalization scan failure",
+            ):
+                stage_overlay(load_profile("ew1200g-pro"), DEFAULT_ROOTFS, staging_dest)
+
+
     def test_ensure_staging_directory_closes_child_fd_on_baseexception_during_identity_check(self):
         for exception_type in (KeyboardInterrupt, SystemExit):
             with self.subTest(interruption=exception_type.__name__):
