@@ -4862,7 +4862,7 @@ These are hosted CI results. The profile end-to-end step remains blocked before 
 
 ### Changed paths, review and release boundary
 
-This increment from previous #35 head `697d0785` is four commits ahead / zero behind (three source/test commits plus this handover commit) and changes exactly:
+This increment is a fast-forward-only successor of previous #35 head `697d0785` (zero commits behind) and changes exactly:
 - `tools/test_validate_all_profiles.py`
 - `tools/validate_all_profiles.py`
 - `tools/RELEASE_PACKAGER_HANDOVER.md`
