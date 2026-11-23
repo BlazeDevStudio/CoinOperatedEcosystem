@@ -2,6 +2,8 @@
 """Release-owned regression tests for bounded appliance profile diagnostics."""
 import io
 import json
+import os
+import tempfile
 import stat
 import subprocess
 import unittest
@@ -100,6 +102,71 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
             r"blaze-appliance-diag timed out for test-router after 30 seconds",
         ):
             self._validate(run_error=timeout)
+
+
+    def _main_fixture(self, root):
+        profiles_dir = os.path.join(root, "profiles")
+        os.mkdir(profiles_dir)
+        with open(os.path.join(profiles_dir, "test-router.json"), "w", encoding="utf-8") as fp:
+            fp.write("{}\n")
+        staging_dir = os.path.join(root, "validation")
+        os.mkdir(staging_dir)
+        return profiles_dir, staging_dir
+
+    def test_main_fails_closed_when_validation_workspace_cleanup_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            profiles_dir, staging_dir = self._main_fixture(root)
+            result = {
+                "profile_id": "test-router",
+                "name": "Test Router",
+                "architecture": "test/target",
+                "standalone_kb": 1,
+                "rental_bundle_kb": 1,
+                "diag_status": "CONFIGURED",
+            }
+            with (
+                mock.patch.object(validator, "PROFILES_DIR", profiles_dir),
+                mock.patch.object(validator.tempfile, "mkdtemp", return_value=staging_dir),
+                mock.patch.object(validator, "validate_profile", return_value=result),
+                mock.patch.object(
+                    validator.shutil,
+                    "rmtree",
+                    side_effect=PermissionError("injected workspace cleanup failure"),
+                ),
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    validator.main()
+
+            self.assertEqual(raised.exception.code, 1)
+            self.assertIn("validation workspace cleanup failed", stderr.getvalue())
+            self.assertTrue(os.path.isdir(staging_dir))
+
+    def test_main_preserves_primary_interruption_when_workspace_cleanup_fails(self):
+        with tempfile.TemporaryDirectory() as root:
+            profiles_dir, staging_dir = self._main_fixture(root)
+            with (
+                mock.patch.object(validator, "PROFILES_DIR", profiles_dir),
+                mock.patch.object(validator.tempfile, "mkdtemp", return_value=staging_dir),
+                mock.patch.object(
+                    validator,
+                    "validate_profile",
+                    side_effect=KeyboardInterrupt("primary profile interruption"),
+                ),
+                mock.patch.object(
+                    validator.shutil,
+                    "rmtree",
+                    side_effect=PermissionError("injected workspace cleanup failure"),
+                ),
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            ):
+                with self.assertRaisesRegex(
+                    KeyboardInterrupt, "primary profile interruption"
+                ):
+                    validator.main()
+
+            self.assertIn("preserving primary KeyboardInterrupt", stderr.getvalue())
+            self.assertTrue(os.path.isdir(staging_dir))
 
 
 if __name__ == "__main__":
