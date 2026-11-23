@@ -688,5 +688,53 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         )
 
 
+    def test_write_new_file_preserves_write_error_when_close_also_fails(self):
+        output_path = self.artifact_dir / "write-and-close-failure.bin"
+        original_fdopen = os.fdopen
+
+        class CloseFailingOutput:
+            def __init__(self, descriptor):
+                self.stream = original_fdopen(descriptor, "wb")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.close()
+                return False
+
+            def write(self, content):
+                raise OSError("primary output write failure")
+
+            def flush(self):
+                return self.stream.flush()
+
+            def fileno(self):
+                return self.stream.fileno()
+
+            def close(self):
+                self.stream.close()
+                raise OSError("secondary output close failure")
+
+        with mock.patch.object(
+            manifest_writer.os, "fdopen", side_effect=CloseFailingOutput
+        ):
+            with self.assertRaisesRegex(
+                OSError, "primary output write failure"
+            ) as raised:
+                manifest_writer._write_new_file(
+                    str(self.artifact_dir),
+                    output_path.name,
+                    b"artifact bytes",
+                )
+
+        self.assertFalse(output_path.exists(), "failed output must be removed")
+        notes = getattr(raised.exception, "__notes__", [])
+        self.assertTrue(
+            any("secondary output close failure" in note for note in notes),
+            f"expected close failure to be attached to primary error, got {notes!r}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
