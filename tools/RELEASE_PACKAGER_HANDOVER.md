@@ -4502,3 +4502,58 @@ The portable pre-3.11 stderr fallback is guarded so a diagnostic-write failure c
 - **Registry custodian:** restore authorized provenance-only access to canonical private v11.
 
 Rollback is limited to the four test/source commits in this increment on the existing draft branch. No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC17 — directory-walk descriptor ownership on close failure
+
+**Observed:** 2026-11-23T17:25Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Base #31:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Task base:** `3f1bd73bdac72ef76fd51bc6048b6838b2f32f62`.
+
+### Defect and scope
+
+The release-owned `_open_parent_directory_without_symlink_parents()` path walk opened the next directory descriptor, attempted to close its predecessor, and only then replaced the tracked `directory_fd`. If the predecessor close failed, the tracked variable still named the old descriptor; the exception handler attempted to close it again, masking the original close error with EBADF while leaving the newly opened descriptor untracked. The old `except Exception` also did not cover `KeyboardInterrupt` / other `BaseException` cleanup paths.
+
+Only the COE #35 release-packager implementation and its test were changed:
+
+- `tools/test_package_appliance_firmware.py`
+- `tools/package_appliance_firmware.py`
+- This handover document
+
+### Test-first lineage
+
+- Initial regression-test commit [`5009770d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5009770d8e910a4c6baad5cba6866156d482c985). Its first run [#45226952306](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45226952306) was a **fixture/setup error, not product RED**: replacing `os.open` changed its identity in `os.supports_dir_fd`, so the capability guard rejected the test before reaching the close boundary.
+- Fixture correction [`100fc993`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/100fc993d04073f838b2bdfcb871b1c84c157cb3) preserves the dir-fd capability identity while injecting the close failure.
+- Corrected expected RED: push [#45227228134](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45227228134), job `137876875339`. **201 tests ran, 1 expected failure, 2 intentional skips.** The injected predecessor-close failure was replaced by `[Errno 9] Bad file descriptor`, confirming the double-close/masked-primary defect. The regression also asserts that no newly opened directory descriptor remains live after cleanup.
+
+### Source correction
+
+- Fix commit [`1bf79816`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1bf798168ff28cb0e6aa1f0866edf707a9e3cf85).
+- The path walk now tracks the newly opened component before attempting to close its predecessor, transfers ownership out of the tracked list before the one-shot close attempt, and catches `BaseException` so remaining owned descriptors are passed to the existing `_close_overlay_descriptors_preserving_primary()` cleanup helper.
+- Remaining descriptors receive cleanup attempts without retrying an ambiguous failed close. Ordinary cleanup errors are attached to the primary error; cleanup interruptions retain the established fail-closed propagation behavior.
+- No path policy, profile schema, network configuration, image payload, manifest schema, firmware, finance, or shared interface changed.
+
+### Exact-source CI at source/test HEAD `1bf798168ff28cb0e6aa1f0866edf707a9e3cf85`
+
+- Shared/push [#45227515877](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45227515877), job `137877877266`: firmware-hardening and shared-contract steps **PASS**; packaging/tool suite **201 PASS / 2 intentional skips**. The subsequent profile-staging admission step **FAILED CLOSED 10/10** because no approved site-scoped RFC 4193 ULA /48 authority is defined. ESP32 and ESP8266 compile jobs were **SKIPPED**. Overall workflow **FAILURE**, not green.
+- Sandbox/push [#45227516085](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45227516085), job `137877877314`: host preflight tests **PASS**; Bubblewrap availability **FAILED** because the hosted runner lacks the required executable. Unprivileged identity, namespace probe and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- The preceding corrected test-only RED is retained as expected regression evidence. The earlier `5009770d` fixture error is not counted as product RED.
+
+### Live ownership / integration state
+
+- MASTER #288 exact head: `3d4226bbff276a26066b3cb04e520b6eba252110`; `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29`, 11 routes, `DRAFT_REVIEW_ONLY`. The only explicit PHX-RELEASE route is the Experiments build workflow `reimplementation-review`; it is not a copy/move authorization. No #26 integration file or MASTER-owned file was changed.
+- Experiments RELEASE #242: `734b89d9e7792247e8376335c3f3685500ab3f89`; #291: `c5a566fd04a59a3c4a4bbbaa9524f8a9b97e6b7d`. #291 exact-source ESP32 compatibility matrix [#45209288305](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288305) remains 3/3 PASS; integrated Full [#45209288533](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288533) and Windows [#45209288746](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288746) remain blocked by CORE-owned handover freshness.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent release-packager #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. This #35 child does not unfreeze #26.
+- Cleanup-first #266 remains OPEN / 0-of-7; this COE release-packager defect does not complete Experiments cleanup assignment #242.
+- Canonical private Drive registry v11 was not surfaced through authorized Library access. No older snapshot was substituted and no private registry contents or identifiers were copied into GitHub.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the path-walk descriptor ownership transfer, one-shot close behavior, OSError masking regression and interruption cleanup at the final docs head.
+2. **PHX-CORE / PHX-MASTER:** supply approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or weaken profile admission.
+3. **PHX-INFRA / COE owner:** provide an authorized disposable no-secret runner with working unprivileged Bubblewrap namespaces; do not install privileged mapping helpers or add a fallback.
+4. **PHX-MASTER:** keep #172's COE #35 child-head reference and review-only route current.
+
+No merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. These are hosted synthetic CI results only. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
