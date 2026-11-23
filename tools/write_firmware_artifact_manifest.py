@@ -446,7 +446,10 @@ def _write_new_file(
             dir_fd=directory_descriptor,
         )
 
-    def add_cleanup_note(primary_error: BaseException, close_error: BaseException) -> None:
+    def add_cleanup_note(
+        primary_error: BaseException,
+        close_error: BaseException,
+    ) -> None:
         detail = (
             "output close also failed: "
             f"{type(close_error).__name__}: {close_error}"
@@ -455,7 +458,7 @@ def _write_new_file(
             if hasattr(primary_error, "add_note"):
                 primary_error.add_note(detail)
             else:
-                sys.stderr.write(detail + "\\n")
+                sys.stderr.write(detail + "\n")
         except BaseException:
             # Diagnostics must never replace the original write/flush failure.
             pass
@@ -526,6 +529,8 @@ def _write_new_file(
         raise
 
     return path
+
+
 def write_artifact_manifest(**kwargs) -> tuple[str, str]:
     """Publish the manifest pair, rolling back on failures and Python-level interruptions."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
