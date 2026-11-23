@@ -104,18 +104,26 @@ def _close_descriptor_preserving_primary(descriptor: int, label: str) -> None:
     primary_error = sys.exc_info()[1]
     try:
         os.close(descriptor)
-    except OSError as close_error:
+    except BaseException as close_error:
         detail = (
             f"could not close {label}: "
             f"{type(close_error).__name__}: {close_error}"
         )
         if primary_error is not None:
-            if hasattr(primary_error, "add_note"):
-                primary_error.add_note(detail)
-            else:
-                print(detail, file=sys.stderr)
+            try:
+                if hasattr(primary_error, "add_note"):
+                    primary_error.add_note(detail)
+                else:
+                    print(detail, file=sys.stderr)
+            except BaseException:
+                # Cleanup diagnostics must never replace the active primary error.
+                pass
             return
-        raise ManifestError(detail) from close_error
+        if isinstance(close_error, OSError):
+            raise ManifestError(detail) from close_error
+        # With no primary error, preserve process-level interruptions rather
+        # than swallowing KeyboardInterrupt or SystemExit.
+        raise
 
 
 def _directory_scan_snapshot(info: os.stat_result) -> tuple[int, ...]:
