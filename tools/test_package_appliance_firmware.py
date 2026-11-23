@@ -150,6 +150,76 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         self.assertEqual(load_profile(custom_profile), expected_profile)
 
+    def test_load_profile_rejects_oversized_profile_before_opening_stream(self):
+        max_profile_bytes = 1024 * 1024
+        custom_profile = os.path.join(self.temp_dir, "oversized-profile.json")
+        with open(custom_profile, "wb") as profile_file:
+            profile_file.truncate(max_profile_bytes + 1)
+
+        with mock.patch.object(
+            packager.os, "fdopen", wraps=packager.os.fdopen
+        ) as fdopen:
+            with self.assertRaisesRegex(
+                ValueError, "exceeds maximum allowed size"
+            ):
+                load_profile(custom_profile)
+
+        fdopen.assert_not_called()
+
+    def test_load_profile_bounds_read_when_profile_grows_after_initial_stat(self):
+        max_profile_bytes = 1024 * 1024
+        custom_profile = os.path.join(self.temp_dir, "profile-growth-race.json")
+        initial_content = b'{"profile_id":"ew1200g-pro"}\\n'
+        with open(custom_profile, "wb") as profile_file:
+            profile_file.write(initial_content)
+
+        original_fdopen = packager.os.fdopen
+        observed = {"grown": False, "read_sizes": []}
+
+        class TrackingReader:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return self.stream.__exit__(exc_type, exc_value, traceback)
+
+            def fileno(self):
+                return self.stream.fileno()
+
+            def read(self, size=-1):
+                observed["read_sizes"].append(size)
+                return self.stream.read(size)
+
+        def grow_after_open(descriptor, mode, *args, **kwargs):
+            stream = original_fdopen(descriptor, mode, *args, **kwargs)
+            with open(custom_profile, "ab") as replacement:
+                replacement.write(
+                    b" " * (max_profile_bytes + 1 - len(initial_content))
+                )
+                replacement.flush()
+                os.fsync(replacement.fileno())
+            observed["grown"] = True
+            return TrackingReader(stream)
+
+        with mock.patch.object(
+            packager.os, "fdopen", side_effect=grow_after_open
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "exceeds maximum allowed size"
+            ):
+                load_profile(custom_profile)
+
+        self.assertTrue(observed["grown"])
+        self.assertEqual(
+            observed["read_sizes"],
+            [max_profile_bytes + 1],
+            "profile reads must be capped at the limit plus one detection byte",
+        )
+
     def test_load_profile_rejects_profile_modified_during_read(self):
         custom_profile = os.path.join(self.temp_dir, "profile-read-race.json")
         original_content = b'{"profile_id":"ew1200g-pro"}\n'
