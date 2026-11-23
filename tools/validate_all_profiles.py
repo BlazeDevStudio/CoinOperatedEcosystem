@@ -18,10 +18,28 @@ PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-profile", "
 ROOTFS_DIR = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
 DIAG_SCRIPT = os.path.join(ROOTFS_DIR, "usr", "sbin", "blaze-appliance-diag")
+DIAGNOSTICS_TIMEOUT_SECONDS = 30
 
 # Import packaging primitives
 sys.path.insert(0, os.path.join(BASE_DIR, "tools"))
 from package_appliance_firmware import load_profile, stage_overlay, generate_build_script
+
+
+def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.CompletedProcess:
+    """Run staged diagnostics with a finite bound so profile CI cannot hang indefinitely."""
+    try:
+        return subprocess.run(
+            ["sh", DIAG_SCRIPT, "--json"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=DIAGNOSTICS_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"blaze-appliance-diag timed out for {profile_id} "
+            f"after {DIAGNOSTICS_TIMEOUT_SECONDS} seconds"
+        ) from exc
 
 
 def validate_profile(profile_path: str, temp_base: str) -> dict:
@@ -86,12 +104,7 @@ def validate_profile(profile_path: str, temp_base: str) -> dict:
     env["BLAZE_ROOT"] = stage_rental
     env["SYSINFO_MODEL"] = profile["name"]
     env["SYSINFO_BOARD"] = pid
-    res = subprocess.run(
-        ["sh", DIAG_SCRIPT, "--json"],
-        capture_output=True,
-        text=True,
-        env=env
-    )
+    res = run_appliance_diagnostics(pid, env)
     if res.returncode != 0:
         raise RuntimeError(f"blaze-appliance-diag failed for {pid}: {res.stderr}\n{res.stdout}")
 
