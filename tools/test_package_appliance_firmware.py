@@ -3708,9 +3708,13 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
         caught = None
         with mock.patch.object(
-            packager.os, "open", side_effect=capture_open
+            packager.os, "open", new=capture_open
         ), mock.patch.object(
-            packager.os, "close", side_effect=close_after_closing_root
+            packager.os,
+            "supports_dir_fd",
+            set(os.supports_dir_fd) | {capture_open},
+        ), mock.patch.object(
+            packager.os, "close", new=close_after_closing_root
         ):
             try:
                 packager._open_parent_directory_without_symlink_parents(
