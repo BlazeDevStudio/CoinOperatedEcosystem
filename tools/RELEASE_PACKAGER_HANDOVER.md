@@ -4811,3 +4811,62 @@ The timeout branch was exercised with a mocked `TimeoutExpired`; no real hung di
 4. **PHX-MASTER:** refresh #172's COE #35 child-head reference after this handover commit; preserve MASTER ownership.
 
 No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No #26 migration was staged or authorized. No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+## PHX-RELEASE UTC23 — fail closed when appliance profile validation workspace cleanup fails
+
+**Observed:** 2026-11-23T23:18Z–23:22Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Parent #31/base:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Prior final head:** `697d07857b9e44532a157c04f02bc3d54dc8b94c`.  
+**Source/test head:** `6bd0e1dce805a5c205dd437f329e013b227f85cd`.
+
+### Confirmed defect and test-first evidence
+
+`tools/validate_all_profiles.py::main()` created a temporary appliance-staging workspace and removed it in `finally` with `shutil.rmtree(temp_base, ignore_errors=True)`. That setting silently suppressed filesystem cleanup errors, so profile validation could report success while a staging workspace remained on disk. It also gave operators no cleanup-failure diagnostic and no explicit nonzero disposition.
+
+- Initial test harness attempt: [`be0ad4dd`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/be0ad4dd2e5e66a80dcb9ccc3e51c76dc89983df). Its first RED run [#45287615495](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45287615495) produced two errors because the test mocked `shutil.rmtree` itself and bypassed the function's documented `ignore_errors=True` behavior. This was an invalid test injection, not product-defect evidence; it is retained as failed harness history.
+- Corrected test-only commit: [`fe257fed`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/fe257fed655aae8e394805beb347cb0bc8586d92). The fixture now injects `PermissionError` at the underlying `os.rmdir` operation, allowing the real `shutil.rmtree` implementation to exercise its `ignore_errors` contract.
+- Genuine expected RED: push [#45287815111](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45287815111), job `138088594417`: **210 tests ran, 2 failures / 2 intentional skips**. The first test observed `SystemExit not raised` because the cleanup failure was swallowed; the second observed no warning while preserving the primary `KeyboardInterrupt`. Firmware-hardening and shared-contract suites passed; the later profile-validation step was skipped after the test step failed.
+- Source correction: [`6bd0e1dc`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6bd0e1dce805a5c205dd437f329e013b227f85cd).
+
+### Source behavior
+
+The finalizer now calls `shutil.rmtree(temp_base)` without `ignore_errors=True` and applies explicit failure handling:
+
+- A `FileNotFoundError` is treated as already-removed workspace.
+- An `OSError` with no active primary exception marks validation failed, emits a cleanup diagnostic, and causes a nonzero exit.
+- If a primary exception is already propagating, a cleanup diagnostic is emitted while the original exception remains primary.
+- A process-level cleanup interruption with no primary exception is re-raised rather than swallowed.
+
+The failed workspace is not presented as successfully cleaned. No retry, privileged cleanup, alternate path deletion, firmware payload, profile, network configuration, financial behavior, manifest schema or shared interface was changed.
+
+### Exact-source Actions at source/test head `6bd0e1d`
+
+- Push shared validation [#45287927738](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45287927738), job `138088974880`: **210 packaging/tool tests PASS / 2 intentional skips**; firmware hardening and shared contracts PASS. The subsequent profile admission **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compilation jobs were skipped; overall workflow FAILURE, not green.
+- PR shared validation [#45287938448](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45287938448), job `138089005342`: same **210 PASS / 2 skips**, same 10/10 ULA admission failures, and skipped board compilation.
+- PR ImageBuilder sandbox [#45287939063](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45287939063), job `138089006939`: host preflight **40/40 PASS**; Bubblewrap unavailable / exit 125. Namespace verification and mandatory sandbox packaging tests were skipped.
+- PR case-collision [#45287938441](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45287938441): PASS.
+
+These are hosted CI results. The profile end-to-end step remains blocked before ImageBuilder by the independent ULA admission gate. No appliance ImageBuilder output or approved production binary was produced.
+
+### Live ownership and cross-repository state
+
+- MASTER #288 observed head: `56f1d68e55d675abcd622cab6ba7f9ec2427ab72`; OPEN / DRAFT. `coordination/phoenix/OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; RELEASE's Experiments workflow route remains `reimplementation-review`. No migration authorization.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded; signing and publication skipped.
+- Experiments #291: `c5a566fd04a59a3c4a4bbbaa9524f8a9b97e6b7d`, OPEN / DRAFT. ESP32 compatibility [#45209288305](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288305) passed 3/3. Full [#45209288533](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288533) failed at the mandatory CORE-owned handover freshness gate; Windows [#45209288746](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45209288746) failed at the same gate and skipped build/publisher.
+- COE integration #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN; five workflows queued, zero jobs executed.
+- COE parent #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; shared/board run [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed; sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed its unprivileged namespace probe; case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed.
+- Cleanup-first #266 remains OPEN / 0-of-7.
+- Canonical private Drive project registry v11 was not surfaced through authorized Library retrieval. The older 2026-10-26 version-1 snapshot was not substituted or used as authority.
+
+### Changed paths, review and release boundary
+
+This increment from previous #35 head `697d0785` is three commits ahead / zero behind and changes exactly:
+- `tools/test_validate_all_profiles.py`
+- `tools/validate_all_profiles.py`
+- `tools/RELEASE_PACKAGER_HANDOVER.md`
+
+PHX-QA is asked to independently review the two cleanup failure cases and exception-preservation behavior at source/test `6bd0e1d`. MASTER should refresh #172's child reference to the final handover head after this entry. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation files were modified.
+
+No #26 migration, merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
