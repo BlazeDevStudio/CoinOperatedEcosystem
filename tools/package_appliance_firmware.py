@@ -329,7 +329,7 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
             primary_error.add_note(note)
         else:
             try:
-                sys.stderr.write(note + "\\n")
+                sys.stderr.write(note + "\n")
             except OSError:
                 pass
         return
