@@ -4223,3 +4223,56 @@ These are hosted CI results only. No real Bubblewrap namespace, ImageBuilder app
 - **Registry custodian:** restore authorized provenance-only access to canonical v11.
 
 No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC09 — preserve primary manifest scan errors when descriptor close fails (2026-11-23)
+
+**Disposition:** one RELEASE-owned manifest-scanner error-precedence defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**.
+
+### Live control plane, ownership and provenance
+
+- Re-read BLAZE-COMMS/1 control-plane issue #172, cleanup-first #266, this handover, MASTER PR #288 ownership routes, RELEASE #242/#291, COE #26/#31 and child #35.
+- Current observed heads before this task: MASTER #288 `876051f1b7c3c0a13a2c322c5a127306d0908b21`; RELEASE #242 `734b89d9e7792247e8376335c3f3685500ab3f89`; RELEASE #291 `886cabfc5080c3fbef03c2a3b1afe9d52dea6f60`; COE #26 `b382d233ff06c8791b1028bed3c617cc7b670d12`; COE #31 `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; COE #35 starting HEAD `ede91d4323c158f6abd454da18b6ee059f4609d0`.
+- MASTER #288 remains OPEN / DRAFT / UNMERGED, with all changed paths under `coordination/phoenix/`. The ownership manifest remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE's Experiments workflow route remains `reimplementation-review`, not copy/migration authorization.
+- COE #26 remains FROZEN; #31 remains the parent release-packager draft; #35 remains its RELEASE-owned child. Cleanup-first #266 remains OPEN and incomplete; no seven-track completion is claimed.
+- Canonical private Drive project registry v11 was not available through authorized Library access. Search surfaced historical v6/v7 snapshots only; neither was substituted and no private registry content or IDs were copied.
+
+### Confirmed defect and correction
+
+In `tools/write_firmware_artifact_manifest.py`, four scanner/publication `finally` blocks closed descriptors directly. If `os.close()` raised an `OSError` while a primary `ManifestError` was already propagating, the close error replaced the original artifact-integrity failure. This obscured the actual reason manifest generation had been denied.
+
+The new `_close_descriptor_preserving_primary()` helper:
+- captures the active exception using `sys.exc_info()`;
+- records a close `OSError` as an exception note (or stderr diagnostic on runtimes without `add_note`) while preserving an active primary failure;
+- raises a `ManifestError` if close is the only failure; and
+- does not suppress a new `KeyboardInterrupt` or `SystemExit`.
+
+It is used for the nested directory, artifact file, scanner-root and publication-root descriptor closes. The existing `_write_new_file()` partial-output rollback path is unchanged.
+
+### Test-first lineage
+
+- Regression commit: [`589ab26e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/589ab26ea41502abb9943ada49e5974e35950c74). The deterministic test makes the scanner raise `ManifestError("primary artifact scan failure")`, then makes root-descriptor close actually close the descriptor and raise an injected `OSError`.
+- Expected RED: PR shared/firmware [#45145051034](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45145051034), job `137592159489`: **195 tests ran, exactly one error, two intentional skips**. The new test errored because the injected close `OSError` replaced the primary `ManifestError`. Firmware-hardening and shared-contract steps passed; the all-profile step was skipped after the packaging test failure.
+- Source correction: [`59c57cba`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/59c57cba0dd230434ad0cb89bc1a0f19c0a684d3).
+
+### Exact-source Actions at `59c57cba`
+
+- PR shared/firmware [#45145293581](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45145293581), validation job `137592975816`: **195 tests PASS / 2 intentional skips**. Firmware hardening and shared-contract tests passed. The subsequent all-profile staging gate **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority remains undefined; ESP8266/ESP32 compile jobs were skipped. Overall workflow **FAILURE**, not green.
+- PR sandbox [#45145293511](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45145293511), job `137592975078`: host-preflight **39/39 PASS**; Bubblewrap is absent on the hosted runner (exit 125). Runner identity, namespace probe and mandatory sandbox packaging tests were skipped, not passed.
+- PR case-collision [#45145293535](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45145293535): **PASS**.
+
+These are hosted CI results only. No real Bubblewrap namespace, ImageBuilder firmware build, approved production binary or physical hardware acceptance was produced. Final handover-head CI must be checked separately after this append.
+
+### Exact scope, review and next owners
+
+- Changed paths relative to starting HEAD: `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this RELEASE-owned handover only.
+- No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, shared-interface, financial or networking source was changed.
+- **PHX-QA:** independently review close-error precedence and exception-note behavior at the final PR head.
+- **PHX-INFRA / COE owner:** provide an authorized disposable runner with Bubblewrap and working unprivileged single-ID namespaces; do not weaken the fail-closed boundary.
+- **PHX-CORE / PHX-MASTER:** establish approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix.
+- **PHX-MASTER:** maintain ownership routes and control-plane refs; no workflow migration is authorized by the draft route.
+- **Registry custodian:** restore authorized provenance-only access to canonical v11.
+
+No merge, rebase, retarget, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer and independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and the **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
