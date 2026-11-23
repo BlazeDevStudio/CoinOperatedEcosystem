@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Automated tests for Appliance Firmware Packager and ImageBuilder Configurator."""
+import errno
 import hashlib
 import json
 import os
@@ -920,6 +921,92 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                     descriptor_closed,
                     "the in-flight child directory descriptor must close when fstat is interrupted",
                 )
+
+    def test_calculate_overlay_size_attempts_all_descriptor_closes_after_close_error(self):
+        staging_dir = os.path.join(self.temp_dir, "overlay-size-cleanup-close-error")
+        os.makedirs(os.path.join(staging_dir, "nested"))
+
+        captured = {
+            "parent_fd": None,
+            "root_fd": None,
+            "parent_close_failed": False,
+        }
+        original_parent_open = packager._open_parent_directory_without_symlink_parents
+        original_listdir = packager.os.listdir
+        original_open = packager.os.open
+        original_close = packager.os.close
+
+        def capture_parent_descriptor(*args, **kwargs):
+            descriptor, root_name = original_parent_open(*args, **kwargs)
+            captured["parent_fd"] = descriptor
+            return descriptor, root_name
+
+        def capture_root_descriptor(directory_fd):
+            if captured["root_fd"] is None:
+                captured["root_fd"] = directory_fd
+            return original_listdir(directory_fd)
+
+        def fail_child_entry_open(path, flags, mode=0o777, *, dir_fd=None):
+            if (
+                captured["root_fd"] is not None
+                and dir_fd == captured["root_fd"]
+                and flags & getattr(os, "O_PATH", 0)
+            ):
+                raise OSError(errno.EACCES, "primary overlay scan failure")
+            return original_open(path, flags, mode, dir_fd=dir_fd)
+
+        def close_parent_then_fail(descriptor):
+            if (
+                descriptor == captured["parent_fd"]
+                and not captured["parent_close_failed"]
+            ):
+                captured["parent_close_failed"] = True
+                original_close(descriptor)
+                raise OSError(errno.EIO, "injected parent descriptor close failure")
+            return original_close(descriptor)
+
+        with mock.patch.object(
+            packager,
+            "_open_parent_directory_without_symlink_parents",
+            side_effect=capture_parent_descriptor,
+        ), mock.patch.object(
+            packager.os,
+            "listdir",
+            side_effect=capture_root_descriptor,
+        ), mock.patch.object(
+            packager.os,
+            "open",
+            side_effect=fail_child_entry_open,
+        ), mock.patch.object(
+            packager.os,
+            "close",
+            side_effect=close_parent_then_fail,
+        ):
+            with self.assertRaisesRegex(
+                OSError, "primary overlay scan failure"
+            ) as raised:
+                packager.calculate_overlay_size(staging_dir)
+
+        self.assertEqual(raised.exception.errno, errno.EACCES)
+        self.assertTrue(captured["parent_close_failed"])
+        self.assertIsNotNone(captured["root_fd"])
+        self.assertIsNotNone(captured["parent_fd"])
+        self.assertTrue(
+            any(
+                "injected parent descriptor close failure" in note
+                for note in getattr(raised.exception, "__notes__", [])
+            ),
+            "cleanup failure must be attached to the primary scan error",
+        )
+
+        for label, descriptor in (
+            ("root", captured["root_fd"]),
+            ("parent", captured["parent_fd"]),
+        ):
+            with self.subTest(descriptor=label):
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(descriptor)
+                self.assertEqual(closed.exception.errno, errno.EBADF)
 
     def test_calculate_overlay_size_does_not_follow_file_replaced_with_symlink_before_open(self):
         staging_dir = os.path.join(self.temp_dir, "overlay-size-race")
