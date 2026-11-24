@@ -5,7 +5,6 @@ import json
 import os
 import tempfile
 import stat
-import subprocess
 import time
 import unittest
 from types import SimpleNamespace
@@ -72,30 +71,41 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
                 ),
             ),
             mock.patch("builtins.open", side_effect=fake_open),
-            mock.patch.object(validator.subprocess, "run", **run_patch) as run,
+            mock.patch.object(validator, "run_appliance_diagnostics", **run_patch) as run,
         ):
             result = validator.validate_profile("test-router.json", self.temp_base)
 
         return result, run
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
     def test_appliance_diagnostics_run_has_a_hard_timeout(self):
-        completed = SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps(
-                {"profile": {"profile_id": "test-router", "status": "CONFIGURED"}}
-            ),
-            stderr="",
+        completed_stdout = json.dumps(
+            {"profile": {"profile_id": "test-router", "status": "CONFIGURED"}}
         )
+        process = mock.Mock()
+        process.pid = 12345
+        process.returncode = 0
+        process.communicate.return_value = (completed_stdout, "")
 
-        result, run = self._validate(run_result=completed)
+        with (
+            mock.patch.object(
+                validator.subprocess, "Popen", return_value=process
+            ) as popen,
+            mock.patch.object(
+                validator, "_terminate_process_groups", return_value=("", "")
+            ) as terminate,
+        ):
+            result = validator.run_appliance_diagnostics("test-router", {})
 
-        self.assertEqual(result["profile_id"], "test-router")
-        self.assertEqual(run.call_args.kwargs.get("timeout"), 30)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, completed_stdout)
+        self.assertEqual(process.communicate.call_args.kwargs.get("timeout"), 30)
+        self.assertTrue(popen.call_args.kwargs.get("start_new_session"))
+        terminate.assert_called_once_with(process)
 
     def test_appliance_diagnostics_timeout_is_reported_as_profile_failure(self):
-        timeout = subprocess.TimeoutExpired(
-            cmd=["sh", validator.DIAG_SCRIPT, "--json"],
-            timeout=30,
+        timeout = RuntimeError(
+            "blaze-appliance-diag timed out for test-router after 30 seconds"
         )
 
         with self.assertRaisesRegex(

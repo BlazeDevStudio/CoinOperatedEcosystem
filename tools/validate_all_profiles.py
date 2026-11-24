@@ -25,23 +25,60 @@ VALIDATION_SCOPE = "HOST-CI STAGED ROOTFS ONLY; NOT HARDWARE ACCEPTANCE"
 # Import packaging primitives
 sys.path.insert(0, os.path.join(BASE_DIR, "tools"))
 from package_appliance_firmware import load_profile, stage_overlay, generate_build_script
+from run_imagebuilder_sandbox import _terminate_process_groups
+
+
+PROCESS_GROUP_CLEANUP_ERROR_MARKERS = (
+    "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
+    "RELEASE-BLOCKED: could not signal sandbox process group",
+    "could not kill bubblewrap process:",
+    "bubblewrap process did not exit after SIGKILL",
+)
+
+
+def _process_group_cleanup_failed(stderr: str) -> bool:
+    return any(marker in stderr for marker in PROCESS_GROUP_CLEANUP_ERROR_MARKERS)
 
 
 def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.CompletedProcess:
-    """Run staged diagnostics with a finite bound so profile CI cannot hang indefinitely."""
-    try:
-        return subprocess.run(
-            ["sh", DIAG_SCRIPT, "--json"],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=DIAGNOSTICS_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
+    """Run diagnostics in an isolated POSIX session and reap all descendants."""
+    if os.name != "posix":
         raise RuntimeError(
+            "blaze-appliance-diag requires a POSIX host for process-group cleanup"
+        )
+
+    command = ["sh", DIAG_SCRIPT, "--json"]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=DIAGNOSTICS_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
+        detail = cleanup_stderr.strip()
+        message = (
             f"blaze-appliance-diag timed out for {profile_id} "
             f"after {DIAGNOSTICS_TIMEOUT_SECONDS} seconds"
-        ) from exc
+        )
+        if _process_group_cleanup_failed(cleanup_stderr):
+            message += f"; process-group cleanup failed: {detail}"
+        raise RuntimeError(message) from exc
+
+    cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
+    stdout = stdout or cleanup_stdout
+    stderr = stderr or cleanup_stderr
+    if _process_group_cleanup_failed(cleanup_stderr):
+        raise RuntimeError(
+            f"blaze-appliance-diag process-group cleanup failed for {profile_id}: "
+            f"{cleanup_stderr.strip()}"
+        )
+
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def validate_profile(profile_path: str, temp_base: str) -> dict:
