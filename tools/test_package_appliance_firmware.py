@@ -3929,6 +3929,78 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 )
 
 
+    def test_ensure_staging_directory_closes_child_fd_when_predecessor_close_fails(self):
+        staging_root = os.path.join(
+            self.temp_dir, "ensure-predecessor-close-failure"
+        )
+        os.makedirs(staging_root)
+
+        captured = {
+            "root_fd": None,
+            "child_fd": None,
+            "injected": False,
+        }
+        original_open = packager.os.open
+        original_close = packager.os.close
+
+        def capture_open(path, flags, mode=0o777, *, dir_fd=None):
+            descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+            if (
+                dir_fd is not None
+                and os.fspath(path) == os.path.basename(staging_root)
+            ):
+                captured["root_fd"] = descriptor
+            elif dir_fd is not None and os.fspath(path) == "etc":
+                captured["child_fd"] = descriptor
+            return descriptor
+
+        def close_predecessor_then_fail(descriptor):
+            if (
+                descriptor == captured["root_fd"]
+                and captured["child_fd"] is not None
+                and not captured["injected"]
+            ):
+                captured["injected"] = True
+                original_close(descriptor)
+                raise OSError("injected staging predecessor close failure")
+            return original_close(descriptor)
+
+        caught = None
+        with mock.patch.object(
+            packager.os, "open", new=capture_open
+        ), mock.patch.object(
+            packager.os, "close", new=close_predecessor_then_fail
+        ):
+            try:
+                packager._ensure_staging_directory(staging_root, "etc/config")
+            except BaseException as exc:
+                caught = exc
+
+        child_fd = captured["child_fd"]
+        child_fd_closed = False
+        if child_fd is not None:
+            try:
+                os.fstat(child_fd)
+            except OSError:
+                child_fd_closed = True
+            else:
+                original_close(child_fd)
+
+        failures = []
+        if not captured["injected"]:
+            failures.append("predecessor close failure was not injected")
+        if child_fd is None:
+            failures.append("staging child descriptor was not captured")
+        elif not child_fd_closed:
+            failures.append("new staging child descriptor leaked")
+        if not isinstance(caught, OSError):
+            failures.append(f"expected the original OSError, got {type(caught).__name__}")
+        elif "injected staging predecessor close failure" not in str(caught):
+            failures.append(f"primary close error was masked: {caught}")
+
+        self.assertEqual(failures, [])
+
+
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
         with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
