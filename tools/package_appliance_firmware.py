@@ -161,7 +161,9 @@ def load_profile(profile_id_or_path: str) -> dict:
         raise
     finally:
         if profile_fd >= 0:
-            os.close(profile_fd)
+            _close_overlay_descriptors_preserving_primary(
+                [("router profile", profile_fd)]
+            )
 
 
 def _validate_uci_interface(value, field_name: str) -> str:
@@ -311,7 +313,7 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
             )
 
         if primary_error is not None:
-            note = "Overlay descriptor cleanup was interrupted: " + details
+            note = "Owned descriptor cleanup was interrupted: " + details
             if hasattr(primary_error, "add_note"):
                 primary_error.add_note(note)
             else:
@@ -335,7 +337,7 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
         f"{label}: {type(exc).__name__}: {exc}"
         for label, exc in close_errors
     )
-    note = "Overlay descriptor cleanup encountered close errors: " + details
+    note = "Owned descriptor cleanup encountered close errors: " + details
     if primary_error is not None:
         if hasattr(primary_error, "add_note"):
             primary_error.add_note(note)
