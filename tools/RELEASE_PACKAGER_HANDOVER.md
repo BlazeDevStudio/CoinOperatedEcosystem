@@ -4957,3 +4957,65 @@ These are hosted CI results. No real Bubblewrap namespace or ImageBuilder run, a
 Only the RELEASE-owned manifest writer, its focused test, and this handover changed in this increment. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, shared interface, firmware profile, network policy, financial logic, or manifest schema was modified.
 
 No merge, rebase, signing, tag, publication, hardware flash, real payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC20 — label staged profile validation as host-CI only
+
+**Observed:** 2026-11-24T20:20Z–20:23Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Parent #31/base:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Starting branch HEAD:** `e7801818b00854f34a5a88955d979c601ec96404`.  
+**Final source/test HEAD:** `942cf61d4c6805c209a0a0a3d553c4789af432c7`.
+
+### Confirmed evidence-label defect
+
+`tools/validate_all_profiles.py` performs host-side staging of the checked-in rootfs, generates ImageBuilder scripts, and runs the appliance diagnostic shell script with a staged-rootfs environment. It does not run on physical appliances. Its prior banner and success message nevertheless said “Hardware Appliance Profiles” and “ALL HARDWARE APPLIANCE PROFILES VALIDATED SUCCESSFULLY.” That wording could be misread as physical hardware acceptance.
+
+### Test-first reproduction
+
+- Regression-only commit: [`51a28266`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/51a28266eeb10acebefdf620634342b4ef7238bd), modifying only `tools/test_validate_all_profiles.py`.
+- Expected RED, push [#45479779905](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479779905), job `138749485357`: **213 tests ran, 1 expected failure / 2 intentional skips**. The sole failure was the new output-contract test: it expected the host-CI / not-hardware label but received the old hardware-acceptance wording. The PR counterpart [#45479796551](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796551), job `138749547799`, reproduced the same single expected failure. This was a genuine evidence-label regression, not a fixture/setup failure.
+- Sandbox host preflight at the test-only head: [#45479796470](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796470), job `138749545003`: **40/40 host tests PASS**; Bubblewrap is not installed (exit 125), so unprivileged namespace verification and mandatory sandbox packaging tests were skipped.
+- Case-collision guard [#45479796519](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796519), job `138749546936`: PASS.
+
+### Source correction
+
+- Source commit: [`942cf61d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/942cf61d4c6805c209a0a0a3d553c4789af432c7), modifying only `tools/validate_all_profiles.py`.
+- The module documentation now describes a host-CI staged-rootfs validator and explicitly says it is not hardware acceptance.
+- The banner, summary and success text now carry the exact scope label: **HOST-CI STAGED ROOTFS ONLY; NOT HARDWARE ACCEPTANCE**.
+- Validation behavior, profiles, UCI/network values, firmware, manifest schema, ImageBuilder invocation, and ownership boundaries are unchanged.
+
+### Exact-source Actions at `942cf61d`
+
+- Push shared/firmware [#45479950937](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479950937), job `138750075033`: **213 packaging/tool tests PASS / 2 intentional skips**; firmware hardening and shared-contract checks PASS. The following real 10-profile admission step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were SKIPPED; overall workflow FAILURE, not green.
+- PR shared/firmware [#45479966616](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479966616), job `138750130523`: same **213 PASS / 2 skips**, same 10/10 ULA fail-closed result, and skipped board compiles; overall workflow FAILURE.
+- PR ImageBuilder sandbox [#45479966884](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479966884), job `138750131303`: host preflight PASS; Bubblewrap unavailable / exit 125. Unprivileged identity, namespace verification and mandatory sandbox packaging tests were skipped.
+- Case-collision guard [#45479966618](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479966618), job `138750127828`: PASS.
+
+These are hosted CI results. The new output-label test is a deterministic unit test. The one-profile mocked main-path test is not hardware evidence. The 10 real checked-in profiles still fail closed at the missing ULA authority gate. No ImageBuilder output or approved appliance binary was produced.
+
+### Live ownership and cross-repository state
+
+- MASTER #288 observed branch head: `6fc53efce92a700b61c348b8c4d6190b4c9b95ca`, OPEN / DRAFT. `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's Experiments workflow route remains `reimplementation-review`. MASTER's role-assignment entry for COE #35 still points to the prior head `e7801818`; MASTER should refresh it to this source/test SHA and the final documentation head after this handover commit.
+- Experiments #242 remains `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT.
+- Experiments #291 live branch HEAD is `ee1562df040ef1a52840039e3dace6821a92497c`; source/test anchor `343e25b8c8b1dffac83469d31b8fbcf2a0f415b7`; base #242 remains `734b89d9`. Compatibility [#45474966488](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45474966488) passed 3/3. Full [#45474966373](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45474966373) failed the CORE-owned `experiment/openwrt/BlazePwifi/docs/handover/CURRENT_STATE.md` freshness gate at last checkpoint `d85eb6a2766781b6cac1807cef461993d8216b84); 14 target/platform jobs and Android completed successfully, while downstream update-bundle/simulation/signing/publication jobs were skipped. Windows [#45474966212](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45474966212) failed at the same gate; Windows build/publisher were skipped. Its latest commit `ee1562df` changes the shared CORE-owned `CHANGE_LEDGER.md`; PHX-RELEASE did not edit that path. MASTER/CORE must reconcile the stale child pointer and shared-path ownership; no RELEASE overwrite is authorized.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; no migration staged.
+- COE parent #31 remains `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; #35 remains its RELEASE-owned child.
+- Cleanup-first #266 remains OPEN, 0/7 tracks complete.
+- Canonical private Drive project registry v11 was not surfaced through authorized Library retrieval. Older v4/v7 snapshots were not substituted or used as authority.
+
+### Next owner actions and release boundary
+
+1. **PHX-QA:** independently review the output-label regression and verify that host-CI staging is not described as physical acceptance.
+2. **PHX-CORE / PHX-MASTER:** define approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent or substitute a prefix.
+3. **PHX-INFRA / COE owner:** provide an authorized disposable runner with Bubblewrap and unprivileged single-ID namespaces; no privileged or unsandboxed fallback.
+4. **PHX-CORE:** refresh canonical `CURRENT_STATE.md` after its owned changes and publish the exact SHA; PHX-RELEASE then reruns Full/Windows on the refreshed source.
+5. **PHX-MASTER:** refresh #288's child-head entries for COE #35 and Experiments #291; reconcile the inherited CORE `CHANGE_LEDGER.md` path without transferring ownership.
+6. **Registry custodian:** restore authorized provenance-only access to canonical private Drive v11.
+
+This increment changed exactly `tools/test_validate_all_profiles.py`, `tools/validate_all_profiles.py`, and this RELEASE-owned handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, firmware, profile, network, financial or shared-interface source was changed.
+
+No #26 migration, merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
