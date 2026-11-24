@@ -736,6 +736,59 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         )
 
 
+    def test_write_new_file_preserves_write_error_when_close_is_interrupted(self):
+        original_fdopen = os.fdopen
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                output_path = self.artifact_dir / (
+                    f"write-and-close-{interruption_type.__name__.lower()}.bin"
+                )
+
+                class CloseInterruptingOutput:
+                    def __init__(self, descriptor, mode):
+                        self.stream = original_fdopen(descriptor, mode)
+
+                    def write(self, content):
+                        raise OSError("primary output write failure")
+
+                    def flush(self):
+                        return self.stream.flush()
+
+                    def fileno(self):
+                        return self.stream.fileno()
+
+                    def close(self):
+                        self.stream.close()
+                        raise interruption_type("secondary output close interruption")
+
+                with mock.patch.object(
+                    manifest_writer.os, "fdopen", side_effect=CloseInterruptingOutput
+                ):
+                    with self.assertRaisesRegex(
+                        OSError, "primary output write failure"
+                    ) as raised:
+                        manifest_writer._write_new_file(
+                            str(self.artifact_dir),
+                            output_path.name,
+                            b"artifact bytes",
+                        )
+
+                self.assertFalse(
+                    output_path.exists(),
+                    "failed output must be removed after close interruption",
+                )
+                notes = getattr(raised.exception, "__notes__", [])
+                self.assertTrue(
+                    any(
+                        interruption_type.__name__ in note
+                        and "secondary output close interruption" in note
+                        for note in notes
+                    ),
+                    f"expected {interruption_type.__name__} diagnostic on primary error, got {notes!r}",
+                )
+
+
     def test_writer_rolls_back_outputs_when_interrupted_after_helper_returns(self):
         original_write = manifest_writer._write_new_file
 
