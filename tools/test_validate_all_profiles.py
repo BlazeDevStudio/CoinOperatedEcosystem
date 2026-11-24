@@ -169,5 +169,35 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
             self.assertTrue(os.path.isdir(staging_dir))
 
 
+    def test_main_labels_staged_profile_validation_as_host_ci_only(self):
+        with tempfile.TemporaryDirectory() as root:
+            profiles_dir, staging_dir = self._main_fixture(root)
+            result = {
+                "profile_id": "test-router",
+                "name": "Test Router",
+                "architecture": "test/target",
+                "standalone_kb": 1,
+                "rental_bundle_kb": 1,
+                "diag_status": "CONFIGURED",
+            }
+            with (
+                mock.patch.object(validator, "PROFILES_DIR", profiles_dir),
+                mock.patch.object(validator.tempfile, "mkdtemp", return_value=staging_dir),
+                mock.patch.object(validator, "validate_profile", return_value=result),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
+                validator.main()
+
+            output = stdout.getvalue()
+
+        self.assertIn("HOST-CI STAGED ROOTFS ONLY", output)
+        self.assertIn("NOT HARDWARE ACCEPTANCE", output)
+        self.assertNotIn("Hardware Appliance Profiles", output)
+        self.assertNotIn(
+            "ALL HARDWARE APPLIANCE PROFILES VALIDATED SUCCESSFULLY",
+            output,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
