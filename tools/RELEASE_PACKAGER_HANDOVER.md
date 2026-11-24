@@ -5031,3 +5031,58 @@ The count wording above is explicit: unittest reported 213 total tests, with 2 s
 - Case-collision guard [#45480731393](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45480731393), job `138752834131`: PASS.
 
 These runs are attached to the documentation-only head `975802ddd06a889ccce219b4945827f934733013`; the source/test head remains `942cf61d4c6805c209a0a0a3d553c4789af432c7`. No source behavior changed in this documentation increment.
+
+
+---
+
+## PHX-RELEASE UTC21 — terminate staged diagnostic descendants on timeout and leader exit
+
+**Observed:** 2026-11-24T21:22Z–21:31Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** \`phoenix/release-build-script-publication-safety-20261117\`.  
+**Parent #31/base:** \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`.  
+**Starting docs HEAD:** \`83188ae9c218b99e506ad40b57edeee296e3e5e3\`.  
+**Final source/test HEAD:** \`d7a6b806e2d05a13f4d117d93828feb2953b36ca\`.  
+**Current exact-source Actions:** pending; the following handover-only commit triggers the existing PR/push CI path for \`tools/**\`.
+
+### Confirmed release-validator defect
+
+\`tools/validate_all_profiles.py::run_appliance_diagnostics()\` used \`subprocess.run(timeout=30)\`. On POSIX, that bounds and kills the direct shell process, but does not guarantee cleanup of the shell's descendant process group. A staged diagnostic command could therefore outlive a timeout or a successful shell exit, retaining host resources or continuing to touch the validation workspace.
+
+### Test-first evidence
+
+- Initial regression commit [\`39685436\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/39685436eba86ed8f6a0b04903f671c3fa35cd34) had an invalid fixture: it wrote literal backslash-n sequences rather than shell line breaks. Its failure is **not** accepted as product RED.
+- Fixture correction [\`86e56ad7\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/86e56ad7223c823770e522ecde5b55b30f244e50) corrected the generated shell script.
+- Corrected expected RED, push [#45490615068](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45490615068), validation job \`138787625209\`: **215 total tests, exactly two new process-survival failures, two intentional skips; the other 211 tests passed**. The timeout case left a background child running; the successful-leader-exit case also left a child running.
+- PR reproduction [#45490629403](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45490629403), validation job \`138787673128\`: same two expected failures and two skips.
+- Case-collision guard [#45490629344](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45490629344): PASS.
+- ImageBuilder sandbox [#45490629326](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45490629326): **40/40 host preflight tests PASS**, then fail-closed because Bubblewrap is absent on the hosted runner (exit 125); namespace and mandatory packaging stages were not run.
+
+### Source correction
+
+- Initial implementation commit [\`67fbfa1f\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/67fbfa1feb2f984497714859e81eb1d35c94f607) isolated the diagnostic session and reused the existing release-owned \`run_imagebuilder_sandbox._terminate_process_groups()\` helper.
+- Follow-up correction [\`d7a6b806\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d7a6b806e2d05a13f4d117d93828feb2953b36ca) waits for the shell leader with \`Popen.wait(timeout=...)\` rather than \`communicate(timeout=...)\`. This is important: \`communicate()\` can wait for inherited capture pipes held open by a background descendant, delaying cleanup until that child exits. Once the leader exits—or the timeout expires—the shared helper terminates and reaps the isolated process group, then returns captured output. Cleanup-marker failures are surfaced as release validation failures.
+- The validator fails closed on non-POSIX hosts because complete process-group cleanup is required for this staged diagnostic path.
+- The test suite now asserts the isolated session and hard leader timeout, and includes real POSIX child-survival regressions for both timeout and successful leader exit.
+
+This increment changes only \`tools/validate_all_profiles.py\`, \`tools/test_validate_all_profiles.py\`, and this RELEASE handover. It reuses the already-tested release-owned process-group cleanup helper; no sandbox runner, firmware, profile, ULA/network policy, financial logic, manifest schema, shared interface, or other role-owned source was changed.
+
+### Current independent integration blockers
+
+- All ten checked-in appliance profiles still fail closed because the approved site-scoped RFC 4193 ULA /48 authority is not defined. PHX-CORE/PHX-MASTER must supply the authorized prefix; RELEASE will not invent one.
+- Mandatory ImageBuilder sandbox remains blocked because the hosted runner lacks Bubblewrap (exit 125). The 40 host preflight tests are synthetic host checks, not sandbox packaging acceptance.
+- Experiments PR #291 current observed head: \`53fc8a1c558f80adde19dc675b879c78797f0cd5\`; base #242 \`734b89d9e7792247e8376335c3f3685500ab3f89\`; source/test anchor \`343e25b8c8b1dffac83469d31b8fbcf2a0f415b7\`. Current docs-head compatibility [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed 3/3. Full [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) failed at CORE-owned \`PROJECT_HANDOVER.md\` freshness; all 14 target/platform jobs and Android passed, downstream update/simulation/sign/publish jobs were skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) failed at the same CORE handover gate before build/publisher.
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at \`c0a465d157d491afbb2a06eaea8fdd4ab81a3615\`; its 11 routes remain \`DRAFT_REVIEW_ONLY\`, with RELEASE \`reimplementation-review\`. MASTER's #35 child pointer still lists \`e7801818\`, and its #291 pointer lists \`ee1562df\`; MASTER must refresh both to current owner heads. RELEASE did not edit MASTER files or the inherited CORE \`CHANGE_LEDGER.md\`.
+- COE #26 remains FROZEN at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`; parent #31 remains DRAFT at \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`. No migration or destination write occurred.
+- Cleanup-first #266 remains OPEN / 0-of-7. The canonical private Drive registry v11 was not surfaced through authorized Library retrieval; no older snapshot was substituted.
+
+### Next owner actions
+
+1. PHX-RELEASE: inspect exact-source CI after this handover commit and append terminal job outcomes; do not claim green while ULA/sandbox gates remain failed.
+2. PHX-QA: independently review the process-group regression and POSIX-only cleanup behavior.
+3. PHX-CORE / PHX-MASTER: define approved site-scoped ULA /48 authority and refresh canonical \`PROJECT_HANDOVER.md\` / \`CURRENT_STATE.md\` with exact SHAs.
+4. PHX-INFRA / COE owner: provide an authorized disposable Bubblewrap-capable runner with unprivileged single-ID namespaces; no privileged or unsandboxed fallback.
+5. PHX-MASTER: refresh child-head pointers for #35 and #291 and reconcile inherited CORE paths.
+6. Registry custodian: restore authorized provenance-only access to canonical private Drive v11.
+
+No #26 migration, merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. The protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
