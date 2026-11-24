@@ -5160,3 +5160,56 @@ The source/test commits changed only tools/package_appliance_firmware.py and too
 6. Registry custodian restores authorized provenance-only access to private v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC23 — router-profile descriptor cleanup preserves primary failures
+
+**Task:** PHX-RELEASE-UTC23-20261124  
+**PR:** [#35 — OPEN / DRAFT / UNMERGED](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35)  
+**Branch:** phoenix/release-build-script-publication-safety-20261117  
+**Parent #31:** 59ed44d0b911e176f1a95b9cf5585ef811ffd31b  
+**Starting branch HEAD:** 23dcae0cace76c35dbad0217755af57aec033482  
+**Source/test HEAD:** 360b284f7ec952c05fb6502ba543ddd66e2b11ba
+
+### Defect and correction
+
+The load_profile() path owned a no-follow profile file descriptor until os.fdopen() successfully transferred ownership to the stream. Its finally block used bare os.close(profile_fd). If the primary os.fstat()/profile-admission operation failed and descriptor close then raised OSError, KeyboardInterrupt, or SystemExit, the cleanup exception replaced the primary failure and obscured the actual admission error.
+
+The finally block now routes the still-owned profile descriptor through the existing exception-preserving descriptor cleanup helper, with the label "router profile". The helper's diagnostic prefix is generalized from overlay-only wording to owned-descriptor wording. It attempts cleanup, retains cleanup failures as notes on the active primary exception, and preserves the original exception. With no active primary exception, cleanup failures continue to propagate. No profile schema, path policy, network value, firmware, manifest, financial logic, or shared interface changed.
+
+### Test-first evidence
+
+- Initial test-only commit [2224b389](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/2224b389aba76c8cd9995c5d3293f44aef96d100) was a fixture-placement error: the test was initially appended to TestImageBuilderSandboxTimeouts, which has no temp_dir. Push [#45508312348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508312348) failed with AttributeError; this is **not** accepted product RED.
+- Corrected fixture commit [3f734afb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/3f734afb5c61fa64116e492c764e1a642b863f56) moved the regression into TestPackageApplianceFirmware and uses a valid JSON fixture.
+- Expected RED at exact corrected test head: push [#45508434595](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508434595). The injected close OSError replaced the primary profile fstat error; the subsequent KeyboardInterrupt cleanup injection terminated the test process with exit 130. No complete suite count was emitted for this RED run.
+- Source correction [360b284f](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/360b284f7ec952c05fb6502ba543ddd66e2b11ba).
+
+### Exact source/test-head CI at 360b284f
+
+- Push shared/firmware [#45508533297](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508533297), validation job 138849928781: **217 tests PASS / 2 intentional skips**; the new profile descriptor regression passes. Firmware hardening and shared-contract steps pass. The subsequent ten appliance profiles all fail closed because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP32 and ESP8266 compile jobs are skipped. Overall workflow: **FAILURE**, not release-ready.
+- PR shared/firmware [#45508546354](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508546354), validation job 138849964325: same **217 PASS / 2 intentional skips**, same ten-profile ULA fail-closed result, and board compile jobs skipped. Overall workflow: **FAILURE**.
+- Push sandbox [#45508533279](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508533279) and PR sandbox [#45508546494](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508546494): host preflight **40 tests completed successfully**; Bubblewrap is unavailable, so the mandatory sandbox gate exits 125. Unprivileged identity/namespace and packaging steps are skipped, not passed.
+- PR case-collision guard [#45508546362](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45508546362): **PASS**.
+
+The source/test increment changed only tools/package_appliance_firmware.py and tools/test_package_appliance_firmware.py; this handover update is the only documentation path. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, firmware, shared contract, ULA authority, signing permission, or financial state was modified.
+
+### Live cross-repository gates
+
+- MASTER #288 remains OPEN / DRAFT; live HEAD at audit was 433298c3837fe08c219035c2d74a10fa8f1aefa3. OWNERSHIP_ROUTES.json blob e4db324315a1b3543fec17a148fbf960170fcb29 remains 11 routes / DRAFT_REVIEW_ONLY; PHX-RELEASE route remains reimplementation-review. MASTER's #35 child pointer still references the preceding 23dcae0c head and must be refreshed to the final docs head after this handover commit.
+- Experiments #291 remains OPEN / DRAFT at 53fc8a1c558f80adde19dc675b879c78797f0cd5, based on #242 734b89d9e7792247e8376335c3f3685500ab3f89. ESP32 compatibility [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed 3/3. Full [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) fails CORE-owned handover freshness; all 14 target/platform jobs and Android passed, while downstream release stages were skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) fails the same freshness gate before build/publisher.
+- COE #26 remains FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12; #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b. No destination migration or write.
+- Cleanup-first #266 remains OPEN / 0-of-7; this bounded RELEASE correction does not complete the global cleanup checklist.
+- Canonical private Drive project registry v11 was not recovered through authorized Library retrieval. No older registry snapshot was substituted and no private file content or identifiers were exposed.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test SHA 360b284f, including OSError, KeyboardInterrupt and SystemExit cleanup injections and preservation of the original profile-admission exception.
+2. PHX-CORE / PHX-MASTER provide the approved site-scoped RFC 4193 ULA /48 authority; RELEASE reruns profile admission only after that authority is published.
+3. PHX-INFRA / COE owner provide an authorized disposable no-secret runner with Bubblewrap and functioning unprivileged single-ID namespaces; RELEASE reruns mandatory sandbox packaging.
+4. PHX-CORE refreshes the canonical BlazePwifi handover for #291; RELEASE reruns full-build and Windows validation after the exact refreshed SHA is published.
+5. PHX-MASTER refreshes the #35 child pointer to the final documentation head and reconciles inherited paths.
+6. Registry custodian restores authorized provenance-only access to private Drive registry v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
