@@ -4366,6 +4366,74 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
         self.assertEqual(result, 125)
 
 
+    def test_load_profile_preserves_primary_error_when_descriptor_close_fails(self):
+        custom_profile = os.path.join(
+            self.temp_dir, "profile-close-interruption.json"
+        )
+        with open(custom_profile, "wb") as profile_file:
+            profile_file.write(b'{"profile_id":"ew1200g-pro"}\\n')
+
+        original_open_helper = packager._open_file_without_symlink_parents
+        original_fstat = packager.os.fstat
+        original_close = packager.os.close
+        cleanup_error_factories = (
+            ("OSError", lambda: OSError(errno.EIO, "injected profile close failure")),
+            ("KeyboardInterrupt", lambda: KeyboardInterrupt("injected profile close interruption")),
+            ("SystemExit", lambda: SystemExit("injected profile close exit")),
+        )
+
+        for label, make_cleanup_error in cleanup_error_factories:
+            with self.subTest(cleanup_error=label):
+                captured = {"descriptor": None, "close_calls": []}
+
+                def capture_profile_descriptor(*args, **kwargs):
+                    descriptor = original_open_helper(*args, **kwargs)
+                    captured["descriptor"] = descriptor
+                    return descriptor
+
+                def fail_profile_fstat(descriptor):
+                    if descriptor == captured["descriptor"]:
+                        raise OSError(errno.EIO, "primary profile fstat failure")
+                    return original_fstat(descriptor)
+
+                def close_then_raise(descriptor):
+                    if descriptor == captured["descriptor"]:
+                        captured["close_calls"].append(descriptor)
+                        original_close(descriptor)
+                        raise make_cleanup_error()
+                    return original_close(descriptor)
+
+                with mock.patch.object(
+                    packager,
+                    "_open_file_without_symlink_parents",
+                    side_effect=capture_profile_descriptor,
+                ):
+                    with mock.patch.object(
+                        packager.os, "fstat", side_effect=fail_profile_fstat
+                    ):
+                        with mock.patch.object(
+                            packager.os, "close", side_effect=close_then_raise
+                        ):
+                            with self.assertRaisesRegex(
+                                OSError, "primary profile fstat failure"
+                            ) as raised:
+                                load_profile(custom_profile)
+
+                descriptor = captured["descriptor"]
+                self.assertIsNotNone(descriptor)
+                self.assertEqual(captured["close_calls"], [descriptor])
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(descriptor)
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+
+                if hasattr(raised.exception, "add_note"):
+                    self.assertTrue(
+                        any("router profile" in note.lower()
+                            for note in getattr(raised.exception, "__notes__", ())),
+                        "profile descriptor cleanup failure must be retained as a diagnostic",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()
 
