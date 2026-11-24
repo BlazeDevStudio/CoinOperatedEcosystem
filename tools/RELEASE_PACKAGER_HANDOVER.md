@@ -4909,3 +4909,51 @@ Only the RELEASE-owned packager source, its focused test, and this RELEASE hando
 PHX-QA is requested to independently review the exact source/test head `1abe0164` and the cleanup-interruption/primary-exception behavior. MASTER's latest #288 head at activation start was `4e08f521e4d0c1501dfa61ad7594ca6c39d6b664`; ownership routes remain `DRAFT_REVIEW_ONLY`, with the RELEASE workflow route `reimplementation-review`. The canonical private Drive registry v11 was not available through authorized Library retrieval; no older registry snapshot was substituted.
 
 No merge, rebase, signing, tagging, publication, hardware flash, real payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC01 — preserve primary manifest write failure when output close is interrupted
+
+**Observed:** 2026-11-24T01:14Z–01:15Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Parent #31/base:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Prior PR head:** `0019593cae93887bb5f195179b703688f1c57c7d`.  
+**Source/test head:** `288ff721a93023f08b85a49a6938db71fa179095`.
+
+### Confirmed defect and test-first evidence
+
+`tools/write_firmware_artifact_manifest.py::_write_new_file()` already preserved an output write/flush/fsync error when `output.close()` raised an ordinary `OSError`. However, if close raised `KeyboardInterrupt` or `SystemExit` while a primary write failure was active, the helper recorded the secondary interruption, rolled back the partial output, then re-raised the cleanup interruption. That masked the original publication failure.
+
+- Regression-only commit: [`bad8be0d`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bad8be0d871b334849f53bf71084317795099f12), modifying only `tools/test_firmware_artifact_manifest.py`.
+- Expected RED: PR shared [#45303520802](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45303520802), job `138141642541`: firmware hardening and shared contracts passed; the new regression injected a primary `OSError` from `write()` and a secondary `KeyboardInterrupt` from `close()`. The log showed `raise cleanup_interruption from write_error` and process exit 130. The suite did **not** emit a complete test count; the first `KeyboardInterrupt` subtest aborted the test method before the `SystemExit` subtest ran. This is the intended RED, not a completed test suite.
+- The same test-only head's sandbox [#45303520729](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45303520729) completed the 40/40 host preflight tests, then failed closed because Bubblewrap was absent (exit 125); namespace and mandatory sandbox packaging tests were skipped. Case-collision [#45303520858](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45303520858) passed.
+
+### Source correction
+
+- Source commit: [`288ff721`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/288ff721a93023f08b85a49a6938db71fa179095), modifying only `tools/write_firmware_artifact_manifest.py`.
+- A close-time `BaseException` is now attached as a secondary cleanup diagnostic to the active write/flush/fsync exception. The helper then rolls back the partial output and uses a bare re-raise to preserve the original publication failure.
+- The normal successful-write close path is unchanged: with no primary write failure, `KeyboardInterrupt` and `SystemExit` from close still propagate after rollback.
+- The regression covers both interruption types, confirms the primary write error remains primary, verifies the close interruption is retained as a diagnostic, and verifies the partial output is removed.
+
+### Exact-source Actions at source/test head `288ff721`
+
+- PR shared/firmware [#45303586686](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45303586686), job `138141862946`: **212 packaging/tool tests PASS / 2 intentional skips**. Firmware hardening and shared-contract checks passed. A synthetic one-profile staging validation passed. The subsequent real 10-profile admission **FAILED CLOSED 10/10** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were **SKIPPED**; overall workflow FAILURE, not a green release build.
+- PR sandbox [#45303586638](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45303586638), job `138141863001`: host preflight **40/40 PASS**; Bubblewrap unavailable / exit 125. Unprivileged identity, namespace preflight and mandatory sandbox packaging regressions were **SKIPPED**, not passed.
+- PR case-collision [#45303586611](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45303586611), job `138141862112`: **PASS**.
+
+These are hosted CI results. No real Bubblewrap namespace or ImageBuilder run, appliance binary, hardware flash, payment operation, or production release was performed.
+
+### Live ownership and cross-repository state
+
+- MASTER #288 observed head: `9f910426ebc25148bfd95eeb2af9b49fcf61e195`; OPEN / DRAFT. `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains `DRAFT_REVIEW_ONLY`; the PHX-RELEASE Experiments workflow route remains `reimplementation-review`. No migration authorization.
+- Experiments #242: `734b89d9e7792247e8376335c3f3685500ab3f89`, OPEN / DRAFT. Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed; signing and publishing were skipped.
+- Experiments #291: `8c55b107b7c2f86e765d85b0066102275f366b0a`, OPEN / DRAFT. ESP32 compatibility [#45300799137](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45300799137) passed 3/3; BlazePwifi build [#45300799357](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45300799357) passed its listed jobs, while production sign/publish handoffs were skipped. Windows [#45300799060](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45300799060) failed in the inherited PISONET-owned `negative-selftest.ps1` because `$buildWorkflow` is unset; Windows build and publisher were not completed. RELEASE did not edit PISONET-owned files.
+- COE integration #26: `b382d233ff06c8791b1028bed3c617cc7b670d12`, OPEN / DRAFT / FROZEN; five workflows queued, zero jobs executed.
+- COE parent #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; shared/board CI [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed, sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed its unprivileged namespace probe, and case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed.
+- Cleanup-first #266 remains OPEN / 0-of-7; its RELEASE cleanup track is #242. This COE #35 packaging fix does not complete or check the #266 RELEASE track.
+- Canonical private Drive project registry v11 was not surfaced through authorized Library retrieval. Older registry snapshots/checkpoints were not substituted and no private contents were copied.
+- Independent COE #35 reviews: 0 submitted; review threads: 0 at this read. PHX-QA review remains required.
+
+Only the RELEASE-owned manifest writer, its focused test, and this handover changed in this increment. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, shared interface, firmware profile, network policy, financial logic, or manifest schema was modified.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
