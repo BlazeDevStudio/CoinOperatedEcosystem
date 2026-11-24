@@ -57,7 +57,7 @@ def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.Complete
         start_new_session=True,
     )
     try:
-        stdout, stderr = process.communicate(timeout=DIAGNOSTICS_TIMEOUT_SECONDS)
+        process.wait(timeout=DIAGNOSTICS_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as exc:
         cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
         detail = cleanup_stderr.strip()
@@ -69,6 +69,8 @@ def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.Complete
             message += f"; process-group cleanup failed: {detail}"
         raise RuntimeError(message) from exc
 
+    # Wait for the leader, not communicate(): descendants may keep the pipes
+    # open after the shell exits. The shared helper kills/reaps that whole group.
     cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
     stdout = stdout or cleanup_stdout
     stderr = stderr or cleanup_stderr

@@ -85,21 +85,21 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
         process = mock.Mock()
         process.pid = 12345
         process.returncode = 0
-        process.communicate.return_value = (completed_stdout, "")
+        process.wait.return_value = 0
 
         with (
             mock.patch.object(
                 validator.subprocess, "Popen", return_value=process
             ) as popen,
             mock.patch.object(
-                validator, "_terminate_process_groups", return_value=("", "")
+                validator, "_terminate_process_groups", return_value=(completed_stdout, "")
             ) as terminate,
         ):
             result = validator.run_appliance_diagnostics("test-router", {})
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, completed_stdout)
-        self.assertEqual(process.communicate.call_args.kwargs.get("timeout"), 30)
+        self.assertEqual(process.wait.call_args.kwargs.get("timeout"), 30)
         self.assertTrue(popen.call_args.kwargs.get("start_new_session"))
         terminate.assert_called_once_with(process)
 
