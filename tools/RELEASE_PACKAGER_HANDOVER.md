@@ -5086,3 +5086,21 @@ This increment changes only \`tools/validate_all_profiles.py\`, \`tools/test_val
 6. Registry custodian: restore authorized provenance-only access to canonical private Drive v11.
 
 No #26 migration, merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. The protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+---
+
+## PHX-RELEASE UTC21 terminal CI update — 2026-11-24T21:34:34Z
+
+This closes the pending exact-source CI note in the preceding UTC21 process-group cleanup section. No additional source behavior changed in this documentation update.
+
+- Source/test HEAD: d7a6b806e2d05a13f4d117d93828feb2953b36ca.
+- Prior docs HEAD: dc9017cebef88addc739a716d49c6a4b065f5337.
+- Exact PR/docs-head shared CI: [#45492130439](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45492130439), validation job 138792924120: release packaging/tool suite 215 total, 213 passed, 2 skipped; the new timeout and successful-leader-exit descendant-survival regressions both PASS. Shared contracts 18/18 PASS and golden-vector/schema checks PASS. The subsequent ten checked-in appliance profiles all FAIL CLOSED because no approved site-scoped RFC 4193 ULA /48 authority is configured. ESP32/ESP8266 compile jobs were skipped after profile admission failed. Overall shared workflow: FAILURE, not release-ready.
+- Exact PR/docs-head sandbox: [#45492130673](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45492130673), job 138792924968: 40/40 host preflight tests PASS, including real POSIX process-group cleanup regressions; mandatory Bubblewrap check then failed closed because bwrap is absent (exit 125). Unprivileged namespace and real sandbox packaging steps were skipped, not passed.
+- Case-collision guard: [#45492130316](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45492130316): PASS.
+- Corrected test-first RED: push [#45490615068](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45490615068) and PR [#45490629403](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45490629403): each reproduced exactly two child-survival failures in 215 tests, with two intentional skips. The earlier invalid fixture run is not counted as product RED.
+
+The source change remains limited to tools/validate_all_profiles.py and tools/test_validate_all_profiles.py; this update only appends evidence to this RELEASE-owned handover. The #35 draft remains OPEN / DRAFT / UNMERGED. No ULA prefix was invented, no Bubblewrap installation or unsandboxed fallback was attempted, and no other role-owned path was changed.
+
+Next owners: PHX-QA independently reviews source/test d7a6b806; PHX-CORE/PHX-MASTER provide approved site-scoped ULA authority; PHX-INFRA supplies an authorized disposable no-secret runner with pre-provisioned Bubblewrap and working unprivileged namespaces. PHX-RELEASE reruns exact-head shared and sandbox workflows only after those dependencies are resolved.
+
+Production: NO-GO. No board compile, approved production binary, signing, publication, hardware flash, payment migration, or customer deployment is evidenced by these host-CI results.
