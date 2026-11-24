@@ -5104,3 +5104,59 @@ The source change remains limited to tools/validate_all_profiles.py and tools/te
 Next owners: PHX-QA independently reviews source/test d7a6b806; PHX-CORE/PHX-MASTER provide approved site-scoped ULA authority; PHX-INFRA supplies an authorized disposable no-secret runner with pre-provisioned Bubblewrap and working unprivileged namespaces. PHX-RELEASE reruns exact-head shared and sandbox workflows only after those dependencies are resolved.
 
 Production: NO-GO. No board compile, approved production binary, signing, publication, hardware flash, payment migration, or customer deployment is evidenced by these host-CI results.
+
+---
+
+## PHX-RELEASE UTC22 — staging-directory descriptor ownership correction
+
+**Task:** PHX-RELEASE-UTC22-20261124  
+**PR:** [#35 — OPEN / DRAFT / UNMERGED](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35)  
+**Branch:** phoenix/release-build-script-publication-safety-20261117  
+**Parent #31:** 59ed44d0b911e176f1a95b9cf5585ef811ffd31b  
+**Source/test HEAD:** 39ff80f005ce7ed39e851f3b63ad905c5bce2b16
+
+### Defect and correction
+
+The release-owned _ensure_staging_directory() path walker opened the next directory descriptor, then closed the predecessor before transferring cleanup ownership to the newly opened descriptor. If predecessor close raised after actually closing the fd, the finally block retried the stale descriptor, surfaced EBADF instead of the original close error, and leaked the newly opened child descriptor.
+
+The corrected path walker now maintains an explicit owned-descriptor ledger. It registers each opened descriptor immediately, removes a descriptor only after close succeeds, and delegates final cleanup to the existing _close_overlay_descriptors_preserving_primary() helper. This attempts all remaining closes, ignores EBADF when a close already took effect, preserves the primary exception, and closes the child descriptor on predecessor-close failure. Path traversal, no-follow checks, staging contents, and public interfaces are unchanged.
+
+### Test-first evidence
+
+- Test commit [e3ff041b](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/e3ff041b4037e5fb00da29411099f3e29ff0f193) introduced the regression. Its first runs [#45498811739](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45498811739) and [#45498825502](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45498825502) failed before reaching the intended close boundary because the wrapped os.open fixture was not added to os.supports_dir_fd. These are invalid fixture runs, not accepted product RED.
+- Fixture correction [5f23d0f0](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5f23d0f057bd3893e29021cb1e44824ea61ba539).
+- Corrected expected RED: push [#45498929297](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45498929297) and PR [#45498943079](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45498943079). Each ran 216 tests with exactly one failure and two skips. The new regression reproduced both the leaked child descriptor and masking of the injected primary close error by EBADF.
+- Source correction [39ff80f0](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/39ff80f005ce7ed39e851f3b63ad905c5bce2b16).
+
+### Exact-source verification at 39ff80f0
+
+- Push shared/firmware [#45499045004](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45499045004), validation job 138817100544: **216 tests PASS, 2 intentional skips**; the new descriptor regression passes. Firmware hardening and shared-contract validation pass. The subsequent ten appliance profiles all fail closed because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP32 and ESP8266 compile jobs are skipped. Overall workflow: **FAILURE**, not release-ready.
+- PR shared/firmware [#45499054961](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45499054961), validation job 138817137432: same exact-source test/profile outcomes; overall **FAILURE**.
+- Push sandbox [#45499045163](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45499045163), job 138817102782: 40 host-preflight tests pass; Bubblewrap is absent, so the mandatory sandbox gate exits 125. Namespace and sandbox packaging steps are skipped, not passed.
+- PR sandbox [#45499054906](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45499054906), job 138817137182: same 40-test host preflight pass and Bubblewrap exit 125.
+- PR case-collision guard [#45499054888](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45499054888): **PASS**.
+
+The source/test commits changed only tools/package_appliance_firmware.py and tools/test_package_appliance_firmware.py. This handover section is the only documentation addition for this increment. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER files, shared interfaces, ULA policy, financial state, signer workflow, firmware, or COE #26 destination were changed.
+
+### Current integration and ownership blockers
+
+- COE #35 remains OPEN / DRAFT / UNMERGED. Current source/test head is 39ff80f0; parent #31 remains 59ed44d0.
+- All ten profiles remain blocked pending an approved site-scoped RFC 4193 ULA /48. PHX-CORE/PHX-MASTER must supply the authority; RELEASE will not invent a prefix.
+- Mandatory ImageBuilder sandbox remains blocked because Bubblewrap is absent (exit 125). PHX-INFRA/COE owner must provide an authorized disposable, no-secret runner with working unprivileged single-ID namespaces. No privileged installation or unsandboxed fallback.
+- Experiments #291 remains OPEN / DRAFT at 53fc8a1c558f80adde19dc675b879c78797f0cd5; base #242 remains 734b89d9e7792247e8376335c3f3685500ab3f89. Compatibility run [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed. Full [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) failed CORE-owned handover freshness; all 14 target/platform jobs and Android passed, downstream update/simulation/sign/publish stages skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) failed the same freshness gate before build/publisher.
+- MASTER #288 is OPEN / DRAFT at 66a734ee33b7fc9fca8a2dd0b95c7fdd7d29bba3. OWNERSHIP_ROUTES.json remains 11 routes / DRAFT_REVIEW_ONLY; the PHX-RELEASE route is reimplementation-review. The current Master control-plane checkpoint still carries stale child pins for #35 and #291; MASTER must refresh them to 39ff80f0 and 53fc8a1c respectively.
+- Experiments main remains f4e8a891aed8af86d5fd315d28750a0ac3a7372b; COE main remains a6513ab4412b4c014eee2863e45cbe32d06cb243.
+- COE #26 remains FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12; #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b. No integration or destination write.
+- Cleanup-first #266 remains OPEN / 0-of-7.
+- Canonical private Drive project registry v11 remains unavailable through authorized Library retrieval. Older registry snapshots are not substituted.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test HEAD 39ff80f0 and the close-failure regression.
+2. PHX-CORE / PHX-MASTER provide approved site-scoped ULA /48 authority; RELEASE reruns profile admission on the exact resulting SHA.
+3. PHX-INFRA / COE owner provide the authorized disposable Bubblewrap-capable runner; RELEASE reruns mandatory sandbox checks.
+4. PHX-CORE refreshes the canonical BlazePwifi handover for PR #291; RELEASE reruns full-build and Windows validation after exact SHA publication.
+5. PHX-MASTER refreshes #35/#291 child-head pointers and reconciles inherited paths.
+6. Registry custodian restores authorized provenance-only access to private v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
