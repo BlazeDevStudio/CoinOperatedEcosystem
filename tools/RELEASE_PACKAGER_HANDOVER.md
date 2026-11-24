@@ -4977,7 +4977,7 @@ No merge, rebase, signing, tag, publication, hardware flash, real payment migrat
 ### Test-first reproduction
 
 - Regression-only commit: [`51a28266`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/51a28266eeb10acebefdf620634342b4ef7238bd), modifying only `tools/test_validate_all_profiles.py`.
-- Expected RED, push [#45479779905](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479779905), job `138749485357`: **213 tests ran, 1 expected failure / 2 intentional skips**. The sole failure was the new output-contract test: it expected the host-CI / not-hardware label but received the old hardware-acceptance wording. The PR counterpart [#45479796551](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796551), job `138749547799`, reproduced the same single expected failure. This was a genuine evidence-label regression, not a fixture/setup failure.
+- Expected RED, push [#45479779905](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479779905), job `138749485357`: **213 total: 210 passed, 1 expected output-contract failure, 2 intentional skips**. The sole failure was the new output-contract test: it expected the host-CI / not-hardware label but received the old hardware-acceptance wording. The PR counterpart [#45479796551](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796551), job `138749547799`, reproduced the same single expected failure. This was a genuine evidence-label regression, not a fixture/setup failure.
 - Sandbox host preflight at the test-only head: [#45479796470](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796470), job `138749545003`: **40/40 host tests PASS**; Bubblewrap is not installed (exit 125), so unprivileged namespace verification and mandatory sandbox packaging tests were skipped.
 - Case-collision guard [#45479796519](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45479796519), job `138749546936`: PASS.
 
@@ -5019,3 +5019,15 @@ These are hosted CI results. The new output-label test is a deterministic unit t
 This increment changed exactly `tools/test_validate_all_profiles.py`, `tools/validate_all_profiles.py`, and this RELEASE-owned handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, firmware, profile, network, financial or shared-interface source was changed.
 
 No #26 migration, merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+### Final documentation-head Actions at `975802dd`
+
+The count wording above is explicit: unittest reported 213 total tests, with 2 skipped. Thus 211 tests passed on corrected source; it is not 213 passed plus 2 skips.
+
+- Push shared/firmware [#45480720875](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45480720875), job `138752798889`: 213 total / 211 passed / 2 skipped; the 10-profile host-CI admission step failed closed for the same missing ULA /48 authority; ESP32/ESP8266 compile jobs skipped.
+- PR shared/firmware [#45480731394](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45480731394), job `138752834889`: same 213 total / 211 passed / 2 skipped; 10/10 profile ULA gate failures; board compiles skipped.
+- Push sandbox [#45480720824](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45480720824), job `138752799087`, and PR sandbox [#45480731418](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45480731418), job `138752834459`: each ran 40 host preflight tests successfully, then failed closed because Bubblewrap is absent (exit 125); unprivileged identity/namespace and mandatory packaging stages skipped.
+- Case-collision guard [#45480731393](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45480731393), job `138752834131`: PASS.
+
+These runs are attached to the documentation-only head `975802ddd06a889ccce219b4945827f934733013`; the source/test head remains `942cf61d4c6805c209a0a0a3d553c4789af432c7`. No source behavior changed in this documentation increment.
