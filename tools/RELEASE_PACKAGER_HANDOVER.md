@@ -5201,7 +5201,7 @@ The source/test increment changed only tools/package_appliance_firmware.py and t
 - Experiments #291 remains OPEN / DRAFT at 53fc8a1c558f80adde19dc675b879c78797f0cd5, based on #242 734b89d9e7792247e8376335c3f3685500ab3f89. ESP32 compatibility [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed 3/3. Full [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) fails CORE-owned handover freshness; all 14 target/platform jobs and Android passed, while downstream release stages were skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) fails the same freshness gate before build/publisher.
 - COE #26 remains FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12; #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b. No destination migration or write.
 - Cleanup-first #266 remains OPEN / 0-of-7; this bounded RELEASE correction does not complete the global cleanup checklist.
-- Canonical private Drive project registry v11 was not recovered through authorized Library retrieval. No older registry snapshot was substituted and no private file content or identifiers were exposed.
+- Authorized Library search found only a generic BLAZE_PROJECT_REGISTRY.json snapshot with schema_version 1.0 and as_of_utc 2026-10-26T12:51:50Z (39 canonical projects). It contains no v11 revision or Drive readback evidence, so it is treated as stale/non-authoritative and was not substituted for the private Drive v11 registry. No private identifiers were copied into this handover.
 
 ### Next owner actions
 
