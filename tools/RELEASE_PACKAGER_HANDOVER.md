@@ -4870,3 +4870,42 @@ This increment is a fast-forward-only successor of previous #35 head `697d0785` 
 PHX-QA is asked to independently review the two cleanup failure cases and exception-preservation behavior at source/test `6bd0e1d`. MASTER should refresh #172's child reference to the final handover head after this entry. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation files were modified.
 
 No #26 migration, merge, rebase, signing, release tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC00 — preserve primary overlay-scan failure when descriptor cleanup is interrupted
+
+**Observed:** 2026-11-24T00:10Z–00:15Z  
+**PR:** [#35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35), OPEN / DRAFT / UNMERGED.  
+**Branch:** `phoenix/release-build-script-publication-safety-20261117`.  
+**Parent #31/base:** `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.  
+**Prior PR head:** `2bb153c3cc2434a6d63f81ce3707743a1e72fc1f`.
+
+### Confirmed defect and test-first evidence
+
+`tools/package_appliance_firmware.py::_close_overlay_descriptors_preserving_primary()` already captured the active primary exception and continued attempting every owned descriptor close. However, if any close raised `KeyboardInterrupt` or `SystemExit`, the helper unconditionally re-raised that cleanup interruption after the loop, masking an active overlay-scan failure. The neighboring OSError-only cleanup regression did not cover this process-level interruption path.
+
+- Regression-only commit: [`1c95c62b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1c95c62b00deb571628704f8486a06abad79c5df), modifying only `tools/test_package_appliance_firmware.py`.
+- Expected RED: push [#45295374991](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45295374991), job `138114297356`. Firmware hardening and shared-contract checks passed. The packaging/tool test process was interrupted by the injected `KeyboardInterrupt` from the parent descriptor close; the traceback showed the cleanup interruption replacing the original `OSError: primary overlay scan failure`. No complete packaging-suite count was emitted for this interrupted RED. The end-to-end profile step did not run.
+
+### Source correction
+
+- Source commit: [`1abe0164`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1abe0164ce0540bf7b787b78e43777429512ff5d), modifying only `tools/package_appliance_firmware.py`.
+- When a primary exception is active, cleanup `KeyboardInterrupt`/`SystemExit` details are attached to that primary exception (or written to stderr on runtimes without `BaseException.add_note`) and the helper returns so the primary exception continues propagating.
+- When no primary exception is active, the existing behavior is preserved: a cleanup interruption is re-raised after all descriptor-close attempts. Ordinary close errors remain diagnostic and do not mask an active primary scan error.
+- The regression covers both `KeyboardInterrupt` and `SystemExit`, verifies the original scan `OSError` remains primary, checks that cleanup diagnostics are retained, and verifies root/parent descriptors are closed.
+
+### Exact-source CI at source/test head `1abe0164`
+
+- Shared push [#45295447823](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45295447823), job `138114548297`: firmware hardening PASS; shared contracts PASS; packaging/tool suite **211 PASS / 2 intentional skips**. The later all-profile validation step **FAILED CLOSED for all 10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were skipped; overall workflow FAILURE, not a green release build.
+- Sandbox push [#45295447881](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45295447881), job `138114553832`: host preflight **40/40 PASS**; Bubblewrap unavailable / exit 125. Unprivileged identity, namespace preflight and mandatory sandbox packaging tests were skipped.
+- No appliance ImageBuilder output or approved production binary was produced.
+
+This is hosted CI evidence only. The new interruption regression is synthetic; no physical device, router flash, real payment path, or production release was exercised.
+
+### Ownership, review and release boundary
+
+Only the RELEASE-owned packager source, its focused test, and this RELEASE handover are in scope. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, firmware profile, financial logic, network policy, manifest schema, or shared interface was changed. COE #26 remains frozen; no migration was staged.
+
+PHX-QA is requested to independently review the exact source/test head `1abe0164` and the cleanup-interruption/primary-exception behavior. MASTER's latest #288 head at activation start was `4e08f521e4d0c1501dfa61ad7594ca6c39d6b664`; ownership routes remain `DRAFT_REVIEW_ONLY`, with the RELEASE workflow route `reimplementation-review`. The canonical private Drive registry v11 was not available through authorized Library retrieval; no older registry snapshot was substituted.
+
+No merge, rebase, signing, tagging, publication, hardware flash, real payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, **150 physical power cuts** and **30-device/24-hour soak** remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
