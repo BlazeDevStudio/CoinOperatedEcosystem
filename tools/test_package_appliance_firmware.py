@@ -3966,8 +3966,13 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             return original_close(descriptor)
 
         caught = None
+        patched_open = mock.Mock(side_effect=capture_open)
+        supported_dir_fd = set(os.supports_dir_fd)
+        supported_dir_fd.add(patched_open)
         with mock.patch.object(
-            packager.os, "open", new=capture_open
+            packager.os, "open", new=patched_open
+        ), mock.patch.object(
+            packager.os, "supports_dir_fd", supported_dir_fd
         ), mock.patch.object(
             packager.os, "close", new=close_predecessor_then_fail
         ):
