@@ -6,6 +6,7 @@ import os
 import tempfile
 import stat
 import subprocess
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -197,6 +198,58 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
             "ALL HARDWARE APPLIANCE PROFILES VALIDATED SUCCESSFULLY",
             output,
         )
+
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_diagnostic_timeout_terminates_background_processes(self):
+        with tempfile.TemporaryDirectory() as root:
+            marker = os.path.join(root, "diagnostic-child-survived")
+            script = os.path.join(root, "diagnostic.sh")
+            with open(script, "w", encoding="utf-8") as fp:
+                fp.write(
+                    "#!/bin/sh\\n"
+                    "(sleep 1; printf 'survived' > \"$BLAZE_DIAG_TEST_MARKER\") &\\n"
+                    "sleep 10\\n"
+                )
+
+            env = os.environ.copy()
+            env["BLAZE_DIAG_TEST_MARKER"] = marker
+            with (
+                mock.patch.object(validator, "DIAG_SCRIPT", script),
+                mock.patch.object(validator, "DIAGNOSTICS_TIMEOUT_SECONDS", 0.1),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "timed out"):
+                    validator.run_appliance_diagnostics("test-router", env)
+
+            time.sleep(1.5)
+            self.assertFalse(
+                os.path.exists(marker),
+                "diagnostic timeout left a background child running",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_successful_diagnostic_exit_terminates_background_processes(self):
+        with tempfile.TemporaryDirectory() as root:
+            marker = os.path.join(root, "diagnostic-child-survived")
+            script = os.path.join(root, "diagnostic.sh")
+            with open(script, "w", encoding="utf-8") as fp:
+                fp.write(
+                    "#!/bin/sh\\n"
+                    "(sleep 1; printf 'survived' > \"$BLAZE_DIAG_TEST_MARKER\") &\\n"
+                    "exit 0\\n"
+                )
+
+            env = os.environ.copy()
+            env["BLAZE_DIAG_TEST_MARKER"] = marker
+            with mock.patch.object(validator, "DIAG_SCRIPT", script):
+                result = validator.run_appliance_diagnostics("test-router", env)
+
+            self.assertEqual(result.returncode, 0)
+            time.sleep(1.5)
+            self.assertFalse(
+                os.path.exists(marker),
+                "successful diagnostic exit left a background child running",
+            )
 
 
 if __name__ == "__main__":
