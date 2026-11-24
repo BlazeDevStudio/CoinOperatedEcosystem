@@ -1032,6 +1032,108 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                     os.fstat(descriptor)
                 self.assertEqual(closed.exception.errno, errno.EBADF)
 
+
+    def test_calculate_overlay_size_preserves_primary_scan_error_when_descriptor_close_is_interrupted(self):
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                staging_dir = os.path.join(
+                    self.temp_dir,
+                    f"overlay-size-primary-close-{interruption_type.__name__.lower()}",
+                )
+                os.makedirs(os.path.join(staging_dir, "nested"))
+
+                captured = {
+                    "parent_fd": None,
+                    "root_fd": None,
+                    "parent_close_interrupted": False,
+                }
+                original_parent_open = packager._open_parent_directory_without_symlink_parents
+                original_listdir = packager.os.listdir
+                original_open = packager.os.open
+                original_close = packager.os.close
+
+                def capture_parent_descriptor(*args, **kwargs):
+                    descriptor, root_name = original_parent_open(*args, **kwargs)
+                    captured["parent_fd"] = descriptor
+                    return descriptor, root_name
+
+                def capture_root_descriptor(directory_descriptor):
+                    if captured["root_fd"] is None:
+                        captured["root_fd"] = directory_descriptor
+                    return original_listdir(directory_descriptor)
+
+                def fail_child_entry_open(path, flags, mode=0o777, *, dir_fd=None):
+                    if (
+                        captured["root_fd"] is not None
+                        and dir_fd == captured["root_fd"]
+                        and flags & getattr(os, "O_PATH", 0)
+                    ):
+                        raise OSError(errno.EACCES, "primary overlay scan failure")
+                    return original_open(path, flags, mode, dir_fd=dir_fd)
+
+                def close_parent_then_interrupt(descriptor):
+                    if (
+                        descriptor == captured["parent_fd"]
+                        and not captured["parent_close_interrupted"]
+                    ):
+                        captured["parent_close_interrupted"] = True
+                        original_close(descriptor)
+                        raise interruption_type(
+                            "injected parent descriptor close interruption"
+                        )
+                    return original_close(descriptor)
+
+                supported_dir_fd = set(os.supports_dir_fd)
+                with mock.patch.object(
+                    packager.os,
+                    "open",
+                    side_effect=fail_child_entry_open,
+                ) as patched_open:
+                    supported_dir_fd.add(patched_open)
+                    with mock.patch.object(
+                        packager.os,
+                        "supports_dir_fd",
+                        supported_dir_fd,
+                    ), mock.patch.object(
+                        packager,
+                        "_open_parent_directory_without_symlink_parents",
+                        side_effect=capture_parent_descriptor,
+                    ), mock.patch.object(
+                        packager.os,
+                        "listdir",
+                        side_effect=capture_root_descriptor,
+                    ), mock.patch.object(
+                        packager.os,
+                        "close",
+                        side_effect=close_parent_then_interrupt,
+                    ):
+                        with self.assertRaisesRegex(
+                            OSError, "primary overlay scan failure"
+                        ) as raised:
+                            packager.calculate_overlay_size(staging_dir)
+
+                self.assertTrue(captured["parent_close_interrupted"])
+                self.assertIsNotNone(captured["root_fd"])
+                self.assertIsNotNone(captured["parent_fd"])
+                cleanup_notes = getattr(raised.exception, "__notes__", [])
+                self.assertTrue(
+                    any(
+                        "injected parent descriptor close interruption" in note
+                        for note in cleanup_notes
+                    ),
+                    "cleanup interruption must be recorded without replacing the primary scan error",
+                )
+
+                for label, descriptor in (
+                    ("root", captured["root_fd"]),
+                    ("parent", captured["parent_fd"]),
+                ):
+                    with self.subTest(interruption=interruption_type.__name__, descriptor=label):
+                        with self.assertRaises(OSError) as closed:
+                            os.fstat(descriptor)
+                        self.assertEqual(closed.exception.errno, errno.EBADF)
+
+
     def test_calculate_overlay_size_does_not_follow_file_replaced_with_symlink_before_open(self):
         staging_dir = os.path.join(self.temp_dir, "overlay-size-race")
         os.makedirs(staging_dir)
