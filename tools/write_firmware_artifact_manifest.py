@@ -530,18 +530,15 @@ def _write_new_file(
         output.flush()
         os.fsync(output.fileno())
     except BaseException as write_error:
-        cleanup_interruption = None
         try:
             output.close()
-        except OSError as close_error:
-            add_cleanup_note(write_error, close_error)
         except BaseException as close_error:
-            cleanup_interruption = close_error
+            # A close-time interruption is secondary to the write/flush/fsync
+            # failure already being handled. Record it, roll back the partial
+            # output, and preserve the original publication failure.
             add_cleanup_note(write_error, close_error)
 
         rollback(write_error)
-        if cleanup_interruption is not None:
-            raise cleanup_interruption from write_error
         raise
 
     try:
