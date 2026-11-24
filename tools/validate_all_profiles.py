@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""End-to-End Appliance Profile and Firmware Staging Validator.
+"""Host-CI staged appliance profile and firmware packaging validator.
 
-Validates that all target hardware profiles in Shared/contracts/router-profile/profiles/
-can be successfully packaged with and without the BlazeRental module, produce valid
-network topologies, satisfy flash bounds, and emit executable ImageBuilder build scripts.
+Validates that target appliance profiles can be staged with and without the
+BlazeRental module, produce valid network topologies, satisfy flash bounds,
+and emit ImageBuilder build scripts. This is a host-side CI check, not hardware
+acceptance or evidence of a physical appliance test.
 """
 import json
 import os
@@ -19,6 +20,7 @@ ROOTFS_DIR = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
 DIAG_SCRIPT = os.path.join(ROOTFS_DIR, "usr", "sbin", "blaze-appliance-diag")
 DIAGNOSTICS_TIMEOUT_SECONDS = 30
+VALIDATION_SCOPE = "HOST-CI STAGED ROOTFS ONLY; NOT HARDWARE ACCEPTANCE"
 
 # Import packaging primitives
 sys.path.insert(0, os.path.join(BASE_DIR, "tools"))
@@ -137,7 +139,9 @@ def main():
     results = []
     failed = False
 
-    print(f"=== Validating {len(profile_files)} Hardware Appliance Profiles ===")
+    print(
+        f"=== {VALIDATION_SCOPE}: validating {len(profile_files)} appliance profiles ==="
+    )
     try:
         for pf in profile_files:
             profile_path = os.path.join(PROFILES_DIR, pf)
@@ -172,14 +176,14 @@ def main():
             else:
                 raise
 
-    print("\n=== Appliance Packaging & Diagnostics Summary ===")
+    print(f"\n=== Appliance Packaging & Diagnostics Summary ({VALIDATION_SCOPE}) ===")
     print(f"Total Profiles Tested: {len(profile_files)}")
     print(f"Successful Validations: {len(results)}")
     print(f"Failures: {len(profile_files) - len(results)}")
 
     if failed:
         sys.exit(1)
-    print("ALL HARDWARE APPLIANCE PROFILES VALIDATED SUCCESSFULLY.")
+    print(f"ALL STAGED APPLIANCE PROFILE CHECKS PASSED ({VALIDATION_SCOPE}).")
 
 
 if __name__ == "__main__":
