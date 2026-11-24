@@ -300,7 +300,6 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
             cleanup_interruptions.append((label, exc))
 
     if cleanup_interruptions:
-        interruption = cleanup_interruptions[0][1]
         details = "; ".join(
             f"{label}: {type(exc).__name__}: {exc}"
             for label, exc in cleanup_interruptions
@@ -310,6 +309,19 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
                 f"{label}: {type(exc).__name__}: {exc}"
                 for label, exc in close_errors
             )
+
+        if primary_error is not None:
+            note = "Overlay descriptor cleanup was interrupted: " + details
+            if hasattr(primary_error, "add_note"):
+                primary_error.add_note(note)
+            else:
+                try:
+                    sys.stderr.write(note + "\\n")
+                except OSError:
+                    pass
+            return
+
+        interruption = cleanup_interruptions[0][1]
         if hasattr(interruption, "add_note"):
             interruption.add_note(
                 "Additional overlay descriptor cleanup failures: " + details
