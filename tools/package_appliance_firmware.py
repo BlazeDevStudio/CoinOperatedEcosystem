@@ -694,6 +694,8 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
     staging_root = os.path.abspath(staging_dir)
     root_parent_fd = -1
     current_fd = -1
+    current_label = "staging root"
+    owned_descriptors = []
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
         root_parent_fd, root_name = _open_parent_directory_without_symlink_parents(
@@ -702,6 +704,7 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
             "Safe staged directory creation requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
             "Invalid staging root directory name",
         )
+        owned_descriptors.append(("staging root parent", root_parent_fd))
         try:
             current_fd = os.open(root_name, directory_flags, dir_fd=root_parent_fd)
         except OSError as exc:
@@ -710,6 +713,7 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
                     f"Staging root path contains a symlink or non-directory: {staging_root}"
                 ) from exc
             raise
+        owned_descriptors.append((current_label, current_fd))
 
         root_entry = os.stat(root_name, dir_fd=root_parent_fd, follow_symlinks=False)
         root_opened = os.fstat(current_fd)
@@ -719,7 +723,11 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
         ) != (root_opened.st_dev, root_opened.st_ino):
             raise ValueError(f"Staging root path changed while opening: {staging_root}")
 
+        # Keep every live descriptor in the cleanup ledger until close succeeds.
+        # If close raises after closing the fd, final cleanup ignores EBADF; if
+        # it raises before closing, final cleanup makes one more safe attempt.
         os.close(root_parent_fd)
+        owned_descriptors.remove(("staging root parent", root_parent_fd))
         root_parent_fd = -1
         current_path = staging_root
 
@@ -739,45 +747,34 @@ def _ensure_staging_directory(staging_dir: str, relative_path: str) -> str:
                     ) from exc
                 raise
 
-            try:
-                entry_stat = os.stat(
-                    component,
-                    dir_fd=current_fd,
-                    follow_symlinks=False,
+            next_label = f"staged directory {component}"
+            owned_descriptors.append((next_label, next_fd))
+            entry_stat = os.stat(
+                component,
+                dir_fd=current_fd,
+                follow_symlinks=False,
+            )
+            opened_stat = os.fstat(next_fd)
+            if not stat.S_ISDIR(entry_stat.st_mode) or (
+                entry_stat.st_dev,
+                entry_stat.st_ino,
+            ) != (opened_stat.st_dev, opened_stat.st_ino):
+                raise ValueError(
+                    "Staging directory path changed while opening: "
+                    f"{os.path.join(current_path, component)}"
                 )
-                opened_stat = os.fstat(next_fd)
-                if not stat.S_ISDIR(entry_stat.st_mode) or (
-                    entry_stat.st_dev,
-                    entry_stat.st_ino,
-                ) != (opened_stat.st_dev, opened_stat.st_ino):
-                    raise ValueError(
-                        "Staging directory path changed while opening: "
-                        f"{os.path.join(current_path, component)}"
-                    )
-            except BaseException as verification_error:
-                try:
-                    os.close(next_fd)
-                except BaseException as close_error:
-                    try:
-                        verification_error.add_note(
-                            "Also failed to close staged directory descriptor "
-                            f"{next_fd}: {close_error}"
-                        )
-                    except BaseException:
-                        pass
-                raise
 
-            os.close(current_fd)
+            previous_fd = current_fd
+            previous_label = current_label
+            os.close(previous_fd)
+            owned_descriptors.remove((previous_label, previous_fd))
             current_fd = next_fd
+            current_label = next_label
             current_path = os.path.join(current_path, component)
 
         return current_path
     finally:
-        if current_fd >= 0:
-            os.close(current_fd)
-        if root_parent_fd >= 0:
-            os.close(root_parent_fd)
-
+        _close_overlay_descriptors_preserving_primary(owned_descriptors)
 
 def _write_staging_bytes(directory: str, filename: str, content: bytes, mode: int = 0o644) -> None:
     """Atomically replace one staged file without following links or writing through hardlinks."""
