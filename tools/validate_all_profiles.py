@@ -71,13 +71,11 @@ def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.Complete
 
     # Wait for the leader, not communicate(): descendants may keep the pipes
     # open after the shell exits. The shared helper kills/reaps that whole group.
-    cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
-    stdout = stdout or cleanup_stdout
-    stderr = stderr or cleanup_stderr
-    if _process_group_cleanup_failed(cleanup_stderr):
+    stdout, stderr = _terminate_process_groups(process)
+    if _process_group_cleanup_failed(stderr):
         raise RuntimeError(
             f"blaze-appliance-diag process-group cleanup failed for {profile_id}: "
-            f"{cleanup_stderr.strip()}"
+            f"{stderr.strip()}"
         )
 
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
