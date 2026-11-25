@@ -772,6 +772,84 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(external_stat.st_nlink, 1)
         self.assertEqual(destination_stat.st_nlink, 1)
 
+    def test_write_staging_bytes_preserves_primary_write_error_when_unlink_fails_and_closes_directory(self):
+        staging_dir = os.path.join(self.temp_dir, "write-cleanup-primary-error")
+        os.makedirs(staging_dir)
+
+        captured = {"directory_fd": None, "temporary_name": None}
+        original_open_parent = packager._open_parent_directory_without_symlink_parents
+        original_fdopen = packager.os.fdopen
+        original_unlink = packager.os.unlink
+
+        def capture_parent_descriptor(*args, **kwargs):
+            descriptor, name = original_open_parent(*args, **kwargs)
+            captured["directory_fd"] = descriptor
+            return descriptor, name
+
+        class FailingWriter:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return self.stream.__exit__(exc_type, exc_value, traceback)
+
+            def write(self, content):
+                raise OSError(errno.EIO, "injected primary staged write failure")
+
+            def flush(self):
+                return self.stream.flush()
+
+            def fileno(self):
+                return self.stream.fileno()
+
+        def fail_staged_write(descriptor, mode, *args, **kwargs):
+            return FailingWriter(original_fdopen(descriptor, mode, *args, **kwargs))
+
+        def fail_temporary_unlink(path, *args, **kwargs):
+            if (
+                kwargs.get("dir_fd") == captured["directory_fd"]
+                and os.fspath(path).startswith(".phx-staging-")
+            ):
+                captured["temporary_name"] = os.fspath(path)
+                raise OSError(errno.EIO, "injected temporary unlink cleanup failure")
+            return original_unlink(path, *args, **kwargs)
+
+        with mock.patch.object(
+            packager,
+            "_open_parent_directory_without_symlink_parents",
+            side_effect=capture_parent_descriptor,
+        ), mock.patch.object(
+            packager.os, "fdopen", side_effect=fail_staged_write
+        ), mock.patch.object(
+            packager.os, "unlink", side_effect=fail_temporary_unlink
+        ):
+            with self.assertRaisesRegex(
+                OSError, "injected primary staged write failure"
+            ) as raised:
+                packager._write_staging_bytes(
+                    staging_dir, "network", b"config=staged\\n"
+                )
+
+        self.assertIsNotNone(captured["temporary_name"])
+        self.assertTrue(
+            os.path.exists(os.path.join(staging_dir, captured["temporary_name"])),
+            "the injected unlink failure must leave the temporary file for cleanup diagnosis",
+        )
+        self.assertTrue(
+            any(
+                "temporary-file cleanup failed" in note.lower()
+                for note in getattr(raised.exception, "__notes__", ())
+            ),
+            "the unlink failure must remain visible as a note without replacing the write error",
+        )
+        with self.assertRaises(OSError) as closed:
+            os.fstat(captured["directory_fd"])
+        self.assertEqual(closed.exception.errno, errno.EBADF)
+
     def test_copy_staging_file_rejects_source_modified_during_read(self):
         source_dir = os.path.join(self.temp_dir, "rental-source-read-race")
         destination_dir = os.path.join(self.temp_dir, "rental-destination-read-race")
