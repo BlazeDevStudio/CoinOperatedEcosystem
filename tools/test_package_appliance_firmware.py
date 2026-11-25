@@ -410,12 +410,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             "file": None,
             "close_calls": [],
         }
-
-        def capture_parent(*args, **kwargs):
-            descriptor, filename = original_parent(*args, **kwargs)
-            captured["parent"] = descriptor
-            captured["filename"] = filename
-            return descriptor, filename
+        open_patchers = []
 
         def capture_open(path, flags, mode=0o777, *, dir_fd=None):
             descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
@@ -425,6 +420,18 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             ):
                 captured["file"] = descriptor
             return descriptor
+
+        def capture_parent(*args, **kwargs):
+            descriptor, filename = original_parent(*args, **kwargs)
+            captured["parent"] = descriptor
+            captured["filename"] = filename
+            # Patch only after the parent-walk capability checks have run.
+            patcher = mock.patch.object(
+                packager.os, "open", side_effect=capture_open
+            )
+            patcher.start()
+            open_patchers.append(patcher)
+            return descriptor, filename
 
         def close_then_fail(descriptor):
             if descriptor == captured["parent"]:
@@ -437,30 +444,30 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 raise OSError(errno.EIO, "injected opened profile close failure")
             return original_close(descriptor)
 
-        with mock.patch.object(
-            packager,
-            "_open_parent_directory_without_symlink_parents",
-            side_effect=capture_parent,
-        ), mock.patch.object(
-            packager.os,
-            "open",
-            side_effect=capture_open,
-        ), mock.patch.object(
-            packager.os,
-            "close",
-            side_effect=close_then_fail,
-        ):
-            with self.assertRaisesRegex(
-                OSError, "injected profile parent close failure"
-            ) as raised:
-                packager._open_file_without_symlink_parents(
-                    profile_path,
-                    os.O_RDONLY,
-                    0,
-                    "router profile",
-                    "safe profile path support required",
-                    "invalid profile filename",
-                )
+        try:
+            with mock.patch.object(
+                packager,
+                "_open_parent_directory_without_symlink_parents",
+                side_effect=capture_parent,
+            ), mock.patch.object(
+                packager.os,
+                "close",
+                side_effect=close_then_fail,
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "injected profile parent close failure"
+                ) as raised:
+                    packager._open_file_without_symlink_parents(
+                        profile_path,
+                        os.O_RDONLY,
+                        0,
+                        "router profile",
+                        "safe profile path support required",
+                        "invalid profile filename",
+                    )
+        finally:
+            for patcher in reversed(open_patchers):
+                patcher.stop()
 
         self.assertIsNotNone(captured["parent"])
         self.assertIsNotNone(captured["file"])
@@ -477,7 +484,6 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             any("opened router profile" in note for note in notes),
             f"file-descriptor cleanup failure must be attached to the parent-close error, got {notes!r}",
         )
-
 
     def test_generate_network_uci_ew1200g_pro(self):
         p = load_profile("ew1200g-pro")
