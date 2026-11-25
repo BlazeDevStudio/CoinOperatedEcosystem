@@ -5539,3 +5539,64 @@ This handover update is the only third path in the final docs commit. No CORE, R
 6. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC16 — reject artifact mutation during manifest publication (2026-11-25)
+
+**Disposition:** One RELEASE-owned artifact-integrity defect was reproduced test-first and corrected on the existing COE #35 child branch. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch identity and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35: `phoenix/release-build-script-publication-safety-20261117`, OPEN / DRAFT / UNMERGED.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting child HEAD: `50f5fa1770e709cf3285d935c48c8eb7e98982e7`.
+- Test-first commit: [`83a3a835`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/83a3a8356c498103fa89550787c2c89bd584f220).
+- First source attempt: [`106b729a`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/106b729a86735fc6f0b291461065b5b191e32e78); this attempt is superseded, not accepted as passing.
+- Corrected source/test head: [`a05188c6`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a05188c632e207c022319277d6c11bce7e348e65).
+- Final handover commit will advance the PR head after this section is committed.
+
+### Confirmed defect and correction
+
+`write_artifact_manifest()` initially scanned and hashed the artifact tree, then created `artifact-manifest.json` and `SHA256SUMS`. A same-UID build helper could modify an artifact payload after the first scan but before the manifest pair was durably committed. The writer could therefore return success with a manifest digest that no longer matched the payload present at publication time.
+
+The test-only regression changes `firmware.bin` after the initial scan and immediately before manifest creation. The expected behavior is to refuse publication, preserve the changed payload, and roll back only the metadata files created by this invocation.
+
+- Expected RED: [#45652864580](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45652864580), job `139341652413`. **228 tests ran; one expected regression failure and two intentional skips.** The new test failed because `ManifestError` was not raised.
+- First source attempt: [#45653007798](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45653007798). **228 tests ran; 3 failures, 2 errors and 2 intentional skips.** The follow-up scan encountered the two newly created root metadata files, which the normal artifact scanner correctly refuses as pre-existing output names. This attempt was not accepted; the scanner was refined rather than weakening its default refusal behavior.
+- Corrected source/test run: [#45653320352](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45653320352), job `139343291008`. **228 tests: OK, two intentional skips.** The new mutation-during-publication regression passed and the log emitted `PHX-MANIFEST-DURABILITY-PASS`.
+
+The final implementation re-scans the pinned artifact directory after writing the manifest pair. It excludes only the two root metadata outputs recorded as created by this invocation, after checking each is still a regular file with the captured device/inode identity. Nested or pre-existing metadata names remain rejected. The remaining artifact records are compared against the original manifest's path, size and SHA-256 records; any mismatch raises `ManifestError`, triggering identity-checked rollback of the metadata pair.
+
+This verifies the artifact snapshot at the publication recheck. It does not make the staging tree immutable after the function returns; downstream consumers must still verify the published checksums, and the staging directory must remain private to the build invocation.
+
+### Exact-source Actions and external blockers
+
+- Corrected source/test shared CI [#45653320352](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45653320352): firmware-hardening and shared-contract checks passed; packaging/tool suite **228 tests OK, 2 intentional skips**; one synthetic staged profile passed. The subsequent real profile admission failed closed for **10/10 appliance profiles** because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP32 and ESP8266 compile jobs were skipped. Overall workflow: **FAILURE**, not release-ready.
+- Mandatory sandbox [#45653318418](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45653318418): host preflight **40/40 PASS**; Bubblewrap is not installed on the hosted runner, so the job failed closed before identity/namespace and packaging steps. No privileged install or unsandboxed fallback.
+- Case-collision [#45653318420](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45653318420): **PASS**.
+
+These are hosted synthetic/CI results only. The sandbox did not execute, no approved appliance ImageBuilder output was produced, and no target router or physical hardware was tested.
+
+### Current cross-repository ownership and blockers
+
+- Control plane #172: one PHX-RELEASE UTC16 checkpoint is posted after this handover update.
+- Cleanup-first #266 remains OPEN; the seven-role cleanup gate is not complete.
+- MASTER #288 is OPEN / DRAFT / UNMERGED at the live head observed during this activation. The ownership manifest remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's route is `reimplementation-review`, not migration or merge authority.
+- Experiments #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`. Experiments #291 remains OPEN / DRAFT at `b3e4fa22c4f4b8cd3009437a06a7eec56420d411`; its focused ESP32 compatibility run [#45624182886](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45624182886) passed 3/3, while Full [#45624183036](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45624183036) and Windows [#45624182986](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45624182986) remain blocked by the CORE-owned freshness gate.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows are queued with zero jobs. Parent release-packager #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; #35 is its active release child.
+- COE #44 is an older ULA first-boot child based on #35 at `1a5be48d2845781b0b07bad39a37f8440cea4d4f`, not the current #35 head. Its per-appliance random /48 generator does not satisfy MASTER Architecture Contract §6.9.1: installation identity is the LAN/site boundary, and appliances on the same site must share one durable prefix. Keep #44 blocked until PHX-CORE and the COE integration owner define the site-prefix authority/distribution semantics; RELEASE must not invent a prefix or silently rebase the child.
+- The authorized Library search did not recover private Drive registry v11. Older v3–v7 snapshots and a checkpoint that merely references v11 are not substitutes. No private IDs or contents were copied into this handover.
+
+### Next owner actions
+
+1. PHX-QA independently reviews exact source/test head `a05188c632e207c022319277d6c11bce7e348e65`, including mutation during publication, output inode identity and rollback behavior.
+2. PHX-CORE / MASTER / COE integration owner define durable site-scoped ULA allocation/distribution, concurrent first-boot and backup/restore semantics; RELEASE then implements only the approved interface.
+3. PHX-INFRA / COE owner provide an authorized disposable no-secret runner with Bubblewrap and working unprivileged single-ID namespaces; RELEASE reruns mandatory sandbox packaging.
+4. PHX-CORE publishes the canonical BlazePwifi freshness SHA; RELEASE reruns Experiments #291 Full and Windows only against that exact refreshed source.
+5. PHX-MASTER refreshes its COE #35 child pointer after this handover commit and preserves the review-only ownership route.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+This increment changes only `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, firmware, shared interface, network authority, financial state, signer or production configuration was changed.
+
+No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
