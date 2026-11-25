@@ -5839,7 +5839,7 @@ Protected signer, independent freshness witness, durable financial accounting/mi
 
 ---
 
-## PHX-RELEASE UTC21 — preserve sandbox setup failure when process-group cleanup raises (2026-11-25T21:xxZ)
+## PHX-RELEASE UTC21 — preserve sandbox setup failure when process-group cleanup raises (2026-11-25T21:21Z)
 
 **Disposition:** One RELEASE-owned ImageBuilder sandbox-runner error-precedence defect was reproduced test-first and corrected on existing COE child draft #35. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
 
