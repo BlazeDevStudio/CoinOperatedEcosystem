@@ -1520,9 +1520,11 @@ def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) 
             ) from copy_error
         raise
     finally:
+        owned_descriptors = []
         if staging_fd >= 0:
-            os.close(staging_fd)
-        os.close(parent_fd)
+            owned_descriptors.append(("staging directory", staging_fd))
+        owned_descriptors.append(("staging parent directory", parent_fd))
+        _close_overlay_descriptors_preserving_primary(owned_descriptors)
 
 
 def _open_file_without_symlink_parents(
