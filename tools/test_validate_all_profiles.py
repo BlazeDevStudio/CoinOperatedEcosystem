@@ -269,9 +269,9 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
             script = os.path.join(root, "diagnostic.sh")
             with open(script, "w", encoding="utf-8") as fp:
                 fp.write(
-                    "#!/bin/sh\\n"
-                    "(sleep 1; printf 'survived' > \\"$BLAZE_DIAG_TEST_MARKER\\") &\\n"
-                    "sleep 10\\n"
+                    "#!/bin/sh\n"
+                    "(sleep 1; printf 'survived' > \"$BLAZE_DIAG_TEST_MARKER\") &\n"
+                    "sleep 10\n"
                 )
 
             env = os.environ.copy()
