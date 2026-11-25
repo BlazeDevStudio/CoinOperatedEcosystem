@@ -1137,5 +1137,28 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
 
 
 
+    def test_writer_rejects_group_or_world_writable_artifact_directory_before_publication(self):
+        original_mode = stat.S_IMODE(self.artifact_dir.stat().st_mode)
+        os.chmod(self.artifact_dir, original_mode | stat.S_IWGRP | stat.S_IWOTH)
+        self.addCleanup(os.chmod, self.artifact_dir, original_mode)
+
+        with self.assertRaisesRegex(ManifestError, "group- or world-writable"):
+            write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse((self.artifact_dir / MANIFEST_FILENAME).exists())
+        self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
+
+    def test_writer_rejects_artifact_directory_not_owned_by_effective_user(self):
+        effective_uid = os.geteuid()
+        with mock.patch.object(
+            manifest_writer.os, "geteuid", return_value=effective_uid + 1
+        ):
+            with self.assertRaisesRegex(ManifestError, "current effective user"):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse((self.artifact_dir / MANIFEST_FILENAME).exists())
+        self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
+
+
 if __name__ == "__main__":
     unittest.main()
