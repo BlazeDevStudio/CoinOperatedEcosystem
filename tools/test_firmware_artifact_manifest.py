@@ -1055,6 +1055,86 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                             descriptor, "test artifact descriptor"
                         )
 
+    def test_write_new_file_preserves_replacement_path_during_rollback(self):
+        output_path = self.artifact_dir / "rollback-replacement.bin"
+        displaced_path = self.artifact_dir / "rollback-original.bin"
+        directory_descriptor = os.open(
+            self.artifact_dir,
+            os.O_RDONLY | os.O_DIRECTORY,
+        )
+        self.addCleanup(os.close, directory_descriptor)
+        original_fsync = os.fsync
+        replaced = False
+
+        def replace_then_fail_output_sync(descriptor):
+            nonlocal replaced
+            if stat.S_ISREG(os.fstat(descriptor).st_mode) and not replaced:
+                output_path.rename(displaced_path)
+                output_path.write_bytes(b"operator-owned replacement")
+                replaced = True
+                raise OSError("injected output fsync failure")
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            manifest_writer.os, "fsync", side_effect=replace_then_fail_output_sync
+        ):
+            with self.assertRaisesRegex(
+                ManifestError, "rollback could not be confirmed"
+            ) as raised:
+                manifest_writer._write_new_file(
+                    str(self.artifact_dir),
+                    output_path.name,
+                    b"artifact bytes",
+                    directory_descriptor=directory_descriptor,
+                )
+
+        self.assertTrue(replaced, "the deterministic replacement race must execute")
+        self.assertEqual(output_path.read_bytes(), b"operator-owned replacement")
+        self.assertEqual(displaced_path.read_bytes(), b"artifact bytes")
+        self.assertIsInstance(raised.exception.__cause__, OSError)
+        self.assertIn("injected output fsync failure", str(raised.exception.__cause__))
+
+    def test_manifest_pair_rollback_preserves_replacement_of_first_output(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        displaced_path = self.artifact_dir / "artifact-manifest.original"
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_write = manifest_writer._write_new_file
+        replaced = False
+
+        def replace_manifest_then_fail_checksums(directory, filename, content, *args, **kwargs):
+            nonlocal replaced
+            if filename == CHECKSUMS_FILENAME:
+                raise OSError("injected checksum creation failure")
+            result = original_write(directory, filename, content, *args, **kwargs)
+            if filename == MANIFEST_FILENAME:
+                manifest_path.rename(displaced_path)
+                manifest_path.write_bytes(b"operator-owned manifest replacement")
+                replaced = True
+            return result
+
+        with mock.patch.object(
+            manifest_writer,
+            "_write_new_file",
+            side_effect=replace_manifest_then_fail_checksums,
+        ):
+            with self.assertRaisesRegex(
+                ManifestError, "rollback could not be confirmed"
+            ) as raised:
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertTrue(replaced, "the deterministic manifest replacement must execute")
+        self.assertEqual(
+            manifest_path.read_bytes(),
+            b"operator-owned manifest replacement",
+        )
+        self.assertTrue(displaced_path.is_file())
+        self.assertFalse(checksums_path.exists())
+        self.assertIsInstance(raised.exception.__cause__, OSError)
+        self.assertIn(
+            "injected checksum creation failure",
+            str(raised.exception.__cause__),
+        )
+
 
 
 if __name__ == "__main__":
