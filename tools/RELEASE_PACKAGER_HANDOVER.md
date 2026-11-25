@@ -1,3 +1,56 @@
+## PHX-RELEASE UTC15 — enforce exclusive artifact-directory admission (2026-11-25)
+
+**Disposition:** one RELEASE-owned artifact-manifest admission defect was reproduced test-first and corrected on the existing COE child draft #35. Exact-source manifest/tool tests pass at source/test HEAD `9ff6e952` (227 tests, 2 intentional skips). Integrated profile admission remains blocked by missing approved site-scoped RFC 4193 ULA /48 authority; mandatory Bubblewrap sandbox remains unavailable. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment.
+
+### Live identity and bounded scope
+
+- COE child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent release-packager PR #31 / child base: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting child HEAD: `845e6e90b226f8ba09724894f4c8e6dbad6d5671`.
+- Test-only regression commit: [`9e714e8f`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9e714e8f50b1e6984df592f26d2bbb57daea1c3c).
+- Source correction: [`9ff6e952`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9ff6e952256ed403d1cc480005014f3872f9fd36).
+- This increment's source/test scope is exactly `tools/test_firmware_artifact_manifest.py` and `tools/write_firmware_artifact_manifest.py`; this handover update is the third RELEASE-owned path. The accumulated PR diff still contains inherited paths outside this increment, including `.github/workflows/hardware-ci.yml`; RELEASE did not modify that workflow in this task.
+
+### Defect and correction
+
+The manifest writer's rollback protects outputs by capturing the created file's `(st_dev, st_ino)` and checking the current directory entry before unlink. That check and unlink are separate operations, so the handover already required the artifact staging directory to remain private to one build invocation. The writer previously pinned directory identity but did not enforce directory ownership or reject group/world write permissions. A directory owned by another effective UID or writable by group/others could therefore permit another UID to replace an output between the identity check and unlink, defeating the documented isolation precondition.
+
+The correction extends `_require_artifact_directory_identity()` to require both the path and pinned descriptor to be owned by `os.geteuid()`, to have matching permission modes, and to have neither group nor world write bits (`0o022`). The guard now runs immediately after opening the directory, before scanning artifact entries, and remains rechecked after scan and after publication. The existing workflow's `mkdir -p Hardware/dist/esp8266` / `Hardware/dist/esp32` output directories are owner-created and not group/world-writable under the hosted runner defaults; exact-source CI confirms the manifest suite remains compatible.
+
+**Limit:** this rejects cross-UID group/world writers but does not make the stat-then-unlink sequence atomic against a hostile concurrent process running under the same effective UID. The artifact directory must still be dedicated to one build invocation. No manifest schema, payload, SHA-256 algorithm, firmware, profile/network value, finance or shared-interface behavior changed.
+
+### Test-first and exact-source evidence
+
+- Expected RED, PR shared run [#45642415113](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45642415113), validation job `139304328038`: **227 tests ran; exactly the two new directory-admission regressions failed; 2 intentional skips**. The original writer accepted both the simulated different-owner directory and a group/world-writable directory. This is the accepted product-defect RED.
+- RED-run sandbox [#45642414940](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45642414940): host preflight passed, then Bubblewrap unavailable, exit 125; namespace and packaging steps skipped.
+- RED-run case-collision [#45642414898](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45642414898): PASS.
+- Exact source/test shared run [#45642614325](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45642614325), validation job `139305015462`: **227 tests PASS / 2 intentional skips**, including both new directory-admission regressions. The subsequent all-profile admission **FAILED CLOSED for 10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is absent; ESP32/ESP8266 compile jobs were skipped. Overall workflow: FAILURE, not release-ready.
+- Exact source/test sandbox [#45642614161](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45642614161), job `139305014233`: host preflight **40/40 PASS**, then Bubblewrap is not installed, exit 125; unprivileged identity/namespace and mandatory sandbox packaging steps skipped. No privileged install or unsandboxed fallback.
+- Exact source/test case-collision [#45642614225](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45642614225): PASS.
+
+These are hosted synthetic CI/filesystem results only. No real ImageBuilder run, firmware artifact, approved target binary, signing, or physical appliance acceptance is established.
+
+### Live cross-repository gates
+
+- Experiments PR #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; child #291 remains OPEN / DRAFT at `b3e4fa22c4f4b8cd3009437a06a7eec56420d411`. #291 ESP32 compatibility [#45624182886](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45624182886) passed 3/3; Full [#45624183036](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45624183036) and Windows [#45624182986](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45624182986) fail at the CORE-owned canonical handover freshness gate. RELEASE did not edit CORE freshness files.
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED. Live PR metadata reports branch HEAD `8c25645bf045c507018b228744507ef8a9122215`; the PR body still describes earlier head `a9e5dc5c`, so the body pointer is stale and MASTER must refresh it. Current `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` has 11 routes and `DRAFT_REVIEW_ONLY`; RELEASE's route remains `reimplementation-review`, not copy/move authority.
+- COE integration #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent release-packager #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 is the active release-owned branch.
+- Cleanup-first #266 remains OPEN / 0-of-7.
+- Authorized Library search did not recover private Drive project registry v11. Older registry snapshots are not substituted; no private Drive IDs or contents are included here.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test HEAD `9ff6e952`, especially the effective-UID and mode checks plus early preflight ordering.
+2. PHX-CORE / PHX-MASTER supplies approved site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or bypass the ten-profile gate.
+3. PHX-INFRA / COE owner provides an authorized disposable no-secret runner with Bubblewrap and working unprivileged single-ID namespaces.
+4. PHX-CORE publishes the current canonical `CURRENT_STATE.md` / handover SHA for Experiments #291; RELEASE reruns Full/Windows only after that exact SHA is published.
+5. PHX-MASTER refreshes its COE #35 child pointer and corrects the stale #288 PR-body head reference.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+**PRODUCTION NO-GO.** Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED.
+
+---
+
 ## PHX-RELEASE UTC14 — preserve replacement paths during manifest rollback (2026-11-25)
 
 **Disposition:** one RELEASE-owned manifest rollback-integrity defect was reproduced test-first and corrected on the existing COE child draft #35. Exact source/test unit suite passes 225 tests with 2 intentional skips. The integrated workflow remains blocked by site-ULA authority; the mandatory ImageBuilder sandbox remains blocked by hosted Bubblewrap availability. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment.
