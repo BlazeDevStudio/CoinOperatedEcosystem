@@ -798,12 +798,14 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                     f"close-before-underlying-{interruption_type.__name__.lower()}.bin"
                 )
                 descriptors = []
+                outputs = []
 
                 class InterruptBeforeCloseOutput:
                     def __init__(self, descriptor, mode):
                         self.stream = original_fdopen(descriptor, mode)
                         self.close_calls = 0
                         descriptors.append(self.stream.fileno())
+                        outputs.append(self)
 
                     @property
                     def closed(self):
@@ -842,26 +844,32 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                     output_path.exists(),
                     "output must be removed after an interrupted close",
                 )
+                self.assertEqual(
+                    outputs[0].close_calls,
+                    2,
+                    "rollback must retry close when the first interruption occurs before the stream closes",
+                )
+                self.assertTrue(outputs[0].closed, "rollback must close the output stream")
                 descriptor = descriptors[0]
                 try:
                     with self.assertRaises(OSError):
                         os.fstat(descriptor)
                 finally:
-                    try:
-                        os.close(descriptor)
-                    except OSError:
-                        pass
+                    if not outputs[0].closed:
+                        outputs[0].stream.close()
 
     def test_write_new_file_retries_interrupted_close_after_primary_write_error(self):
         original_fdopen = os.fdopen
         output_path = self.artifact_dir / "write-error-close-before-underlying.bin"
         descriptors = []
+        outputs = []
 
         class InterruptBeforeCloseOutput:
             def __init__(self, descriptor, mode):
                 self.stream = original_fdopen(descriptor, mode)
                 self.close_calls = 0
                 descriptors.append(self.stream.fileno())
+                outputs.append(self)
 
             @property
             def closed(self):
@@ -907,15 +915,19 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
             any("secondary close interruption before underlying close" in note for note in notes),
             f"expected interrupted close diagnostic on primary error, got {notes!r}",
         )
+        self.assertEqual(
+            outputs[0].close_calls,
+            2,
+            "rollback must retry close after the primary write error",
+        )
+        self.assertTrue(outputs[0].closed, "rollback must close the output stream")
         descriptor = descriptors[0]
         try:
             with self.assertRaises(OSError):
                 os.fstat(descriptor)
         finally:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+            if not outputs[0].closed:
+                outputs[0].stream.close()
 
 
     def test_writer_rolls_back_outputs_when_interrupted_after_helper_returns(self):
