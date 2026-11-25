@@ -4438,77 +4438,78 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
 
 
     def test_normalize_staging_directory_mode_attempts_all_descriptor_closes(self):
-        target = os.path.join(self.temp_dir, "permission-directory")
-        os.mkdir(target, 0o700)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = os.path.join(temp_dir, "permission-directory")
+            os.mkdir(target, 0o700)
 
-        real_close = packager.os.close
-        closed_descriptors = []
+            real_close = packager.os.close
+            closed_descriptors = []
 
-        def close_then_fail_first(descriptor):
-            closed_descriptors.append(descriptor)
-            real_close(descriptor)
-            if len(closed_descriptors) == 1:
-                raise OSError(errno.EIO, "injected first descriptor close failure")
+            def close_then_fail_first(descriptor):
+                closed_descriptors.append(descriptor)
+                real_close(descriptor)
+                if len(closed_descriptors) == 1:
+                    raise OSError(errno.EIO, "injected first descriptor close failure")
 
-        with mock.patch.object(
-            packager.os, "fchmod", side_effect=RuntimeError("primary fchmod failure")
-        ):
             with mock.patch.object(
-                packager.os, "close", side_effect=close_then_fail_first
+                packager.os, "fchmod", side_effect=RuntimeError("primary fchmod failure")
             ):
-                with self.assertRaisesRegex(
-                    RuntimeError, "primary fchmod failure"
-                ) as raised:
-                    packager._normalize_staging_directory_mode(target, 0o755)
+                with mock.patch.object(
+                    packager.os, "close", side_effect=close_then_fail_first
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "primary fchmod failure"
+                    ) as raised:
+                        packager._normalize_staging_directory_mode(target, 0o755)
 
-        self.assertEqual(len(closed_descriptors), 2)
-        self.assertEqual(len(set(closed_descriptors)), 2)
-        self.assertTrue(
-            any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
-            "descriptor cleanup failure must be retained as a note on the primary error",
-        )
-        for descriptor in closed_descriptors:
-            with self.assertRaises(OSError) as error:
-                os.fstat(descriptor)
-            self.assertEqual(error.exception.errno, errno.EBADF)
+            self.assertEqual(len(closed_descriptors), 2)
+            self.assertEqual(len(set(closed_descriptors)), 2)
+            self.assertTrue(
+                any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
+                "descriptor cleanup failure must be retained as a note on the primary error",
+            )
+            for descriptor in closed_descriptors:
+                with self.assertRaises(OSError) as error:
+                    os.fstat(descriptor)
+                self.assertEqual(error.exception.errno, errno.EBADF)
 
     def test_normalize_staging_file_mode_attempts_all_descriptor_closes(self):
-        target = os.path.join(self.temp_dir, "permission-file")
-        with open(target, "wb") as fp:
-            fp.write(b"staged")
-        os.chmod(target, 0o600)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = os.path.join(temp_dir, "permission-file")
+            with open(target, "wb") as fp:
+                fp.write(b"staged")
+            os.chmod(target, 0o600)
 
-        real_close = packager.os.close
-        closed_descriptors = []
+            real_close = packager.os.close
+            closed_descriptors = []
 
-        def close_then_fail_first(descriptor):
-            closed_descriptors.append(descriptor)
-            real_close(descriptor)
-            if len(closed_descriptors) == 1:
-                raise OSError(errno.EIO, "injected first descriptor close failure")
+            def close_then_fail_first(descriptor):
+                closed_descriptors.append(descriptor)
+                real_close(descriptor)
+                if len(closed_descriptors) == 1:
+                    raise OSError(errno.EIO, "injected first descriptor close failure")
 
-        with mock.patch.object(
-            packager.os, "fdopen", side_effect=RuntimeError("primary fdopen failure")
-        ):
             with mock.patch.object(
-                packager.os, "close", side_effect=close_then_fail_first
+                packager.os, "fdopen", side_effect=RuntimeError("primary fdopen failure")
             ):
-                with self.assertRaisesRegex(
-                    RuntimeError, "primary fdopen failure"
-                ) as raised:
-                    packager._normalize_staging_file_mode(target, 0o755)
+                with mock.patch.object(
+                    packager.os, "close", side_effect=close_then_fail_first
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "primary fdopen failure"
+                    ) as raised:
+                        packager._normalize_staging_file_mode(target, 0o755)
 
-        self.assertEqual(len(closed_descriptors), 2)
-        self.assertEqual(len(set(closed_descriptors)), 2)
-        self.assertTrue(
-            any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
-            "descriptor cleanup failure must be retained as a note on the primary error",
-        )
-        for descriptor in closed_descriptors:
-            with self.assertRaises(OSError) as error:
-                os.fstat(descriptor)
-            self.assertEqual(error.exception.errno, errno.EBADF)
-
+            self.assertEqual(len(closed_descriptors), 2)
+            self.assertEqual(len(set(closed_descriptors)), 2)
+            self.assertTrue(
+                any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
+                "descriptor cleanup failure must be retained as a note on the primary error",
+            )
+            for descriptor in closed_descriptors:
+                with self.assertRaises(OSError) as error:
+                    os.fstat(descriptor)
+                self.assertEqual(error.exception.errno, errno.EBADF)
 
 
 if __name__ == "__main__":
