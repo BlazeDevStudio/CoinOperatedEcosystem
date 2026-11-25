@@ -1589,17 +1589,12 @@ def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> 
             dir_fd=directory_fd,
         )
         return file_fd, directory_fd
-    except BaseException as open_error:
-        try:
-            os.close(directory_fd)
-        except BaseException as close_error:
-            if isinstance(close_error, OSError) and close_error.errno == errno.EBADF:
-                pass
-            else:
-                raise OSError(
-                    "Build-script parent directory descriptor close failed: "
-                    f"{type(close_error).__name__}: {close_error}"
-                ) from open_error
+    except BaseException:
+        # Keep the original exclusive-create failure authoritative if parent
+        # descriptor cleanup also fails or is interrupted.
+        _close_overlay_descriptors_preserving_primary(
+            [("build-script parent directory", directory_fd)]
+        )
         raise
 
 def generate_build_script(manifest: dict, script_path: str) -> None:
