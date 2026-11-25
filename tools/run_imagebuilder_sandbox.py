@@ -510,11 +510,24 @@ def main() -> int:
     except (OSError, subprocess.SubprocessError) as exc:
         detail = ""
         if process is not None:
-            cleanup_stdout, cleanup_stderr = _terminate_process_groups(
-                process, sandbox_child_pgid
-            )
-            process_groups_cleanup_complete = True
-            detail = f"{cleanup_stdout}\n{cleanup_stderr}".strip()
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                    process, sandbox_child_pgid
+                )
+                process_groups_cleanup_complete = True
+                detail = f"{cleanup_stdout}\n{cleanup_stderr}".strip()
+            except Exception as cleanup_error:
+                # Preserve the setup failure as the primary diagnosis. Leave
+                # process_groups_cleanup_complete false so the finalizer makes
+                # one more bounded cleanup attempt before returning.
+                detail = (
+                    "process-group cleanup raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+                if hasattr(exc, "add_note"):
+                    exc.add_note(
+                        "ImageBuilder runner process-group cleanup: " + detail
+                    )
         return blocked(f"sandbox setup failed: {exc}", detail)
     finally:
         if process is not None and not process_groups_cleanup_complete:
