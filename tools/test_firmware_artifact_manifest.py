@@ -1191,5 +1191,49 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse(checksums_path.exists())
 
 
+    def _assert_writer_rejects_published_output_mutation(self, filename):
+        target = self.artifact_dir / filename
+        original_scan = manifest_writer._scan_artifact_files
+        scan_calls = 0
+
+        def mutate_after_final_scan(
+            artifact_dir,
+            directory_descriptor=None,
+            *,
+            excluded_root_outputs=None,
+        ):
+            nonlocal scan_calls
+            records = original_scan(
+                artifact_dir,
+                directory_descriptor=directory_descriptor,
+                excluded_root_outputs=excluded_root_outputs,
+            )
+            scan_calls += 1
+            if scan_calls == 2:
+                target.write_bytes(b"operator changed published output")
+            return records
+
+        with mock.patch.object(
+            manifest_writer,
+            "_scan_artifact_files",
+            side_effect=mutate_after_final_scan,
+        ):
+            with self.assertRaisesRegex(
+                ManifestError,
+                f"published manifest output changed during publication: {filename}",
+            ):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertEqual(scan_calls, 2, "the mutation must occur after publication revalidation")
+        self.assertFalse((self.artifact_dir / MANIFEST_FILENAME).exists())
+        self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
+
+    def test_writer_rejects_manifest_content_mutated_during_publication(self):
+        self._assert_writer_rejects_published_output_mutation(MANIFEST_FILENAME)
+
+    def test_writer_rejects_checksums_content_mutated_during_publication(self):
+        self._assert_writer_rejects_published_output_mutation(CHECKSUMS_FILENAME)
+
+
 if __name__ == "__main__":
     unittest.main()
