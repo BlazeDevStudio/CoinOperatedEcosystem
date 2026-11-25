@@ -865,15 +865,38 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes, mode: in
             os.fsync(directory_fd)
         finally:
             if file_fd >= 0:
-                os.close(file_fd)
+                _close_overlay_descriptors_preserving_primary(
+                    [("staged temporary file", file_fd)]
+                )
     finally:
+        primary_error = sys.exc_info()[1]
+        unlink_error = None
         if temporary_name is not None and directory_fd >= 0:
             try:
                 os.unlink(temporary_name, dir_fd=directory_fd)
             except FileNotFoundError:
                 pass
-        if directory_fd >= 0:
-            os.close(directory_fd)
+            except BaseException as exc:
+                unlink_error = exc
+
+        if unlink_error is not None and primary_error is not None:
+            if hasattr(primary_error, "add_note"):
+                primary_error.add_note(
+                    "Staged temporary-file cleanup failed: "
+                    f"{type(unlink_error).__name__}: {unlink_error}"
+                )
+        elif unlink_error is not None:
+            try:
+                raise unlink_error
+            finally:
+                if directory_fd >= 0:
+                    _close_overlay_descriptors_preserving_primary(
+                        [("staged file destination", directory_fd)]
+                    )
+        elif directory_fd >= 0:
+            _close_overlay_descriptors_preserving_primary(
+                [("staged file destination", directory_fd)]
+            )
 
 
 
