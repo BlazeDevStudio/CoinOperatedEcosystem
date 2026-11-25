@@ -485,6 +485,89 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             f"file-descriptor cleanup failure must be attached to the parent-close error, got {notes!r}",
         )
 
+    def test_open_new_file_without_symlink_parents_preserves_open_error_when_parent_close_fails(self):
+        if (
+            os.name != "posix"
+            or not hasattr(os, "O_DIRECTORY")
+            or not hasattr(os, "O_NOFOLLOW")
+            or os.open not in getattr(os, "supports_dir_fd", set())
+        ):
+            self.skipTest("descriptor-relative no-follow file creation requires POSIX dir_fd support")
+
+        cleanup_errors = (
+            ("OSError", lambda: OSError(errno.EIO, "injected build-script parent close failure")),
+            ("KeyboardInterrupt", lambda: KeyboardInterrupt("injected build-script parent close interruption")),
+            ("SystemExit", lambda: SystemExit("injected build-script parent close exit")),
+        )
+        for label, make_cleanup_error in cleanup_errors:
+            with self.subTest(cleanup_error=label):
+                script_path = os.path.join(
+                    self.temp_dir,
+                    f"existing-build-script-{label.lower()}.sh",
+                )
+                sentinel = b"operator-owned existing build script\n"
+                with open(script_path, "wb") as existing:
+                    existing.write(sentinel)
+
+                original_parent_open = packager._open_parent_directory_without_symlink_parents
+                original_close = os.close
+                captured = {"parent_fd": None, "close_calls": []}
+
+                def capture_parent(*args, **kwargs):
+                    descriptor, filename = original_parent_open(*args, **kwargs)
+                    captured["parent_fd"] = descriptor
+                    captured["filename"] = filename
+                    return descriptor, filename
+
+                def close_parent_then_fail(descriptor):
+                    if descriptor == captured["parent_fd"]:
+                        captured["close_calls"].append(descriptor)
+                        original_close(descriptor)
+                        raise make_cleanup_error()
+                    return original_close(descriptor)
+
+                with mock.patch.object(
+                    packager,
+                    "_open_parent_directory_without_symlink_parents",
+                    side_effect=capture_parent,
+                ), mock.patch.object(
+                    packager.os,
+                    "close",
+                    side_effect=close_parent_then_fail,
+                ):
+                    with self.assertRaises(FileExistsError) as raised:
+                        packager._open_new_file_without_symlink_parents(
+                            script_path,
+                            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                            0o600,
+                        )
+
+                self.assertEqual(
+                    captured["close_calls"],
+                    [captured["parent_fd"]],
+                    "the owned parent descriptor must be closed exactly once",
+                )
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(captured["parent_fd"])
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+
+                cleanup_notes = getattr(raised.exception, "__notes__", [])
+                self.assertTrue(
+                    any(
+                        "build-script parent directory" in note.lower()
+                        and "injected build-script parent close" in note.lower()
+                        for note in cleanup_notes
+                    ),
+                    f"parent cleanup failure must be attached to the original open error, got {cleanup_notes!r}",
+                )
+                with open(script_path, "rb") as existing:
+                    self.assertEqual(
+                        existing.read(),
+                        sentinel,
+                        "an existing operator-owned build script must remain unchanged",
+                    )
+
+
     def test_generate_network_uci_ew1200g_pro(self):
         p = load_profile("ew1200g-pro")
         uci = generate_network_uci(p)
