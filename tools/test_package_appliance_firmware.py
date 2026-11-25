@@ -4900,79 +4900,82 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
 
 
     def test_generate_build_script_preserves_primary_publication_error_when_parent_close_fails(self):
-        script_path = os.path.join(
-            self.temp_dir, "build-script-parent-close-failure.sh"
-        )
-        manifest = {
-            "profile_id": "gl-mt1300",
-            "target_architecture": "ramips/mt7621",
-            "staging_dir": os.path.join(self.temp_dir, "staging"),
-            "imagebuilder_command": (
-                "make image PROFILE=gl-mt1300 PACKAGES='nftables' "
-                "FILES='/tmp/staging'"
-            ),
-        }
-        original_open_new = packager._open_new_file_without_symlink_parents
-        original_fsync = os.fsync
-        original_close = os.close
-        captured = {"file_fd": None, "parent_fd": None}
+        with tempfile.TemporaryDirectory(
+            prefix="phx-build-script-parent-close-"
+        ) as temp_dir:
+            script_path = os.path.join(
+                temp_dir, "build-script-parent-close-failure.sh"
+            )
+            manifest = {
+                "profile_id": "gl-mt1300",
+                "target_architecture": "ramips/mt7621",
+                "staging_dir": os.path.join(temp_dir, "staging"),
+                "imagebuilder_command": (
+                    "make image PROFILE=gl-mt1300 PACKAGES='nftables' "
+                    "FILES='/tmp/staging'"
+                ),
+            }
+            original_open_new = packager._open_new_file_without_symlink_parents
+            original_fsync = os.fsync
+            original_close = os.close
+            captured = {"file_fd": None, "parent_fd": None}
 
-        def capture_open_new(*args, **kwargs):
-            file_fd, parent_fd = original_open_new(*args, **kwargs)
-            captured["file_fd"] = file_fd
-            captured["parent_fd"] = parent_fd
-            return file_fd, parent_fd
+            def capture_open_new(*args, **kwargs):
+                file_fd, parent_fd = original_open_new(*args, **kwargs)
+                captured["file_fd"] = file_fd
+                captured["parent_fd"] = parent_fd
+                return file_fd, parent_fd
 
-        def fail_file_fsync(descriptor):
-            if descriptor == captured["file_fd"]:
-                raise OSError(
-                    errno.EIO, "injected build-script file fsync failure"
-                )
-            return original_fsync(descriptor)
+            def fail_file_fsync(descriptor):
+                if descriptor == captured["file_fd"]:
+                    raise OSError(
+                        errno.EIO, "injected build-script file fsync failure"
+                    )
+                return original_fsync(descriptor)
 
-        def close_parent_then_fail(descriptor):
-            if descriptor == captured["parent_fd"]:
-                original_close(descriptor)
-                raise OSError(
-                    errno.EIO,
-                    "injected build-script parent directory close failure",
-                )
-            return original_close(descriptor)
+            def close_parent_then_fail(descriptor):
+                if descriptor == captured["parent_fd"]:
+                    original_close(descriptor)
+                    raise OSError(
+                        errno.EIO,
+                        "injected build-script parent directory close failure",
+                    )
+                return original_close(descriptor)
 
-        with (
-            mock.patch.object(
-                packager,
-                "_open_new_file_without_symlink_parents",
-                side_effect=capture_open_new,
-            ),
-            mock.patch.object(
-                packager.os, "fsync", side_effect=fail_file_fsync
-            ),
-            mock.patch.object(
-                packager.os, "close", side_effect=close_parent_then_fail
-            ),
-        ):
-            with self.assertRaisesRegex(
-                OSError, "injected build-script file fsync failure"
-            ) as raised:
-                generate_build_script(manifest, script_path)
+            with (
+                mock.patch.object(
+                    packager,
+                    "_open_new_file_without_symlink_parents",
+                    side_effect=capture_open_new,
+                ),
+                mock.patch.object(
+                    packager.os, "fsync", side_effect=fail_file_fsync
+                ),
+                mock.patch.object(
+                    packager.os, "close", side_effect=close_parent_then_fail
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "injected build-script file fsync failure"
+                ) as raised:
+                    generate_build_script(manifest, script_path)
 
-        notes = getattr(raised.exception, "__notes__", [])
-        self.assertTrue(
-            any(
-                "build-script parent directory" in note.lower()
-                and "injected build-script parent directory close failure" in note.lower()
-                for note in notes
-            ),
-            f"parent cleanup failure must be attached to the primary publication error, got {notes!r}",
-        )
-        self.assertEqual(
-            stat.S_IMODE(os.stat(script_path).st_mode),
-            0o600,
-            "a failed script fsync must leave the script non-executable",
-        )
-        with self.assertRaises(OSError):
-            os.fstat(captured["parent_fd"])
+            notes = getattr(raised.exception, "__notes__", [])
+            self.assertTrue(
+                any(
+                    "build-script parent directory" in note.lower()
+                    and "injected build-script parent directory close failure" in note.lower()
+                    for note in notes
+                ),
+                f"parent cleanup failure must be attached to the primary publication error, got {notes!r}",
+            )
+            self.assertEqual(
+                stat.S_IMODE(os.stat(script_path).st_mode),
+                0o600,
+                "a failed script fsync must leave the script non-executable",
+            )
+            with self.assertRaises(OSError):
+                os.fstat(captured["parent_fd"])
 
 if __name__ == "__main__":
     unittest.main()
