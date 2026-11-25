@@ -1,6 +1,6 @@
 ## PHX-RELEASE UTC03 — manifest output close-interruption recovery (2026-11-25)
 
-**Disposition:** RELEASE-owned source/test correction VERIFIED at exact source/test HEAD `237618f4d1e6b291cd39ef19e5573559f2b6b0d0`. Final handover/PR HEAD is this documentation commit once recorded below. COE PR #35 remains OPEN / DRAFT / UNMERGED. No merge, signing, publishing, flashing, payment migration or customer deployment.
+**Disposition:** RELEASE-owned source/test correction VERIFIED at exact source/test HEAD `237618f4d1e6b291cd39ef19e5573559f2b6b0d0`. This is a documentation-only follow-up; always re-read the live COE PR #35 head before reusing this handover. PR #35 remains OPEN / DRAFT / UNMERGED. No merge, signing, publishing, flashing, payment migration or customer deployment.
 
 ### Bounded defect and correction
 
