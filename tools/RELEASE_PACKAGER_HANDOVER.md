@@ -5835,3 +5835,62 @@ These are hosted synthetic CI results. They do not establish real ImageBuilder n
 This increment changes only `tools/test_validate_all_profiles.py`, `tools/validate_all_profiles.py` and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or COE #26 destination source was overwritten. No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred.
 
 Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC21 — preserve sandbox setup failure when process-group cleanup raises (2026-11-25T21:xxZ)
+
+**Disposition:** One RELEASE-owned ImageBuilder sandbox-runner error-precedence defect was reproduced test-first and corrected on existing COE child draft #35. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch identity and bounded scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting HEAD: `ac343dc42577774b4bacf56c7f304da11a3ad647`.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first regression commit: [`eb68a8fd`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/eb68a8fdfed2eda8da819ebed59f530335338b46).
+- Source correction: [`857293f1`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/857293f150586f43bef9fe97ad169dde45217823).
+- Corrected test-fixture commit: [`66e75602`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/66e75602f83739168388c670cc6ba28b469239d9).
+- Exact source/test HEAD: `66e75602f83739168388c670cc6ba28b469239d9`.
+- This increment changes only `tools/run_imagebuilder_sandbox.py`, `tools/test_imagebuilder_sandbox_host.py`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or COE #26 destination source changed.
+
+### Defect and correction
+
+In `run_imagebuilder_sandbox.py::main()`, the `except (OSError, subprocess.SubprocessError)` handler called `_terminate_process_groups()` without protecting the original setup exception. If the cleanup call itself raised an ordinary exception, it replaced the original sandbox setup failure. The `finally` block then attempted another cleanup, but the primary failure was already lost.
+
+The source now catches ordinary cleanup exceptions inside the setup-error handler, keeps the original setup error as the primary blocked diagnosis, attaches cleanup diagnostics with `add_note()` where supported, and leaves the cleanup-complete flag false so the existing finalizer performs one more bounded attempt. `KeyboardInterrupt` and `SystemExit` are not swallowed. If the finalizer cannot confirm cleanup, it remains fail-closed rather than reporting success.
+
+### Test-first and exact-source evidence
+
+- Expected RED, initial test-only PR run [#45703181009](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45703181009): host preflight suite ran 41 tests; the new regression errored because the cleanup OSError replaced the original namespace-pipe OSError. The shared run [#45703181016](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45703181016) ran 235 tests, with 1 error and 2 intentional skips; the packaging/tool step failed at the same regression, so downstream profile admission was skipped. This is the accepted defect RED.
+- Case-collision guard [#45703181027](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45703181027): PASS on the initial test-only head.
+- Source implementation commit [`857293f1`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/857293f150586f43bef9fe97ad169dde45217823). Its first exact-head sandbox run [#45703328356](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45703328356) exposed a test-fixture modeling problem: the fixture reported no recovered child PGID and emitted cleanup diagnostics, so the finalizer correctly failed closed. This was not accepted as product-green evidence.
+- The fixture was corrected to provide a recovered child PGID and a successful bounded retry in [`66e75602`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/66e75602f83739168388c670cc6ba28b469239d9).
+- Exact source/test head [`66e75602`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/66e75602f83739168388c670cc6ba28b469239d9), sandbox run [#45703482842](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45703482842): host preflight **41/41 PASS**, including the new error-precedence regression. The next mandatory step failed because Bubblewrap is absent; exit 125. Unprivileged identity, namespace preflight and sandbox packaging were SKIPPED. No privileged install or unsandboxed fallback.
+- Shared CI run [#45703328313](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45703328313) on the intermediate source head failed at the uncorrected test fixture (1 error, 2 intentional skips); it is not a final-head pass. A final handover-head shared CI run is required to revalidate the corrected test tree.
+- The previous exact #35 shared integration run [#45694876586](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694876586) passed the packaging/tool suite but failed closed at 10/10 site-ULA profile admission; ESP32/ESP8266 compilation was skipped. This external authority gate remains unchanged.
+
+These are hosted synthetic CI results only. They do not establish successful Bubblewrap execution, real ImageBuilder output, approved target binaries or physical appliance acceptance.
+
+### Live cross-repository gates and ownership
+
+- Control plane #172: the single UTC21 PHX-RELEASE role-lock comment is [#7174889815](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/172#issuecomment-7174889815); it will be updated in place with the terminal checkpoint.
+- Cleanup-first #266 remains OPEN / **0-of-7**. This bounded RELEASE fix does not complete the seven-role cleanup gate.
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at current head `fe33a297108d8a3b0dc812f7b2a133fb78a14230`. The exact `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` has 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's route remains `reimplementation-review`. MASTER retains migration and shared-interface authority. The latest MASTER control-plane report also records a P0 active-v0.6 poll/register response-signature blocker; RELEASE did not edit Hardware/CORE source or weaken that gate.
+- Experiments SoftTimer PR #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed build and package parity/checksum checks. Authenticode signing and GitHub Release publication were skipped.
+- Experiments publisher PR #291 remains OPEN / DRAFT at `9b928c9eaa72cb26fdcf3f0e50a0ec024f4e3c30`. Windows [#45669599214](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599214) and Full [#45669599438](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599438) fail at CORE-owned handover freshness; ESP32 compatibility [#45669599322](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599322) passes. Full target jobs pass, but the freshness failure skips downstream simulation/candidate/signing/publication stages.
+- COE integration PR #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain QUEUED / zero jobs.
+- COE release-packager parent PR #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Parent shared CI [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed all three jobs including ten profiles and ESP8266/ESP32 hosted compilation; case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed; sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed unprivileged namespace validation. Parent evidence is not substituted for child #35.
+- Authorized Library inventory did not recover the actual private Drive registry v11. A checkpoint reference and older snapshots were surfaced; no older registry was substituted and no private Drive identifiers or contents were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the new setup-error/cleanup-error precedence regression and source correction.
+2. PHX-INFRA / COE owner provides an authorized disposable no-secret runner with Bubblewrap and unprivileged single-ID namespace support.
+3. PHX-CORE / MASTER / COE integration owner defines approved durable site-scoped ULA /48 authority and same-site convergence, concurrent first-boot and backup/restore semantics; RELEASE must not invent a prefix or bypass the ten-profile gate.
+4. PHX-CORE publishes the canonical freshness SHA for Experiments #291; RELEASE reruns Full/Windows only against that exact refreshed source.
+5. PHX-MASTER maintains the ownership routes and refreshes its own PR #288 pointers; RELEASE does not migrate or rewrite other role paths.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
