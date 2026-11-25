@@ -567,6 +567,71 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 stage_overlay(load_profile("ew1200g-pro"), DEFAULT_ROOTFS, staging_dest)
 
 
+    def test_copy_rootfs_to_new_staging_directory_closes_parent_after_staging_close_error(self):
+        staging_dest = os.path.join(
+            self.temp_dir, "staging-close-interruption"
+        )
+        captured = {
+            "parent_fd": None,
+            "staging_fd": None,
+            "staging_close_attempted": False,
+            "parent_close_attempted": False,
+        }
+        original_open = os.open
+        original_close = os.close
+        original_fstat = os.fstat
+
+        def open_and_capture(path, flags, mode=0o777, *, dir_fd=None):
+            descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+            if os.fspath(path) == os.path.basename(staging_dest) and dir_fd is not None:
+                captured["parent_fd"] = dir_fd
+                captured["staging_fd"] = descriptor
+            return descriptor
+
+        def close_and_interrupt(descriptor):
+            if (
+                descriptor == captured["staging_fd"]
+                and not captured["staging_close_attempted"]
+            ):
+                captured["staging_close_attempted"] = True
+                original_close(descriptor)
+                raise OSError(
+                    errno.EIO, "injected staging descriptor close failure"
+                )
+            if descriptor == captured["parent_fd"]:
+                captured["parent_close_attempted"] = True
+            return original_close(descriptor)
+
+        patched_open = mock.Mock(side_effect=open_and_capture)
+        supported_dir_fd = set(os.supports_dir_fd)
+        supported_dir_fd.add(patched_open)
+
+        with mock.patch.object(
+            packager.os, "open", new=patched_open
+        ), mock.patch.object(
+            packager.os, "close", side_effect=close_and_interrupt
+        ), mock.patch.object(
+            packager.shutil,
+            "copytree",
+            side_effect=RuntimeError("injected rootfs copy failure"),
+        ), mock.patch.object(
+            packager.os, "supports_dir_fd", supported_dir_fd
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "injected rootfs copy failure"
+            ):
+                packager._copy_rootfs_to_new_staging_directory(
+                    DEFAULT_ROOTFS, staging_dest
+                )
+
+        self.assertIsInstance(captured["staging_fd"], int)
+        self.assertIsInstance(captured["parent_fd"], int)
+        self.assertTrue(captured["staging_close_attempted"])
+        self.assertTrue(captured["parent_close_attempted"])
+        with self.assertRaises(OSError):
+            original_fstat(captured["parent_fd"])
+        self.assertFalse(os.path.lexists(staging_dest))
+
     def test_ensure_staging_directory_closes_child_fd_on_baseexception_during_identity_check(self):
         for exception_type in (KeyboardInterrupt, SystemExit):
             with self.subTest(interruption=exception_type.__name__):
