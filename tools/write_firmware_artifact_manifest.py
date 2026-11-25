@@ -446,6 +446,7 @@ def _write_new_file(
     path = os.path.join(directory, filename)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     descriptor = -1
+    output = None
 
     def add_cleanup_note(
         primary_error: BaseException,
@@ -466,6 +467,17 @@ def _write_new_file(
 
     def rollback(primary_error: BaseException) -> None:
         rollback_errors: list[str] = []
+        if output is not None and not output.closed:
+            try:
+                # A Python-level interruption can occur before the underlying
+                # file object has closed its descriptor. Retry while the stream
+                # still reports itself open; if close already completed before
+                # raising, do not issue a second close against a possibly reused fd.
+                output.close()
+            except BaseException as exc:
+                rollback_errors.append(
+                    f"close partial output stream: {type(exc).__name__}: {exc}"
+                )
         if descriptor >= 0:
             try:
                 os.close(descriptor)
