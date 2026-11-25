@@ -5321,3 +5321,64 @@ The source now routes the raw temporary-file descriptor and destination-director
 This increment changes only `tools/package_appliance_firmware.py`, `tools/test_package_appliance_firmware.py`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, financial state, network authority, firmware, shared interface, signer, or production configuration was changed.
 
 No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+## PHX-RELEASE UTC02 — final rootfs staging descriptor cleanup (2026-11-25)
+
+**Disposition:** one RELEASE-owned descriptor-cleanup defect was reproduced test-first and corrected on the existing COE #35 draft branch. PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. No cross-role or shared-interface path changed.
+
+### Live ownership and provenance
+
+- Re-read the owner execution prompt, BLAZE-COMMS/1, issue #172 control plane, cleanup-first #266, MASTER PR #288 and its ownership routes, Experiments #242/#291, COE #26/#31 and active child #35.
+- MASTER #288 is OPEN / DRAFT at observed head `2a73c2c9ea9c77f321c467a99ed9b32444973c2b`. `OWNERSHIP_ROUTES.json` remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's `.github/workflows/blazepwifi-build.yml` to `.github/workflows/pisowifi-ci.yml` route is `reimplementation-review`, not migration authority. The current MASTER integration matrix still pins COE #35 to the older `23dcae0c`; MASTER owns refreshing its child pointer after this handover commit.
+- Experiments #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`. Its Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded, but real signing and publication were skipped.
+- Experiments #291 remains OPEN / DRAFT at `53fc8a1c558f80adde19dc675b879c78797f0cd5`, based on #242. ESP32 compatibility [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed 3/3. Full build [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) failed at the CORE-owned mandatory handover freshness gate; the recorded 14 target/platform jobs and Android passed, with downstream stages skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) failed the same freshness gate before build/publisher.
+- COE integration #26 remains OPEN / DRAFT / FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; its five workflows are queued with zero jobs. Parent packager #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Child #35 remains OPEN / DRAFT / UNMERGED.
+- Cleanup-first #266 remains OPEN / 0-of-7. The RELEASE cleanup track is not marked complete.
+- Authorized Library search did not surface private Drive project registry v11 or remote readback evidence. No older registry was substituted and no private IDs or contents were copied into this handover.
+
+### Defect and test-first reproduction
+
+`_copy_rootfs_to_new_staging_directory()` ended with sequential descriptor closes:
+
+- close the pinned staging-directory descriptor;
+- then close the parent-directory descriptor.
+
+If the first close failed after actually closing its descriptor, the second close was skipped. When rootfs copy/rollback was already raising, the close error replaced the primary exception and leaked the parent descriptor.
+
+Test-first commit: [`abc39c94`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/abc39c9451342152e05dd8f49a767224fa2dce3d).
+
+Expected RED: PR shared CI [#45531762147](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531762147), job `138928536233`, reproduced the defect. **221 tests ran, one expected test error, two intentional skips; the other 218 tests passed.** The traceback shows the injected `RuntimeError: injected rootfs copy failure` being replaced during finalization by `OSError: [Errno 5] injected staging descriptor close failure` at the sequential close. Push shared CI [#45531752120](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531752120) was the same test-first source. Case-collision [#45531762029](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531762029) passed. Sandbox [#45531761902](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531761902) failed before packaging because Bubblewrap was absent; it is not the product RED.
+
+### Source correction
+
+Source fix: [`965ff122`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/965ff122e56736ccbf973814fb9067dd50c1d34f).
+
+The finalizer now transfers both still-owned descriptors to the existing `_close_overlay_descriptors_preserving_primary()` helper. It attempts every close, preserves an active copy/rollback exception while attaching cleanup diagnostics, and raises cleanup errors only after all closes when no primary exception exists. The regression verifies the original copy error survives, the parent close is attempted, the parent descriptor is actually closed, and the partial staging directory is rolled back.
+
+### Exact-source CI at `965ff122`
+
+- PR shared/firmware [#45531882113](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531882113), job `138928943420`: **221 tests ran; 219 passed and 2 intentional skips; zero unit-test failures.** The new descriptor regression passed. Firmware hardening, shared-contract/profile unit tests and packaging/tool tests passed. The subsequent all-profile admission **FAILED CLOSED for 10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority remains absent. ESP32/ESP8266 compile jobs were **SKIPPED**; overall workflow **FAILURE**, not release-ready.
+- Push shared/firmware [#45531875121](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531875121), job `138928918891`: same exact-source result — packaging suite passed, then the 10-profile ULA authority gate failed closed; ESP32/ESP8266 jobs skipped.
+- PR sandbox [#45531882127](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531882127), job `138928943492`: host preflight **40/40 PASS**; Bubblewrap unavailable, exit **125**. Unprivileged identity/namespace and mandatory sandbox packaging steps were skipped. No privileged install or unsandboxed fallback.
+- Push sandbox [#45531875178](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531875178): same missing-Bubblewrap fail-closed outcome.
+- Case-collision guard [#45531882138](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45531882138), job `138928943134`: **PASS**.
+
+These are hosted synthetic CI results only. No ImageBuilder sandbox ran, no approved appliance image was produced, and no physical hardware was tested.
+
+### Changed paths, exact identity and next owners
+
+Starting PR #35 head: `02561ba1ed60e0eb827946f76d8749a26943eaaf`. Source/test head: `965ff122e56736ccbf973814fb9067dd50c1d34f`. This increment is 2 commits ahead / 0 behind and changes exactly:
+- `tools/test_package_appliance_firmware.py`
+- `tools/package_appliance_firmware.py`
+
+This handover update is the only third path in the final docs commit. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, finance, network authority, firmware, shared interface, signer or production configuration changed.
+
+1. PHX-QA independently reviews source/test HEAD `965ff122`, including the primary-exception note and parent descriptor closure.
+2. PHX-CORE / PHX-MASTER publish approved site-scoped RFC 4193 ULA /48 authority; RELEASE reruns the ten-profile admission gate only after that authority is supplied.
+3. PHX-INFRA / COE owner provide an authorized disposable no-secret runner with Bubblewrap and working unprivileged single-ID namespaces; RELEASE reruns mandatory sandbox packaging.
+4. PHX-CORE refreshes the canonical BlazePwifi freshness record for #291; RELEASE reruns Full and Windows validation against the exact refreshed SHA.
+5. PHX-MASTER refreshes its COE #35 child pointer after this handover commit.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
