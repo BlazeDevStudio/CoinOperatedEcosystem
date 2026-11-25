@@ -143,6 +143,7 @@ def _scan_artifact_directory_fd(
     directory_descriptor: int,
     relative_prefix: str,
     records: list[dict],
+    excluded_root_outputs: dict[str, tuple[int, int]] | None = None,
 ) -> None:
     """Hash one directory using pinned descriptors, never path-based parent traversal."""
     try:
@@ -168,6 +169,27 @@ def _scan_artifact_directory_fd(
             raise ManifestError(
                 f"artifact path cannot be represented safely in SHA256SUMS: {relative!r}"
             )
+        if not relative_prefix and excluded_root_outputs and name in excluded_root_outputs:
+            try:
+                current_output = os.stat(
+                    name,
+                    dir_fd=directory_descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise ManifestError(
+                    f"published manifest output changed during artifact revalidation: {name}: {exc}"
+                ) from exc
+            expected_identity = excluded_root_outputs[name]
+            if (
+                not stat.S_ISREG(current_output.st_mode)
+                or (current_output.st_dev, current_output.st_ino) != expected_identity
+            ):
+                raise ManifestError(
+                    f"published manifest output changed during artifact revalidation: {name}"
+                )
+            continue
+
         if name in (MANIFEST_FILENAME, CHECKSUMS_FILENAME):
             raise ManifestError(f"refusing pre-existing manifest output: {name}")
 
@@ -206,7 +228,12 @@ def _scan_artifact_directory_fd(
                         f"artifact directory changed while opening: {relative}"
                     )
 
-                _scan_artifact_directory_fd(child_descriptor, relative, records)
+                _scan_artifact_directory_fd(
+                    child_descriptor,
+                    relative,
+                    records,
+                    excluded_root_outputs=excluded_root_outputs,
+                )
 
                 try:
                     current = os.stat(
@@ -329,6 +356,8 @@ def _scan_artifact_directory_fd(
 def _scan_artifact_files(
     artifact_dir: str,
     directory_descriptor: int | None = None,
+    *,
+    excluded_root_outputs: dict[str, tuple[int, int]] | None = None,
 ) -> list[dict]:
     """Hash the artifact tree through pinned directory descriptors."""
     root = os.path.abspath(os.fspath(artifact_dir))
@@ -347,7 +376,16 @@ def _scan_artifact_files(
     try:
         _require_artifact_directory_identity(root, directory_descriptor)
         records: list[dict] = []
-        _scan_artifact_directory_fd(directory_descriptor, "", records)
+        if excluded_root_outputs and not set(excluded_root_outputs).issubset(
+            {MANIFEST_FILENAME, CHECKSUMS_FILENAME}
+        ):
+            raise ManifestError("only this publisher's root manifest outputs may be excluded")
+        _scan_artifact_directory_fd(
+            directory_descriptor,
+            "",
+            records,
+            excluded_root_outputs=excluded_root_outputs,
+        )
         _require_artifact_directory_identity(root, directory_descriptor)
     finally:
         if owns_descriptor:
@@ -669,15 +707,17 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
             # payload after the first scan but before publication completes,
             # leaving a successful manifest with a stale payload digest.
             expected_records = json.loads(manifest_bytes.decode("utf-8"))["files"]
-            current_records = _scan_artifact_files(
+            created_output_identities = {
+                os.path.basename(path): identity
+                for path, identity in created
+            }
+            if set(created_output_identities) != {MANIFEST_FILENAME, CHECKSUMS_FILENAME}:
+                raise ManifestError("manifest pair creation identities are incomplete")
+            current_artifact_records = _scan_artifact_files(
                 artifact_dir,
                 directory_descriptor=directory_descriptor,
+                excluded_root_outputs=created_output_identities,
             )
-            current_artifact_records = [
-                item
-                for item in current_records
-                if item["path"] not in (MANIFEST_FILENAME, CHECKSUMS_FILENAME)
-            ]
             if current_artifact_records != expected_records:
                 raise ManifestError(
                     "artifact files changed while manifest was being published"
