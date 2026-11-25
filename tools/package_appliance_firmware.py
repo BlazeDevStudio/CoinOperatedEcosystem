@@ -1543,14 +1543,34 @@ def _open_file_without_symlink_parents(
         invalid_filename_message,
     )
     try:
-        return os.open(
+        file_descriptor = os.open(
             filename,
             flags | os.O_NOFOLLOW,
             mode,
             dir_fd=directory_fd,
         )
-    finally:
-        os.close(directory_fd)
+    except BaseException:
+        # Keep the original open failure authoritative if closing the parent
+        # descriptor is itself interrupted or reports an error.
+        _close_overlay_descriptors_preserving_primary(
+            [("router profile parent directory", directory_fd)]
+        )
+        raise
+
+    try:
+        _close_overlay_descriptors_preserving_primary(
+            [("router profile parent directory", directory_fd)]
+        )
+    except BaseException:
+        # The new file descriptor is still owned by this helper until it is
+        # returned. If parent cleanup fails, close it rather than leaking a
+        # descriptor that the caller never receives.
+        _close_overlay_descriptors_preserving_primary(
+            [("opened router profile", file_descriptor)]
+        )
+        raise
+
+    return file_descriptor
 
 
 def _open_new_file_without_symlink_parents(path: str, flags: int, mode: int) -> tuple[int, int]:
