@@ -2093,7 +2093,9 @@ echo "Appliance PREVIEW build completed; physical/signing gates still NO-GO."
                     "script reverted to non-executable mode"
                 ) from publish_error
     finally:
-        os.close(parent_directory_fd)
+        _close_overlay_descriptors_preserving_primary(
+            [("build-script parent directory", parent_directory_fd)]
+        )
 
 
 def main():
