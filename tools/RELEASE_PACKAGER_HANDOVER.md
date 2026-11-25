@@ -5775,3 +5775,63 @@ These are hosted exact-source CI results only. They do not establish successful 
 This increment changes only tools/package_appliance_firmware.py, tools/test_package_appliance_firmware.py and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or COE #26 destination source was overwritten. No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred.
 
 Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC20 — diagnostics wait-error process-group cleanup (2026-11-25T20:23Z)
+
+**Disposition:** One RELEASE-owned diagnostics cleanup defect reproduced test-first and corrected on the existing COE #35 child branch. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch identity and bounded scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting HEAD: `1c08a339662743abb1dc660885e07cfbbaac2515`.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-only commit with initial fixture syntax error: [`6aa06047`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6aa0604717865bd0df618f32d78b6010be7d67a9).
+- Corrected test fixture / valid expected RED: [`5c343919`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5c343919f0e2f42810a7020de82da2ea2e38d4e9).
+- Source correction: [`10fa6ff1`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/10fa6ff1156ebe6c38d54123795f6d90d0c86063).
+- This UTC20 handover update is the final documentation-only commit for this increment.
+
+### Confirmed defect and correction
+
+`tools/validate_all_profiles.py::run_appliance_diagnostics()` waited for the diagnostics shell with a hard timeout and cleaned the isolated process group on timeout and normal exit. A non-timeout exception from `process.wait()` (including an OSError or interruption) escaped before `_terminate_process_groups()` ran. The diagnostics shell and background descendants could therefore continue after the caller had failed.
+
+The source now catches the non-timeout `BaseException` path, attempts to terminate/reap the diagnostics process group, records a cleanup failure as an exception note when supported, and re-raises the original wait exception. The existing timeout-specific RuntimeError behavior and normal-success cleanup path remain unchanged.
+
+Two regressions cover (1) a real POSIX diagnostics shell with a one-shot injected wait OSError and a delayed child marker, proving the process group is terminated before the marker is written, and (2) cleanup failure after a primary wait OSError, proving the original wait error remains primary and the cleanup error is attached as a note.
+
+### Test-first and exact-source evidence
+
+- Initial test-only commit [`6aa06047`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/6aa0604717865bd0df618f32d78b6010be7d67a9) had a Python fixture quoting error. Push [#45694174218](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694174218) and PR [#45694186619](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694186619) failed at test-module import (SyntaxError; 226 tests ran before loader error). This was a test-harness authoring error, **not** valid product RED evidence.
+- Corrected fixture commit [`5c343919`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5c343919f0e2f42810a7020de82da2ea2e38d4e9) produced valid expected RED: push [#45694310733](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694310733) and PR [#45694322983](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694322983). The packaging/tool suite ran 234 tests, with two expected failures and two intentional skips: cleanup helper called zero times after wait failure, and the delayed child marker was created, proving the process group remained alive.
+- Exact source/test push [#45694435640](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694435640) and PR [#45694456054](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694456054): packaging/tool suite **234 tests, all passed, 2 intentional skips**; firmware-hardening and shared-contract steps passed. The following end-to-end profile admission step failed closed for **10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is not defined; ESP32/ESP8266 compile jobs were **SKIPPED**. Overall shared workflow: **FAILURE**, not release-ready.
+- Exact source/test sandbox [#45694456263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694456263): host preflight **40/40 PASS**, then Bubblewrap unavailable / exit 125; unprivileged identity, namespace and mandatory sandbox packaging steps **SKIPPED**. No privileged installation or unsandboxed fallback.
+- Exact source/test case-collision [#45694455989](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45694455989): **PASS**.
+
+These are hosted synthetic CI results. They do not establish real ImageBuilder namespace execution, target firmware binaries, physical appliance acceptance or production readiness.
+
+### Current cross-repository pins and ownership
+
+- Control plane #172: this UTC20 PHX-RELEASE role-lock comment is the single checkpoint for this activation; it is updated in place with terminal evidence.
+- Cleanup-first #266 remains OPEN / **0-of-7**. No other role's cleanup track is claimed complete.
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at live head `5ce9361a2e23f21af99ef54f5e33066ac37fe024`; compare is 581 ahead / 1 behind with merge base `f4e8a891aed8af86d5fd315d28750a0ac3a7372b`. Current `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's workflow route remains `reimplementation-review`. The PR body still references an earlier Master HEAD; MASTER owns its refresh. No route, cross-repository copy/move or shared-interface authority changed.
+- Experiments SoftTimer PR #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed. Authenticode signing and release publication were skipped; this is not a signed/published release.
+- Experiments publisher PR #291 remains OPEN / DRAFT at `9b928c9eaa72cb26fdcf3f0e50a0ec024f4e3c30`. Windows [#45669599214](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599214) and Full [#45669599438](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599438) fail at CORE-owned handover freshness; ESP32 compatibility [#45669599322](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599322) passes both pinned-core legs. CORE must publish the canonical CURRENT_STATE / PROJECT_HANDOVER SHA before RELEASE reruns Full/Windows.
+- COE integration PR #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain QUEUED / zero jobs.
+- COE release-packager parent PR #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; parent shared CI [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) and case guard [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed, while parent sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed at unprivileged namespace preflight. Parent evidence is not substituted for child #35.
+- Authorized Library inventory was exhausted (15 pages); the actual private Drive registry v11 file was **NOT RECOVERED**. Only a checkpoint reference and older snapshots were surfaced. No older registry was substituted and no private Drive contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test commit `5c343919`, source commit `10fa6ff1`, the real-child process-group regression and primary-error preservation.
+2. PHX-INFRA / COE owner provides an authorized disposable no-secret Bubblewrap runner with unprivileged single-ID namespace support.
+3. PHX-CORE / MASTER / COE integration owner defines approved durable site-scoped ULA /48 authority and restore/concurrency semantics; RELEASE must not invent a prefix.
+4. PHX-CORE publishes the canonical BlazePwifi freshness SHA; RELEASE reruns Experiments #291 Full/Windows only against that exact refreshed source.
+5. PHX-MASTER refreshes its COE #35 child pointer and its stale #288 PR-body reference; no integration is performed by RELEASE.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+This increment changes only `tools/test_validate_all_profiles.py`, `tools/validate_all_profiles.py` and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or COE #26 destination source was overwritten. No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred.
+
+Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
