@@ -433,6 +433,20 @@ def _require_artifact_directory_identity(
             "artifact directory changed during manifest scan/publication"
         )
 
+    effective_uid = os.geteuid()
+    if path_stat.st_uid != effective_uid or descriptor_stat.st_uid != effective_uid:
+        raise ManifestError(
+            "artifact directory must be owned by the current effective user"
+        )
+    if stat.S_IMODE(path_stat.st_mode) != stat.S_IMODE(descriptor_stat.st_mode):
+        raise ManifestError(
+            "artifact directory permissions changed during manifest scan/publication"
+        )
+    if (path_stat.st_mode | descriptor_stat.st_mode) & 0o022:
+        raise ManifestError(
+            "artifact directory must not be group- or world-writable"
+        )
+
 
 
 def _unlink_created_output_if_unchanged(
@@ -624,6 +638,10 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
         raise ManifestError(f"artifact directory cannot be opened for durable publication: {exc}") from exc
 
     try:
+        # Establish exclusive directory ownership before scanning untrusted
+        # artifact entries or publishing files. Recheck after the scan and
+        # after publication to detect permission/identity changes.
+        _require_artifact_directory_identity(artifact_dir, directory_descriptor)
         payload_kwargs = dict(kwargs)
         payload_kwargs["artifact_directory_descriptor"] = directory_descriptor
         manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**payload_kwargs)
