@@ -5600,3 +5600,61 @@ These are hosted synthetic/CI results only. The sandbox did not execute, no appr
 This increment changes only `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, firmware, shared interface, network authority, financial state, signer or production configuration was changed.
 
 No merge, rebase, signing, tag, publication, hardware flash, payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+## PHX-RELEASE UTC17 — preserve profile-open failures and close unreturned descriptors (2026-11-25)
+
+**Disposition:** One RELEASE-owned packaging helper defect was reproduced test-first and corrected on the existing COE #35 child branch. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch identity and commits
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting HEAD: `204084307b257154470934a17da4efb5794bdb69`.
+- Initial regression tests: [`de90b8c35b5bf5d213a047655fdc19c917803fe5`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/de90b8c35b5bf5d213a047655fdc19c917803fe5).
+- Corrected test harness: [`d3705f2169f5d1f096e67077421be456e656d9ec`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d3705f2169f5d1f096e67077421be456e656d9ec).
+- Source correction: [`ef869aee3578241bfcae6fda8ed77bb560bebe2c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ef869aee3578241bfcae6fda8ed77bb560bebe2c).
+- This handover update is the final documentation-only commit for the UTC17 increment.
+
+### Confirmed defect and correction
+
+`tools/package_appliance_firmware.py::_open_file_without_symlink_parents()` opened a file relative to a pinned parent-directory descriptor, then closed the parent in a raw `finally: os.close(directory_fd)`.
+
+Two failure paths were unsafe:
+
+1. If the file open failed and parent-directory close also failed/interrupted, the cleanup error replaced the primary open error.
+2. If the file open succeeded but parent-directory close failed, the return was cancelled by the cleanup exception and the newly opened file descriptor was never transferred to the caller or closed by the helper.
+
+The corrected helper uses the existing `_close_overlay_descriptors_preserving_primary()` policy:
+- on an open failure, it attempts parent cleanup while preserving the original open exception and attaches cleanup diagnostics;
+- after a successful open, it closes the parent before transferring ownership; if that close fails, it attempts to close the newly opened file descriptor, preserves the parent-close error as primary and attaches any file-close failure as a diagnostic.
+
+The helper does not retry an interrupted close on an uncertain descriptor. This avoids risking a second close against a descriptor number that may already have been released and reused. A reported close interruption remains a failure, not success.
+
+### Test-first evidence
+
+- First test-only run [#45663982471](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45663982471): **230 tests ran; one error and one failure**. The primary open error was demonstrably masked by the parent-close error. The second test's first injection harness was not accepted because it patched `os.open` before the platform `dir_fd` capability check.
+- Corrected test harness commit [`d3705f21`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d3705f2169f5d1f096e67077421be456e656d9ec), run [#45664238239](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45664238239): **230 tests ran; one expected error and one expected failure**. The corrected tests independently showed (a) the original open error was replaced by parent-close failure and (b) the opened file descriptor was not closed when parent close failed. This is expected RED evidence, not a passing run.
+- Corrected source/test run [#45664453496](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45664453496), job `139382683127`: **230 tests OK, two intentional skips**. Firmware hardening and shared-contract tests passed; both new descriptor-cleanup regressions passed; the one staged synthetic profile passed and `PHX-MANIFEST-DURABILITY-PASS` was emitted.
+- The same shared job then ran the full ten-profile admission check and failed closed for **10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is not defined. ESP32 and ESP8266 compile jobs were skipped. Overall workflow: **FAILURE**, not release-ready.
+- Mandatory sandbox [#45664453466](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45664453466), job `139382683536`: **40 host-preflight tests PASS**, then Bubblewrap was not installed on the runner (exit 125); identity/namespace and packaging steps skipped. No privileged installation or unsandboxed fallback.
+- Case-collision guard [#45664453679](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45664453679): **PASS**.
+
+These are exact-source hosted CI results only. No ImageBuilder sandbox execution, approved appliance binary, target-router test or physical acceptance is claimed.
+
+### Scope and next owner actions
+
+This increment changes only:
+- `tools/test_package_appliance_firmware.py`
+- `tools/package_appliance_firmware.py`
+- `tools/RELEASE_PACKAGER_HANDOVER.md`
+
+No network configuration, ULA allocation, shared contract, firmware, financial state, signer or other subsystem-owned source was changed.
+
+1. PHX-QA independently reviews the parent/file descriptor failure tests and exception precedence.
+2. PHX-CORE / MASTER / COE integration owner define durable site-scoped ULA /48 authority and distribution semantics; RELEASE does not invent a prefix.
+3. PHX-INFRA / COE owner provide an authorized disposable runner with Bubblewrap and unprivileged namespace support.
+4. PHX-CORE publishes the canonical BlazePwifi freshness SHA; RELEASE reruns Experiments #291 Full/Windows only against that exact refreshed source.
+5. PHX-MASTER refreshes the COE #35 child pointer after this handover commit and preserves the review-only ownership route.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER or COE #26 destination source was overwritten. **PRODUCTION NO-GO** remains in force; protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED.
