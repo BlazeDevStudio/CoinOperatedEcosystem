@@ -818,6 +818,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 raise OSError(errno.EIO, "injected temporary unlink cleanup failure")
             return original_unlink(path, *args, **kwargs)
 
+        supported_dir_fd = set(packager.os.supports_dir_fd) | {
+            fail_temporary_unlink
+        }
         with mock.patch.object(
             packager,
             "_open_parent_directory_without_symlink_parents",
@@ -825,7 +828,9 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         ), mock.patch.object(
             packager.os, "fdopen", side_effect=fail_staged_write
         ), mock.patch.object(
-            packager.os, "unlink", side_effect=fail_temporary_unlink
+            packager.os, "unlink", new=fail_temporary_unlink
+        ), mock.patch.object(
+            packager.os, "supports_dir_fd", supported_dir_fd
         ):
             with self.assertRaisesRegex(
                 OSError, "injected primary staged write failure"
