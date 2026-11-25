@@ -262,5 +262,84 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
             )
 
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_wait_error_still_terminates_background_processes(self):
+        with tempfile.TemporaryDirectory() as root:
+            marker = os.path.join(root, "diagnostic-child-survived")
+            script = os.path.join(root, "diagnostic.sh")
+            with open(script, "w", encoding="utf-8") as fp:
+                fp.write(
+                    "#!/bin/sh\\n"
+                    "(sleep 1; printf 'survived' > \\"$BLAZE_DIAG_TEST_MARKER\\") &\\n"
+                    "sleep 10\\n"
+                )
+
+            env = os.environ.copy()
+            env["BLAZE_DIAG_TEST_MARKER"] = marker
+            real_popen = validator.subprocess.Popen
+
+            def popen_with_one_wait_error(*args, **kwargs):
+                process = real_popen(*args, **kwargs)
+                original_wait = process.wait
+                first_wait = True
+
+                def fail_first_wait(*wait_args, **wait_kwargs):
+                    nonlocal first_wait
+                    if first_wait:
+                        first_wait = False
+                        raise OSError("injected diagnostic wait failure")
+                    return original_wait(*wait_args, **wait_kwargs)
+
+                process.wait = fail_first_wait
+                return process
+
+            with (
+                mock.patch.object(validator, "DIAG_SCRIPT", script),
+                mock.patch.object(
+                    validator.subprocess,
+                    "Popen",
+                    side_effect=popen_with_one_wait_error,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    OSError, "injected diagnostic wait failure"
+                ):
+                    validator.run_appliance_diagnostics("test-router", env)
+
+            time.sleep(1.5)
+            self.assertFalse(
+                os.path.exists(marker),
+                "wait error left a background diagnostic child running",
+            )
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_wait_error_remains_primary_when_process_group_cleanup_raises(self):
+        process = mock.Mock()
+        process.pid = 12345
+        process.wait.side_effect = OSError("primary diagnostic wait failure")
+
+        with (
+            mock.patch.object(
+                validator.subprocess, "Popen", return_value=process
+            ),
+            mock.patch.object(
+                validator,
+                "_terminate_process_groups",
+                side_effect=PermissionError("injected cleanup failure"),
+            ) as terminate,
+        ):
+            with self.assertRaisesRegex(
+                OSError, "primary diagnostic wait failure"
+            ) as raised:
+                validator.run_appliance_diagnostics("test-router", {})
+
+        terminate.assert_called_once_with(process)
+        notes = getattr(raised.exception, "__notes__", [])
+        if hasattr(raised.exception, "add_note"):
+            self.assertTrue(
+                any("injected cleanup failure" in note for note in notes)
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
