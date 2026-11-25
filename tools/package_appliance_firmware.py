@@ -885,6 +885,10 @@ def _write_staging_bytes(directory: str, filename: str, content: bytes, mode: in
                     "Staged temporary-file cleanup failed: "
                     f"{type(unlink_error).__name__}: {unlink_error}"
                 )
+            if directory_fd >= 0:
+                _close_overlay_descriptors_preserving_primary(
+                    [("staged file destination", directory_fd)]
+                )
         elif unlink_error is not None:
             try:
                 raise unlink_error
