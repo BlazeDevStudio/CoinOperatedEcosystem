@@ -917,7 +917,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                 cleanup_calls.append((process_arg, child_pgid))
                 if len(cleanup_calls) == 1:
                     raise cleanup_error
-                return ("", "cleanup retry completed")
+                return ("", "")
 
             def capture_blocked(message, detail=""):
                 blocked_calls.append((message, detail))
@@ -959,7 +959,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
                 stack.enter_context(
                     mock.patch.object(
                         runner, "_recover_available_namespace_child_pgid",
-                        return_value=(None, "namespace child PID not yet available"),
+                        return_value=(202, ""),
                     )
                 )
                 stack.enter_context(
@@ -989,7 +989,7 @@ class TestImageBuilderSandboxProcessCleanup(unittest.TestCase):
             )
             self.assertEqual(
                 cleanup_calls,
-                [(process, None), (process, None)],
+                [(process, None), (process, 202)],
                 "failed cleanup must be retried by the finalizer without replacing the setup error",
             )
 
