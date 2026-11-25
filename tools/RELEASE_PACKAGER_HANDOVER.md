@@ -1,3 +1,55 @@
+## PHX-RELEASE UTC22 — preserve sandbox timeout through cleanup errors (2026-11-25)
+
+**Disposition:** one RELEASE-owned host-preflight defect was reproduced test-first and corrected on the existing COE child draft #35. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment.
+
+### Live identity and bounded scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting branch HEAD: `1789e3146f3acfb4ecb1a17c2eb24bfc45bd6617`.
+- Parent/base PR #31 HEAD: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-first regression commit: [`5a8d5c08`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/5a8d5c08a6949d830dcaf65d60d3828029aae4ab).
+- Source correction commit: [`79c52d85`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/79c52d8563c1d1f56c40e38361e8e50fa6b1ece4).
+- This increment changes exactly `tools/test_imagebuilder_sandbox_host.py`, `tools/check_imagebuilder_sandbox_host.py`, and this handover. No other subsystem or shared-interface path changed.
+
+### Defect and correction
+
+In `check_host()`, `communicate()` can raise `subprocess.TimeoutExpired`. The timeout handler then calls `_terminate_process_groups()` directly. If that cleanup call raises an ordinary exception such as `OSError`, control falls into the outer OSError handler, which reports “could not execute bubblewrap namespace probe” and loses the timeout as the primary cause, including any partial stdout/stderr from the timeout.
+
+The new regression injects a timeout with partial output, makes the first cleanup attempt raise `OSError`, and allows the bounded second attempt to succeed. It asserts that the result remains a timeout, retains both partial output streams and the first cleanup error, and records exactly two cleanup attempts.
+
+The source now catches ordinary cleanup `Exception` values only inside the timeout branch, retries cleanup once, and returns a timeout-primary diagnostic with partial output and cleanup details. It does not catch `KeyboardInterrupt` or `SystemExit`; those continue through the existing outer interruption path and are re-raised after bounded cleanup.
+
+### Test-first and exact-source evidence
+
+- Expected RED, sandbox [#45711329021](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45711329021), job `139546206938`: **42 tests ran; the new regression failed as expected** because “timed out” was absent from the returned diagnostic. The actual message was the generic OSError path; this reproduces the defect.
+- Exact source/test sandbox [#45711464814](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45711464814), job `139546691972`: **42/42 host preflight tests PASS**. The subsequent Bubblewrap availability step failed because Bubblewrap is not installed; unprivileged identity, namespace and mandatory sandbox packaging steps were SKIPPED. This is not a sandbox acceptance pass.
+- Exact source/test shared CI [#45711464961](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45711464961), validation job `139546669436`: **236 tests ran; 234 passed and 2 intentional skips**; firmware-hardening, shared-contract and packaging/tool steps PASS; manifest durability marker `PHX-MANIFEST-DURABILITY-PASS`; synthetic staged profile 1/1 PASS. The later all-profile admission FAILED CLOSED for 10/10 profiles because approved site-scoped RFC 4193 ULA /48 authority is absent; ESP32/ESP8266 compile jobs were skipped. Overall shared workflow: FAILURE, not release-ready.
+- Exact source/test case-collision [#45711464799](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45711464799): PASS.
+
+These are hosted CI/filesystem results only. No real Bubblewrap namespace, ImageBuilder execution, target binary, firmware signing or physical hardware acceptance is established.
+
+### Cross-repository gates and next owners
+
+- Experiments PR #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows release workflow [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed its handover and build-windows jobs. Signing and publication remain gated/skipped.
+- Experiments PR #291 remains OPEN / DRAFT at `9b928c9eaa72cb26fdcf3f0e50a0ec024f4e3c30`; Windows [#45669599214](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599214) fails at the CORE-owned freshness handover (build/publisher skipped); ESP32 compatibility [#45669599322](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599322) passes 3/3; Full [#45669599438](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599438) fails at the same freshness gate while 14 target/platform jobs pass and downstream simulations/signing/publication are skipped. CORE owns canonical freshness; RELEASE must not bypass it.
+- COE integration PR #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows are queued and have zero jobs. No destination migration or writes.
+- COE parent release-packager PR #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; parent shared validation and case-collision passed, while parent sandbox remains blocked at unprivileged namespace setup. Parent evidence is not substituted for child #35.
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at `22c20eeb444bda86a177035b9b1c438b8c715bdb`; ownership routes remain 11 / `DRAFT_REVIEW_ONLY`, and RELEASE's route is `reimplementation-review`. MASTER retains migration/shared-interface authority.
+- Cleanup-first #266 remains OPEN / 0-of-7. Private Drive registry v11 was not recovered through the authorized Library search; no older snapshot was substituted.
+
+### Next actions
+
+1. PHX-QA independently reviews source/test HEAD `79c52d85`, especially timeout-primary preservation, one bounded retry and interruption propagation.
+2. PHX-INFRA supplies an authorized disposable runner with Bubblewrap and unprivileged single-ID namespaces.
+3. PHX-CORE / MASTER supplies approved durable site-scoped ULA /48 authority; RELEASE does not invent a prefix or bypass the ten-profile gate.
+4. PHX-CORE publishes the canonical CURRENT_STATE / PROJECT_HANDOVER freshness SHA for #291; RELEASE reruns only after that exact SHA is published.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+**PRODUCTION NO-GO.** Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED.
+
+---
+
 ## PHX-RELEASE UTC15 — enforce exclusive artifact-directory admission (2026-11-25)
 
 **Disposition:** one RELEASE-owned artifact-manifest admission defect was reproduced test-first and corrected on the existing COE child draft #35. Exact-source manifest/tool tests pass at source/test HEAD `9ff6e952` (227 tests, 2 intentional skips). Integrated profile admission remains blocked by missing approved site-scoped RFC 4193 ULA /48 authority; mandatory Bubblewrap sandbox remains unavailable. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment.
