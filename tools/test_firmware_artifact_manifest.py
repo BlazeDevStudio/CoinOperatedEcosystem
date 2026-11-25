@@ -1160,5 +1160,36 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
 
 
+    def test_writer_refuses_manifest_when_artifact_changes_during_publication(self):
+        manifest_path = self.artifact_dir / MANIFEST_FILENAME
+        checksums_path = self.artifact_dir / CHECKSUMS_FILENAME
+        original_write = manifest_writer._write_new_file
+        changed_payload = b"operator replacement after initial artifact scan"
+
+        def mutate_artifact_before_manifest(directory, filename, content, *args, **kwargs):
+            if filename == MANIFEST_FILENAME:
+                (self.artifact_dir / "firmware.bin").write_bytes(changed_payload)
+            return original_write(directory, filename, content, *args, **kwargs)
+
+        with mock.patch.object(
+            manifest_writer,
+            "_write_new_file",
+            side_effect=mutate_artifact_before_manifest,
+        ):
+            with self.assertRaisesRegex(
+                ManifestError,
+                "artifact files changed while manifest was being published",
+            ):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertEqual(
+            (self.artifact_dir / "firmware.bin").read_bytes(),
+            changed_payload,
+            "rollback must preserve the artifact changed by the concurrent writer",
+        )
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse(checksums_path.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
