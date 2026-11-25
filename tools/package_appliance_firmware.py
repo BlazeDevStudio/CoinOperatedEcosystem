@@ -287,7 +287,7 @@ def generate_network_uci(profile: dict) -> str:
 
 
 def _close_overlay_descriptors_preserving_primary(descriptors):
-    """Attempt every owned overlay descriptor close without masking a scan error."""
+    """Attempt every owned descriptor close without masking an active primary error."""
     primary_error = sys.exc_info()[1]
     close_errors = []
     cleanup_interruptions = []
@@ -326,7 +326,7 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
         interruption = cleanup_interruptions[0][1]
         if hasattr(interruption, "add_note"):
             interruption.add_note(
-                "Additional overlay descriptor cleanup failures: " + details
+                "Additional owned descriptor cleanup failures: " + details
             )
         raise interruption
 
@@ -351,7 +351,7 @@ def _close_overlay_descriptors_preserving_primary(descriptors):
     first_error = close_errors[0][1]
     if hasattr(first_error, "add_note") and len(close_errors) > 1:
         first_error.add_note(
-            "Additional overlay descriptor cleanup failures: "
+            "Additional owned descriptor cleanup failures: "
             + "; ".join(
                 f"{label}: {type(exc).__name__}: {exc}"
                 for label, exc in close_errors[1:]
@@ -931,10 +931,16 @@ def _normalize_staging_directory_mode(path: str, mode: int) -> bool:
             os.fchmod(directory_fd, mode)
         return True
     finally:
-        if directory_fd >= 0:
-            os.close(directory_fd)
-        if parent_fd >= 0:
-            os.close(parent_fd)
+        _close_overlay_descriptors_preserving_primary(
+            [
+                (label, descriptor)
+                for label, descriptor in (
+                    ("staged directory", directory_fd),
+                    ("staged directory parent", parent_fd),
+                )
+                if descriptor >= 0
+            ]
+        )
 
 
 def _normalize_staging_file_mode(path: str, mode: int) -> bool:
@@ -998,10 +1004,16 @@ def _normalize_staging_file_mode(path: str, mode: int) -> bool:
             file_fd = -1
             content = staged_file.read()
     finally:
-        if file_fd >= 0:
-            os.close(file_fd)
-        if parent_fd >= 0:
-            os.close(parent_fd)
+        _close_overlay_descriptors_preserving_primary(
+            [
+                (label, descriptor)
+                for label, descriptor in (
+                    ("staged file", file_fd),
+                    ("staged file parent", parent_fd),
+                )
+                if descriptor >= 0
+            ]
+        )
 
     _write_staging_bytes(
         os.path.dirname(absolute_path),

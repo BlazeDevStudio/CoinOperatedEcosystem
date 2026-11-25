@@ -4076,6 +4076,101 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertEqual(failures, [])
 
 
+    def test_normalize_staging_directory_mode_attempts_all_descriptor_closes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = os.path.join(temp_dir, "permission-directory")
+            os.mkdir(target, 0o700)
+            parent_fd, name = packager._open_parent_directory_without_symlink_parents(
+                target,
+                "Staged directory permission target",
+                "Safe staged directory permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+                "Invalid staged directory permission target",
+            )
+
+            real_close = packager.os.close
+            closed_descriptors = []
+
+            def close_then_fail_first(descriptor):
+                closed_descriptors.append(descriptor)
+                real_close(descriptor)
+                if len(closed_descriptors) == 1:
+                    raise OSError(errno.EIO, "injected first descriptor close failure")
+
+            with mock.patch.object(
+                packager, "_open_parent_directory_without_symlink_parents",
+                return_value=(parent_fd, name),
+            ):
+                with mock.patch.object(
+                    packager.os, "fchmod", side_effect=RuntimeError("primary fchmod failure")
+                ):
+                    with mock.patch.object(
+                        packager.os, "close", side_effect=close_then_fail_first
+                    ):
+                        with self.assertRaisesRegex(
+                            RuntimeError, "primary fchmod failure"
+                        ) as raised:
+                            packager._normalize_staging_directory_mode(target, 0o755)
+
+            self.assertEqual(len(closed_descriptors), 2)
+            self.assertEqual(len(set(closed_descriptors)), 2)
+            self.assertTrue(
+                any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
+                "descriptor cleanup failure must be retained as a note on the primary error",
+            )
+            for descriptor in closed_descriptors:
+                with self.assertRaises(OSError) as error:
+                    os.fstat(descriptor)
+                self.assertEqual(error.exception.errno, errno.EBADF)
+
+    def test_normalize_staging_file_mode_attempts_all_descriptor_closes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = os.path.join(temp_dir, "permission-file")
+            with open(target, "wb") as fp:
+                fp.write(b"staged")
+            os.chmod(target, 0o600)
+            parent_fd, name = packager._open_parent_directory_without_symlink_parents(
+                os.path.abspath(target),
+                "Staged file permission target",
+                "Safe staged file permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+                "Invalid staged file permission target",
+            )
+
+            real_close = packager.os.close
+            closed_descriptors = []
+
+            def close_then_fail_first(descriptor):
+                closed_descriptors.append(descriptor)
+                real_close(descriptor)
+                if len(closed_descriptors) == 1:
+                    raise OSError(errno.EIO, "injected first descriptor close failure")
+
+            with mock.patch.object(
+                packager, "_open_parent_directory_without_symlink_parents",
+                return_value=(parent_fd, name),
+            ):
+                with mock.patch.object(
+                    packager.os, "fdopen", side_effect=RuntimeError("primary fdopen failure")
+                ):
+                    with mock.patch.object(
+                        packager.os, "close", side_effect=close_then_fail_first
+                    ):
+                        with self.assertRaisesRegex(
+                            RuntimeError, "primary fdopen failure"
+                        ) as raised:
+                            packager._normalize_staging_file_mode(target, 0o755)
+
+            self.assertEqual(len(closed_descriptors), 2)
+            self.assertEqual(len(set(closed_descriptors)), 2)
+            self.assertTrue(
+                any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
+                "descriptor cleanup failure must be retained as a note on the primary error",
+            )
+            for descriptor in closed_descriptors:
+                with self.assertRaises(OSError) as error:
+                    os.fstat(descriptor)
+                self.assertEqual(error.exception.errno, errno.EBADF)
+
+
 class TestImageBuilderSandboxTimeouts(unittest.TestCase):
     def test_unprivileged_identity_maps_only_the_invoking_uid_gid(self):
         with mock.patch.object(run_imagebuilder_sandbox.os, "getuid", return_value=1001):
@@ -4437,99 +4532,6 @@ class TestImageBuilderSandboxTimeouts(unittest.TestCase):
 
 
 
-    def test_normalize_staging_directory_mode_attempts_all_descriptor_closes(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            target = os.path.join(temp_dir, "permission-directory")
-            os.mkdir(target, 0o700)
-            parent_fd, name = packager._open_parent_directory_without_symlink_parents(
-                target,
-                "Staged directory permission target",
-                "Safe staged directory permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
-                "Invalid staged directory permission target",
-            )
-
-            real_close = packager.os.close
-            closed_descriptors = []
-
-            def close_then_fail_first(descriptor):
-                closed_descriptors.append(descriptor)
-                real_close(descriptor)
-                if len(closed_descriptors) == 1:
-                    raise OSError(errno.EIO, "injected first descriptor close failure")
-
-            with mock.patch.object(
-                packager, "_open_parent_directory_without_symlink_parents",
-                return_value=(parent_fd, name),
-            ):
-                with mock.patch.object(
-                    packager.os, "fchmod", side_effect=RuntimeError("primary fchmod failure")
-                ):
-                    with mock.patch.object(
-                        packager.os, "close", side_effect=close_then_fail_first
-                    ):
-                        with self.assertRaisesRegex(
-                            RuntimeError, "primary fchmod failure"
-                        ) as raised:
-                            packager._normalize_staging_directory_mode(target, 0o755)
-
-            self.assertEqual(len(closed_descriptors), 2)
-            self.assertEqual(len(set(closed_descriptors)), 2)
-            self.assertTrue(
-                any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
-                "descriptor cleanup failure must be retained as a note on the primary error",
-            )
-            for descriptor in closed_descriptors:
-                with self.assertRaises(OSError) as error:
-                    os.fstat(descriptor)
-                self.assertEqual(error.exception.errno, errno.EBADF)
-
-    def test_normalize_staging_file_mode_attempts_all_descriptor_closes(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            target = os.path.join(temp_dir, "permission-file")
-            with open(target, "wb") as fp:
-                fp.write(b"staged")
-            os.chmod(target, 0o600)
-            parent_fd, name = packager._open_parent_directory_without_symlink_parents(
-                os.path.abspath(target),
-                "Staged file permission target",
-                "Safe staged file permissions require POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
-                "Invalid staged file permission target",
-            )
-
-            real_close = packager.os.close
-            closed_descriptors = []
-
-            def close_then_fail_first(descriptor):
-                closed_descriptors.append(descriptor)
-                real_close(descriptor)
-                if len(closed_descriptors) == 1:
-                    raise OSError(errno.EIO, "injected first descriptor close failure")
-
-            with mock.patch.object(
-                packager, "_open_parent_directory_without_symlink_parents",
-                return_value=(parent_fd, name),
-            ):
-                with mock.patch.object(
-                    packager.os, "fdopen", side_effect=RuntimeError("primary fdopen failure")
-                ):
-                    with mock.patch.object(
-                        packager.os, "close", side_effect=close_then_fail_first
-                    ):
-                        with self.assertRaisesRegex(
-                            RuntimeError, "primary fdopen failure"
-                        ) as raised:
-                            packager._normalize_staging_file_mode(target, 0o755)
-
-            self.assertEqual(len(closed_descriptors), 2)
-            self.assertEqual(len(set(closed_descriptors)), 2)
-            self.assertTrue(
-                any("cleanup" in note.lower() for note in getattr(raised.exception, "__notes__", [])),
-                "descriptor cleanup failure must be retained as a note on the primary error",
-            )
-            for descriptor in closed_descriptors:
-                with self.assertRaises(OSError) as error:
-                    os.fstat(descriptor)
-                self.assertEqual(error.exception.errno, errno.EBADF)
 
 
 if __name__ == "__main__":
