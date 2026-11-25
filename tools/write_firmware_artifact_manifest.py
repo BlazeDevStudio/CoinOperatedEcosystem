@@ -663,6 +663,26 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
                 directory_descriptor=directory_descriptor,
                 created_paths=created,
             )
+
+            # Revalidate every original artifact after the manifest pair has
+            # been written. A same-UID build helper can otherwise mutate a
+            # payload after the first scan but before publication completes,
+            # leaving a successful manifest with a stale payload digest.
+            expected_records = json.loads(manifest_bytes.decode("utf-8"))["files"]
+            current_records = _scan_artifact_files(
+                artifact_dir,
+                directory_descriptor=directory_descriptor,
+            )
+            current_artifact_records = [
+                item
+                for item in current_records
+                if item["path"] not in (MANIFEST_FILENAME, CHECKSUMS_FILENAME)
+            ]
+            if current_artifact_records != expected_records:
+                raise ManifestError(
+                    "artifact files changed while manifest was being published"
+                )
+
             os.fsync(directory_descriptor)
             _require_artifact_directory_identity(artifact_dir, directory_descriptor)
         except BaseException as publication_error:
