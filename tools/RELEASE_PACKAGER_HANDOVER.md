@@ -5213,3 +5213,57 @@ The source/test increment changed only tools/package_appliance_firmware.py and t
 6. Registry custodian restores authorized provenance-only access to private Drive registry v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC00 — permission-normalizer descriptor cleanup
+
+**Task:** PHX-RELEASE-20261125T00-PERMISSION-NORMALIZER-DESCRIPTOR-CLEANUP  
+**PR:** [#35 — OPEN / DRAFT / UNMERGED](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35)  
+**Branch:** phoenix/release-build-script-publication-safety-20261117  
+**Starting HEAD:** 599476d15085c1eed4edb8dc9bc25685414eb3ab  
+**Source/test HEAD:** a514e57d789d821cea0f0a29e3e864dad0570046
+
+### Defect and correction
+
+The release-owned `_normalize_staging_directory_mode()` and `_normalize_staging_file_mode()` routines each held a child descriptor and its parent-directory descriptor, then closed them sequentially in `finally`. If the first close raised after the descriptor had actually been closed, the second close was skipped and the cleanup exception replaced an active permission-normalization failure.
+
+Both paths now use the existing all-descriptor cleanup helper with explicit labels. It attempts every still-owned descriptor, preserves an active primary exception, attaches cleanup diagnostics, and propagates the first cleanup error only when there is no primary exception. The shared helper's diagnostic wording now says "owned descriptor" rather than "overlay descriptor". The two tests are grouped with `TestPackageApplianceFirmware`.
+
+No permission mode, profile value, staged content, manifest, firmware, shared interface, or non-RELEASE-owned path changed.
+
+### Test-first evidence
+
+- Initial test-only commit [ede9bba1](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ede9bba1d05fd90933cd11ce2af8d6863144f0e4) had an invalid fixture: the tests were placed in a class without `temp_dir`. Push [#45516982838](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45516982838) reported two fixture errors; this is **not** product RED.
+- Fixture correction [df03dfbb](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/df03dfbb520ac6728ea00814462a6110c0839040) still injected the close failure during parent-path setup rather than the permission normalizer. Run [#45517144690](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517144690) is also an **invalid fixture attempt**, not product RED.
+- Corrected isolated-descriptor fixture [a15c60d4](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a15c60d492146975674286c6b850639d8374dc16) produced expected RED in [#45517358582](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517358582): 219 tests, two new errors, two intentional skips. Both regressions reproduced an injected first-close `OSError(EIO)` replacing the primary `fchmod` or `fdopen` error.
+- Source/test correction [a514e57d](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a514e57d789d821cea0f0a29e3e864dad0570046).
+
+### Exact-source CI at a514e57d
+
+- Push shared/firmware [#45517568556](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517568556): packaging/tool suite **219 PASS / 2 intentional skips**; shared-contract checks PASS; then all ten appliance profiles **FAIL CLOSED** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32/ESP8266 compile jobs SKIPPED. Overall workflow: **FAILURE**, not release-ready.
+- PR shared/firmware [#45517576258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517576258): same exact-source test and profile results; overall **FAILURE**.
+- PR sandbox [#45517576269](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517576269): host preflight **40/40 PASS**; Bubblewrap unavailable, mandatory gate exits 125; namespace and real sandbox packaging steps SKIPPED.
+- PR case-collision [#45517576300](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517576300): **PASS**.
+
+These are hosted CI/unit-test results only. No ImageBuilder binary, board firmware artifact, physical appliance acceptance, signing, or publication was produced.
+
+### Live ownership and integration state
+
+- MASTER #288: OPEN / DRAFT at HEAD `263c679248aeb0eaeeefeb4190060defa07aee02`. `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` has 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's route remains `reimplementation-review`. MASTER must refresh its COE #35 child pointer after this source/test and handover update. RELEASE did not edit MASTER files.
+- Experiments #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; #291 remains OPEN / DRAFT at `53fc8a1c558f80adde19dc675b879c78797f0cd5`. Compatibility [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed 3/3. Full build [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) failed CORE-owned handover freshness after all 14 target/platform jobs and Android passed; downstream release stages skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) failed the same freshness gate before build/publisher. CORE owns the canonical freshness record.
+- COE #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; this #35 branch remains OPEN / DRAFT / UNMERGED. No migration or destination write occurred.
+- Cleanup-first #266 remains OPEN / 0-of-7.
+- Authorized Library retrieval surfaced only a generic registry snapshot with schema 1.0 / 39 canonical projects / 2026-10-26 timestamp. It does not establish private Drive registry v11 or remote readback. No older snapshot was substituted; no private identifiers were copied here.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test SHA `a514e57d`, including the two primary-error and all-descriptor-close regressions.
+2. PHX-CORE / PHX-MASTER provide approved site-scoped RFC 4193 ULA /48 authority; RELEASE reruns profile admission only after authority is published.
+3. PHX-INFRA / COE owner provide an authorized disposable no-secret runner with Bubblewrap and functioning unprivileged single-ID namespaces; no privileged installation or unsandboxed fallback.
+4. PHX-CORE refreshes the canonical BlazePwifi handover for #291; RELEASE reruns exact-head build and Windows validation after the new SHA is published.
+5. PHX-MASTER refreshes the COE #35 child pointer after this handover commit.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
