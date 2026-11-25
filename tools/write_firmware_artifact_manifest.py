@@ -663,6 +663,82 @@ def _write_new_file(
     return path
 
 
+def _verify_published_output(
+    *,
+    directory_descriptor: int,
+    filename: str,
+    expected_identity: tuple[int, int],
+    expected_content: bytes,
+) -> None:
+    """Re-read one newly published manifest output through the pinned directory."""
+    descriptor = -1
+    changed_message = (
+        f"published manifest output changed during publication: {filename}"
+    )
+
+    def snapshot(info: os.stat_result) -> tuple[int, ...]:
+        return (
+            info.st_dev,
+            info.st_ino,
+            info.st_mode,
+            info.st_nlink,
+            info.st_size,
+            info.st_mtime_ns,
+            info.st_ctime_ns,
+        )
+
+    try:
+        descriptor = os.open(
+            filename,
+            os.O_RDONLY | os.O_NOFOLLOW,
+            dir_fd=directory_descriptor,
+        )
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_uid != os.geteuid()
+            or opened.st_nlink != 1
+            or (opened.st_dev, opened.st_ino) != expected_identity
+        ):
+            raise ManifestError(changed_message)
+
+        content = bytearray()
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            content.extend(chunk)
+
+        finished = os.fstat(descriptor)
+        try:
+            current = os.stat(
+                filename,
+                dir_fd=directory_descriptor,
+                follow_symlinks=False,
+            )
+        except (OSError, TypeError, NotImplementedError) as exc:
+            raise ManifestError(f"{changed_message}: {exc}") from exc
+
+        if (
+            not stat.S_ISREG(finished.st_mode)
+            or finished.st_uid != os.geteuid()
+            or finished.st_nlink != 1
+            or (finished.st_dev, finished.st_ino) != expected_identity
+            or snapshot(opened) != snapshot(finished)
+            or snapshot(finished) != snapshot(current)
+            or len(content) != opened.st_size
+            or bytes(content) != expected_content
+        ):
+            raise ManifestError(changed_message)
+    except (OSError, TypeError, NotImplementedError) as exc:
+        raise ManifestError(f"{changed_message}: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            _close_descriptor_preserving_primary(
+                descriptor, f"published manifest output {filename}"
+            )
+
+
 def write_artifact_manifest(**kwargs) -> tuple[str, str]:
     """Publish the manifest pair, rolling back on failures and Python-level interruptions."""
     artifact_dir = os.path.abspath(os.fspath(kwargs["artifact_dir"]))
@@ -721,6 +797,17 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
             if current_artifact_records != expected_records:
                 raise ManifestError(
                     "artifact files changed while manifest was being published"
+                )
+
+            for filename, expected_content in (
+                (MANIFEST_FILENAME, manifest_bytes),
+                (CHECKSUMS_FILENAME, checksums_bytes),
+            ):
+                _verify_published_output(
+                    directory_descriptor=directory_descriptor,
+                    filename=filename,
+                    expected_identity=created_output_identities[filename],
+                    expected_content=expected_content,
                 )
 
             os.fsync(directory_descriptor)
