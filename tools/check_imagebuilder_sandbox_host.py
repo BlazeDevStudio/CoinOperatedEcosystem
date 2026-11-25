@@ -88,9 +88,21 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
         try:
             stdout, stderr = process.communicate(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
-            cleanup_stdout, cleanup_stderr = _terminate_process_groups(
-                process, grace_seconds=0.25
-            )
+            cleanup_stdout = ""
+            cleanup_stderr = ""
+            cleanup_errors = []
+            for attempt in range(2):
+                try:
+                    cleanup_stdout, cleanup_stderr = _terminate_process_groups(
+                        process, grace_seconds=0.25
+                    )
+                    break
+                except Exception as cleanup_error:
+                    cleanup_errors.append(
+                        f"process-group cleanup attempt {attempt + 1} raised "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+
             detail = "\\n".join(
                 part
                 for part in (
@@ -98,10 +110,13 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
                     _as_text(cleanup_stderr),
                     _as_text(exc.stdout),
                     _as_text(exc.stderr),
+                    *cleanup_errors,
                 )
                 if part
             ).strip()
             message = f"bubblewrap namespace probe timed out after {timeout_seconds:g} seconds"
+            if len(cleanup_errors) == 2:
+                message = f"{message}; process-group cleanup not confirmed after 2 attempts"
             return False, f"{message}: {detail}" if detail else message
 
         cleanup_stdout, cleanup_stderr = _terminate_process_groups(
