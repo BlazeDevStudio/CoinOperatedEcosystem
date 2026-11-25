@@ -789,6 +789,135 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                 )
 
 
+    def test_write_new_file_retries_close_interrupted_before_underlying_close(self):
+        original_fdopen = os.fdopen
+
+        for interruption_type in (KeyboardInterrupt, SystemExit):
+            with self.subTest(interruption=interruption_type.__name__):
+                output_path = self.artifact_dir / (
+                    f"close-before-underlying-{interruption_type.__name__.lower()}.bin"
+                )
+                descriptors = []
+
+                class InterruptBeforeCloseOutput:
+                    def __init__(self, descriptor, mode):
+                        self.stream = original_fdopen(descriptor, mode)
+                        self.close_calls = 0
+                        descriptors.append(self.stream.fileno())
+
+                    @property
+                    def closed(self):
+                        return self.stream.closed
+
+                    def write(self, content):
+                        return self.stream.write(content)
+
+                    def flush(self):
+                        return self.stream.flush()
+
+                    def fileno(self):
+                        return self.stream.fileno()
+
+                    def close(self):
+                        self.close_calls += 1
+                        if self.close_calls == 1:
+                            raise interruption_type(
+                                "injected close interruption before underlying close"
+                            )
+                        return self.stream.close()
+
+                with mock.patch.object(
+                    manifest_writer.os,
+                    "fdopen",
+                    side_effect=InterruptBeforeCloseOutput,
+                ):
+                    with self.assertRaises(interruption_type):
+                        manifest_writer._write_new_file(
+                            str(self.artifact_dir),
+                            output_path.name,
+                            b"artifact bytes",
+                        )
+
+                self.assertFalse(
+                    output_path.exists(),
+                    "output must be removed after an interrupted close",
+                )
+                descriptor = descriptors[0]
+                try:
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptor)
+                finally:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+
+    def test_write_new_file_retries_interrupted_close_after_primary_write_error(self):
+        original_fdopen = os.fdopen
+        output_path = self.artifact_dir / "write-error-close-before-underlying.bin"
+        descriptors = []
+
+        class InterruptBeforeCloseOutput:
+            def __init__(self, descriptor, mode):
+                self.stream = original_fdopen(descriptor, mode)
+                self.close_calls = 0
+                descriptors.append(self.stream.fileno())
+
+            @property
+            def closed(self):
+                return self.stream.closed
+
+            def write(self, content):
+                raise OSError("primary output write failure")
+
+            def flush(self):
+                return self.stream.flush()
+
+            def fileno(self):
+                return self.stream.fileno()
+
+            def close(self):
+                self.close_calls += 1
+                if self.close_calls == 1:
+                    raise KeyboardInterrupt(
+                        "secondary close interruption before underlying close"
+                    )
+                return self.stream.close()
+
+        with mock.patch.object(
+            manifest_writer.os,
+            "fdopen",
+            side_effect=InterruptBeforeCloseOutput,
+        ):
+            with self.assertRaisesRegex(
+                OSError, "primary output write failure"
+            ) as raised:
+                manifest_writer._write_new_file(
+                    str(self.artifact_dir),
+                    output_path.name,
+                    b"artifact bytes",
+                )
+
+        self.assertFalse(
+            output_path.exists(),
+            "failed output must be removed after the interrupted close",
+        )
+        notes = getattr(raised.exception, "__notes__", [])
+        self.assertTrue(
+            any("secondary close interruption before underlying close" in note for note in notes),
+            f"expected interrupted close diagnostic on primary error, got {notes!r}",
+        )
+        descriptor = descriptors[0]
+        try:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+        finally:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
     def test_writer_rolls_back_outputs_when_interrupted_after_helper_returns(self):
         original_write = manifest_writer._write_new_file
 
