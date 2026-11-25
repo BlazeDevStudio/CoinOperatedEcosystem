@@ -69,6 +69,33 @@ def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.Complete
             message += f"; process-group cleanup failed: {detail}"
         raise RuntimeError(message) from exc
 
+
+    except BaseException as primary_error:
+        # A failed/interrupted wait must not leave the diagnostics session running.
+        # Preserve the wait exception if process-group cleanup also fails.
+        try:
+            _, cleanup_stderr = _terminate_process_groups(process)
+        except BaseException as cleanup_error:
+            cleanup_detail = (
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            )
+        else:
+            cleanup_detail = (
+                cleanup_stderr.strip()
+                if _process_group_cleanup_failed(cleanup_stderr)
+                else ""
+            )
+
+        if cleanup_detail:
+            note = (
+                "diagnostic process-group cleanup after "
+                f"{type(primary_error).__name__} also failed: {cleanup_detail}"
+            )
+            add_note = getattr(primary_error, "add_note", None)
+            if callable(add_note):
+                add_note(note)
+        raise
+
     # Wait for the leader, not communicate(): descendants may keep the pipes
     # open after the shell exits. The shared helper kills/reaps that whole group.
     stdout, stderr = _terminate_process_groups(process)
