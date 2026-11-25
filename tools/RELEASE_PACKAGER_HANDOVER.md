@@ -5267,3 +5267,57 @@ These are hosted CI/unit-test results only. No ImageBuilder binary, board firmwa
 6. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC01 — staged-file cleanup preserves the primary write failure
+
+**Task:** PHX-RELEASE-20261125T01-STAGING-WRITER-CLEANUP  
+**PR:** [#35 — OPEN / DRAFT / UNMERGED](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35)  
+**Branch:** \`phoenix/release-build-script-publication-safety-20261117\`  
+**Parent #31 / PR base:** \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`  
+**Starting branch HEAD:** \`ecc1d3d4ad0c4564743a17e8155d524d805738de\`  
+**Final source/test HEAD:** \`eda86d1f2c6f6bef8e6ff1111329d3f1775e043b\`
+
+### Defect and correction
+
+\`_write_staging_bytes()\` could let a temporary-file unlink failure replace the primary staged-write exception. The old outer \`finally\` also skipped closing the pinned destination-directory descriptor when \`os.unlink()\` raised. A separate bare close of the raw temporary-file descriptor could likewise mask an active \`fdopen()\` failure.
+
+The source now routes the raw temporary-file descriptor and destination-directory descriptor through the existing exception-preserving owned-descriptor cleanup helper. Temporary-file unlink failures are attached to the active primary exception as a cleanup note; the directory descriptor is still closed. If no primary operation error exists, cleanup errors remain visible and are not silently swallowed. Atomic same-directory replacement, no-follow path handling, hardlink protection, mode, file sync and directory sync behavior are unchanged.
+
+### Test-first evidence
+
+- Initial regression commit [\`9cab08a0\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9cab08a0d72423491d6ab1267b079610cd96464e) had an invalid fixture: replacing \`os.unlink\` changed its identity in \`os.supports_dir_fd\`, so the capability guard failed before the target path. Push [#45524650997](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45524650997) ran 220 tests with one fixture failure and two skips. This is **not product RED**.
+- Corrected fixture commit [\`c6279aa8\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c6279aa8918f3b6ba64f6da378c8639ec117d2cc) adds the patched unlink callable to the test-only \`supports_dir_fd\` capability set.
+- Expected RED at the corrected test head: shared CI [#45524838404](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45524838404). **220 tests, one expected failure, two intentional skips.** The injected temporary unlink error replaced the primary staged-write error. This reproduced the product defect.
+- First source-fix attempt [\`bb5daff2\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bb5daff2d3d27a657dd31798d33a3cdc068a6214) was incomplete: exact-source run [#45524982191](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45524982191) still failed the regression's parent-descriptor-closed assertion. The cleanup-note branch had omitted the directory close. This failure is recorded, not hidden.
+- Final source correction [\`eda86d1f\`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/eda86d1f2c6f6bef8e6ff1111329d3f1775e043b).
+
+### Exact-source CI at \`eda86d1f\`
+
+- Shared/firmware [#45525124534](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45525124534): **220 tests ran; 218 passed and 2 intentional skips; zero unit-test failures.** Firmware hardening/syntax, shared contracts/router-profile unit checks, and packaging/tool tests passed. The subsequent end-to-end profile admission failed closed for **10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is absent. ESP32/ESP8266 compile jobs were skipped. Overall workflow: **FAILURE**, not release-ready.
+- Mandatory ImageBuilder sandbox [#45525124487](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45525124487): host preflight **40/40 PASS**; Bubblewrap is absent, so the mandatory sandbox gate exited **125**. Unprivileged namespace and packaging steps were skipped. No privileged install or unsandboxed fallback.
+- Case-collision guard [#45525124403](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45525124403): **PASS**.
+
+### Live cross-repository ownership and CI
+
+- MASTER #288: OPEN / DRAFT at HEAD \`30369ee731f0b77e502b1e2691c39bfc9fa59cdb\`. The ownership manifest remains 11 routes / \`DRAFT_REVIEW_ONLY\`; PHX-RELEASE's route remains \`reimplementation-review\`. MASTER owns its child pointer and must refresh COE #35 from the prior \`ecc1d3d4\` to the final handover head after this commit. RELEASE changed no MASTER coordination path.
+- Experiments #242: OPEN / DRAFT at \`734b89d9e7792247e8376335c3f3685500ab3f89\`. Windows [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) succeeded; its real signer and GitHub Release publication steps were skipped.
+- Experiments #291: OPEN / DRAFT at \`53fc8a1c558f80adde19dc675b879c78797f0cd5\`, based on #242. ESP32 compatibility [#45485465888](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465888) passed. Full build [#45485465992](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465992) failed the CORE-owned mandatory handover freshness gate; target/platform and Android jobs passed, downstream update/simulation/sign/publish stages skipped. Windows [#45485465901](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45485465901) failed the same freshness gate before build/publisher. CORE owns the canonical freshness record.
+- COE integration #26 remains OPEN / DRAFT / FROZEN at \`b382d233ff06c8791b1028bed3c617cc7b670d12\`; five workflows are queued with zero jobs. Parent release-packager #31 remains OPEN / DRAFT at \`59ed44d0b911e176f1a95b9cf5585ef811ffd31b\`. Its last recorded shared-contract and case-collision runs passed, while its mandatory sandbox failed on the missing Bubblewrap runner.
+- Cleanup-first #266 remains OPEN / 0-of-7; the RELEASE track is not marked complete.
+- Authorized Library search found older registry snapshots and the storage policy, but no private Drive registry v11 revision or remote readback. No older registry was substituted, and no private IDs or contents were copied into this handover.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test HEAD \`eda86d1f\`, especially primary write-error preservation, cleanup-note visibility, temporary-file residue after an injected unlink failure, and parent descriptor closure.
+2. PHX-CORE / PHX-MASTER publish approved site-scoped RFC 4193 ULA /48 authority; RELEASE reruns the ten-profile admission gate only after that authority is supplied.
+3. PHX-INFRA / COE owner provide an authorized disposable no-secret runner with Bubblewrap and working unprivileged single-ID namespaces; RELEASE reruns mandatory sandbox packaging.
+4. PHX-CORE refreshes the canonical BlazePwifi handover for #291; RELEASE reruns full-build and Windows validation against the exact refreshed SHA.
+5. PHX-MASTER refreshes its #35 child pointer after this handover commit.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+This increment changes only \`tools/package_appliance_firmware.py\`, \`tools/test_package_appliance_firmware.py\`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, COE #26 destination, financial state, network authority, firmware, shared interface, signer, or production configuration was changed.
+
+No merge, rebase, signing, tag, publication, hardware flash, payment migration, or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approvals, approved production binaries, 150 physical power cuts, and 30-device/24-hour soak remain unproven or NOT TESTED. **PRODUCTION NO-GO.**
