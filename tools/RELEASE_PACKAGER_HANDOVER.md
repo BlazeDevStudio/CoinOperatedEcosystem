@@ -5242,7 +5242,7 @@ No permission mode, profile value, staged content, manifest, firmware, shared in
 
 ### Exact-source CI at a514e57d
 
-- Push shared/firmware [#45517568556](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517568556): packaging/tool suite **219 PASS / 2 intentional skips**; shared-contract checks PASS; then all ten appliance profiles **FAIL CLOSED** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32/ESP8266 compile jobs SKIPPED. Overall workflow: **FAILURE**, not release-ready.
+- Push shared/firmware [#45517568556](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517568556): packaging/tool suite **217 PASS / 2 intentional skips (219 total)**; shared-contract checks PASS; then all ten appliance profiles **FAIL CLOSED** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32/ESP8266 compile jobs SKIPPED. Overall workflow: **FAILURE**, not release-ready.
 - PR shared/firmware [#45517576258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517576258): same exact-source test and profile results; overall **FAILURE**.
 - PR sandbox [#45517576269](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517576269): host preflight **40/40 PASS**; Bubblewrap unavailable, mandatory gate exits 125; namespace and real sandbox packaging steps SKIPPED.
 - PR case-collision [#45517576300](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45517576300): **PASS**.
