@@ -696,6 +696,10 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
             def __init__(self, descriptor, mode):
                 self.stream = original_fdopen(descriptor, mode)
 
+            @property
+            def closed(self):
+                return self.stream.closed
+
             def __enter__(self):
                 return self
 
@@ -748,6 +752,10 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
                 class CloseInterruptingOutput:
                     def __init__(self, descriptor, mode):
                         self.stream = original_fdopen(descriptor, mode)
+
+                    @property
+                    def closed(self):
+                        return self.stream.closed
 
                     def write(self, content):
                         raise OSError("primary output write failure")
