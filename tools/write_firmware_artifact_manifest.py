@@ -434,19 +434,64 @@ def _require_artifact_directory_identity(
         )
 
 
+
+def _unlink_created_output_if_unchanged(
+    *,
+    path: str,
+    filename: str,
+    directory_descriptor: int | None,
+    expected_identity: tuple[int, int] | None,
+) -> None:
+    """Remove only the regular file still named by this invocation's created inode."""
+    if expected_identity is None:
+        raise ManifestError(
+            f"refusing to remove output without a verified creation identity: {filename}"
+        )
+
+    try:
+        if directory_descriptor is None:
+            current = os.stat(path, follow_symlinks=False)
+        else:
+            current = os.stat(
+                filename,
+                dir_fd=directory_descriptor,
+                follow_symlinks=False,
+            )
+    except FileNotFoundError:
+        return
+
+    if (
+        not stat.S_ISREG(current.st_mode)
+        or (current.st_dev, current.st_ino) != expected_identity
+    ):
+        raise ManifestError(
+            f"refusing to remove output replaced after creation: {filename}"
+        )
+
+    try:
+        if directory_descriptor is None:
+            os.unlink(path)
+        else:
+            os.unlink(filename, dir_fd=directory_descriptor)
+    except FileNotFoundError:
+        # Another actor already removed the exact entry after the identity check.
+        return
+
+
 def _write_new_file(
     directory: str,
     filename: str,
     content: bytes,
     *,
     directory_descriptor: int | None = None,
-    created_paths: list[str] | None = None,
+    created_paths: list[tuple[str, tuple[int, int]]] | None = None,
 ) -> str:
     """Create and sync one new output, durably removing it if writing fails or is interrupted."""
     path = os.path.join(directory, filename)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     descriptor = -1
     output = None
+    created_identity: tuple[int, int] | None = None
 
     def add_cleanup_note(
         primary_error: BaseException,
@@ -486,12 +531,12 @@ def _write_new_file(
                     f"close partial output: {type(exc).__name__}: {exc}"
                 )
         try:
-            if directory_descriptor is None:
-                os.unlink(path)
-            else:
-                os.unlink(filename, dir_fd=directory_descriptor)
-        except FileNotFoundError:
-            pass
+            _unlink_created_output_if_unchanged(
+                path=path,
+                filename=filename,
+                directory_descriptor=directory_descriptor,
+                expected_identity=created_identity,
+            )
         except BaseException as exc:
             rollback_errors.append(
                 f"remove partial output: {type(exc).__name__}: {exc}"
@@ -523,8 +568,12 @@ def _write_new_file(
                 0o644,
                 dir_fd=directory_descriptor,
             )
+        created_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(created_stat.st_mode):
+            raise ManifestError("new artifact output descriptor is not a regular file")
+        created_identity = (created_stat.st_dev, created_stat.st_ino)
         if created_paths is not None:
-            created_paths.append(path)
+            created_paths.append((path, created_identity))
     except BaseException as creation_error:
         if descriptor >= 0:
             rollback(creation_error)
@@ -580,7 +629,7 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
         manifest_bytes, checksums_bytes = build_artifact_manifest_payloads(**payload_kwargs)
         _require_artifact_directory_identity(artifact_dir, directory_descriptor)
 
-        created: list[str] = []
+        created: list[tuple[str, tuple[int, int]]] = []
         try:
             _write_new_file(
                 artifact_dir,
@@ -600,14 +649,18 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
             _require_artifact_directory_identity(artifact_dir, directory_descriptor)
         except BaseException as publication_error:
             rollback_errors: list[str] = []
-            for path in reversed(created):
+            for path, created_identity in reversed(created):
+                filename = os.path.basename(path)
                 try:
-                    os.unlink(os.path.basename(path), dir_fd=directory_descriptor)
-                except FileNotFoundError:
-                    pass
+                    _unlink_created_output_if_unchanged(
+                        path=path,
+                        filename=filename,
+                        directory_descriptor=directory_descriptor,
+                        expected_identity=created_identity,
+                    )
                 except BaseException as exc:
                     rollback_errors.append(
-                        f"remove {os.path.basename(path)}: {type(exc).__name__}: {exc}"
+                        f"remove {filename}: {type(exc).__name__}: {exc}"
                     )
             if created:
                 try:
