@@ -1,3 +1,62 @@
+## PHX-RELEASE UTC23 — revalidate published manifest and checksum bytes (2026-11-25T23:20Z)
+
+**Disposition:** one RELEASE-owned artifact-integrity defect was reproduced test-first and corrected on existing child draft PR #35. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch identity and scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Child PR #35 branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting HEAD: `6a783576297dd612176289cfb0f654e4ff8eb6a1`.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-only regression commit: [`441bc807`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/441bc80726e4f0cf8694a723b423122ffb073dc8).
+- Source correction commit: [`dae31c4b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/dae31c4ba9ebd7f69c24c64b851a2684a1b7608e).
+- Source/test HEAD: `dae31c4ba9ebd7f69c24c64b851a2684a1b7608e`.
+- Increment scope is exactly `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, shared-interface or COE #26 destination source changed.
+
+### Defect and correction
+
+The manifest publisher already rescanned the original payload tree after writing the manifest pair, and it checked the created output inode identities during that scan. However, the manifest and `SHA256SUMS` files themselves were excluded from payload hashing. A same-UID concurrent build helper could modify either output in place after creation while preserving the inode; the publisher could then return success without proving that the published bytes still matched the deterministic bytes it generated.
+
+Two regressions mutate the manifest and checksum output separately after the final payload scan but before publication returns. Both were reproduced against the original source.
+
+The new `_verify_published_output()` reopens each output relative to the pinned directory descriptor with `O_NOFOLLOW`, requires a regular file owned by the effective UID with one link and the exact creation identity, reads the complete bytes, and compares stable descriptor/path metadata before and after reading. It also compares the bytes exactly against the expected manifest/checksum payload. Any missing, replaced, linked, metadata-changed or content-mutated output fails closed and triggers the existing identity-checked pair rollback.
+
+**Limit:** this detects mutations through the final verification window; it does not claim to eliminate a hostile same-UID write after verification and before the function returns. The artifact staging directory must still be private to one build invocation. No manifest schema, payload selection, SHA-256 algorithm, source provenance, firmware, profile/network value, finance or shared-interface behavior changed.
+
+### Test-first and exact-source evidence
+
+- Expected RED, push [#45720241124](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720241124) and PR [#45720249035](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720249035): packaging/tool suite **238 tests, two new failures and two intentional skips**. Both new cases failed because the publisher returned success after the manifest or checksum bytes were mutated in place. Firmware-hardening and shared-contract steps passed; downstream profile admission was skipped because the tool suite failed.
+- Expected-RED case-collision [#45720249005](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720249005): PASS.
+- Exact source/test shared push [#45720340739](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720340739) and PR [#45720345815](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720345815): packaging/tool suite **238 tests, all pass / 2 intentional skips**; firmware-hardening and shared-contract steps PASS; marker `PHX-MANIFEST-DURABILITY-PASS` emitted. The subsequent appliance admission failed closed for **10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is absent; ESP32 and ESP8266 compile jobs were SKIPPED. Overall shared workflow: FAILURE, not release-ready.
+- Exact source/test sandbox [#45720345855](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720345855): host preflight **42/42 PASS**, then Bubblewrap unavailable / exit 125; unprivileged identity, namespace and mandatory sandbox packaging were SKIPPED. No privileged install or unsandboxed fallback.
+- Exact source/test case-collision [#45720345935](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45720345935): PASS.
+
+These are hosted CI and synthetic filesystem results only. They do not establish a real ImageBuilder execution, approved firmware binary, signer operation, physical appliance acceptance or production release.
+
+### Live cross-repository ownership and gates
+
+- Control plane #172: the single PHX-RELEASE UTC23 role-lock/checkpoint comment records this activation and is updated in place.
+- Cleanup-first #266 remains OPEN / **0-of-7**. This is one bounded RELEASE cleanup contribution; it does not complete the seven-role cleanup gate.
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at live head `47de64c8f658777814c6ef468eb3a35f08e6977f`. The exact `OWNERSHIP_ROUTES.json` blob `e4db324315a1b3543fec17a148fbf960170fcb29` remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's route remains `reimplementation-review`. MASTER retains migration and shared-interface authority.
+- Experiments PR #242 remains OPEN / DRAFT at `734b89d9e7792247e8376335c3f3685500ab3f89`; Windows run [#40882814472](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/40882814472) passed, while Authenticode signing and publication remain gated/skipped.
+- Experiments PR #291 remains OPEN / DRAFT at `9b928c9eaa72cb26fdcf3f0e50a0ec024f4e3c30`. Exact-head Windows [#45669599214](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599214) and Full [#45669599438](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599438) fail at the CORE-owned freshness gate; ESP32 compatibility [#45669599322](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/actions/runs/45669599322) passes. No freshness bypass.
+- COE integration PR #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; no destination migration or writes.
+- COE parent release-packager PR #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; parent evidence is not substituted for child #35.
+- The actual private Drive registry v11 was **NOT RECOVERED** through authorized Library retrieval. A checkpoint reference and older snapshots are not substitutes; no private contents or IDs were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews source/test HEAD `dae31c4b`, especially output descriptor identity, complete byte comparison, rollback and the documented same-UID limit.
+2. PHX-INFRA / COE owner supplies an authorized disposable no-secret Bubblewrap runner with unprivileged single-ID namespace support.
+3. PHX-CORE / MASTER supplies approved durable site-scoped ULA /48 authority; RELEASE must not invent a prefix or bypass ten-profile admission.
+4. PHX-CORE publishes the canonical CURRENT_STATE / PROJECT_HANDOVER freshness SHA for Experiments #291; RELEASE reruns Full/Windows only against that exact SHA.
+5. PHX-MASTER maintains the 11 ownership routes and refreshes its own child pointers; RELEASE does not migrate or rewrite other role paths.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+**PRODUCTION NO-GO.** Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED.
+
+---
+
 ## PHX-RELEASE UTC22 — preserve sandbox timeout through cleanup errors (2026-11-25)
 
 **Disposition:** one RELEASE-owned host-preflight defect was reproduced test-first and corrected on the existing COE child draft #35. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tagging, publication, hardware flash, payment migration or customer deployment.
