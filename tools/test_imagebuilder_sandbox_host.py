@@ -260,6 +260,50 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         self.assertFalse(ready)
         self.assertIn("timed out", detail.lower())
 
+    def test_probe_timeout_preserves_timeout_when_cleanup_raises_and_retries_once(self):
+        helper = self.helper_or_skip()
+        process = mock.Mock()
+        process.pid = 816
+        process.poll.return_value = 0
+        timeout = helper.subprocess.TimeoutExpired(
+            cmd=["bwrap"],
+            timeout=0.05,
+            output="partial probe stdout",
+            stderr="partial probe stderr",
+        )
+        process.communicate.side_effect = timeout
+        cleanup_calls = []
+
+        def fail_first_cleanup(process_arg, grace_seconds):
+            cleanup_calls.append((process_arg, grace_seconds))
+            if len(cleanup_calls) == 1:
+                raise OSError("first cleanup pipe close failed")
+            return ("retry cleanup stdout", "retry cleanup stderr")
+
+        with mock.patch.object(
+            helper.subprocess, "Popen", return_value=process
+        ) as popen:
+            with mock.patch.object(
+                helper,
+                "_terminate_process_groups",
+                side_effect=fail_first_cleanup,
+            ) as terminate:
+                ready, detail = helper.check_host(
+                    "/usr/bin/bwrap", timeout_seconds=0.05
+                )
+
+        self.assertFalse(ready)
+        self.assertIn("timed out", detail.lower())
+        self.assertIn("partial probe stdout", detail)
+        self.assertIn("partial probe stderr", detail)
+        self.assertIn("first cleanup pipe close failed", detail)
+        self.assertIn("retry cleanup stdout", detail)
+        self.assertEqual(len(cleanup_calls), 2)
+        self.assertTrue(all(call == (process, 0.25) for call in cleanup_calls))
+        popen.assert_called_once()
+        self.assertEqual(terminate.call_count, 2)
+
+
     def test_probe_keyboard_interrupt_terminates_group_and_reraises_after_leader_exit(self):
         helper = self.helper_or_skip()
         process = mock.Mock()
