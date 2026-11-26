@@ -1204,6 +1204,74 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(source_path, "rb") as fp:
             self.assertEqual(fp.read(), replacement_content)
 
+    def test_copy_staging_file_preserves_primary_validation_error_when_close_is_interrupted(self):
+        source_dir = os.path.join(self.temp_dir, "rental-source-close-interrupt")
+        destination_dir = os.path.join(self.temp_dir, "rental-destination-close-interrupt")
+        os.makedirs(source_dir)
+        os.makedirs(destination_dir)
+
+        source_path = os.path.join(source_dir, "core.sh")
+        destination_path = os.path.join(destination_dir, "core.sh")
+        with open(source_path, "wb") as fp:
+            fp.write(b"trusted rental source")
+
+        source_fd = os.open(source_path, os.O_RDONLY)
+        primary_error = OSError("injected source descriptor validation failure")
+        cleanup_error = InterruptedError("injected source descriptor close interruption")
+        original_fstat = os.fstat
+        original_close = os.close
+
+        def return_pinned_source_descriptor(path, *args, **kwargs):
+            self.assertEqual(os.fspath(path), source_path)
+            return source_fd
+
+        def fail_source_validation(descriptor):
+            if descriptor == source_fd:
+                raise primary_error
+            return original_fstat(descriptor)
+
+        def close_then_interrupt(descriptor):
+            if descriptor == source_fd:
+                original_close(descriptor)
+                raise cleanup_error
+            return original_close(descriptor)
+
+        with mock.patch.object(
+            packager,
+            "_open_file_without_symlink_parents",
+            side_effect=return_pinned_source_descriptor,
+        ):
+            with mock.patch.object(
+                packager.os, "fstat", side_effect=fail_source_validation
+            ):
+                with mock.patch.object(
+                    packager.os, "close", side_effect=close_then_interrupt
+                ):
+                    with self.assertRaises(OSError) as raised:
+                        packager._copy_staging_file(
+                            source_path, destination_dir, "core.sh"
+                        )
+
+        self.assertIs(
+            raised.exception,
+            primary_error,
+            "source descriptor validation failure must not be replaced by cleanup interruption",
+        )
+        self.assertTrue(
+            any(
+                "cleanup was interrupted" in note.lower()
+                for note in getattr(raised.exception, "__notes__", ())
+            ),
+            "the interrupted close must remain visible as a note",
+        )
+        with self.assertRaises(OSError) as closed:
+            os.fstat(source_fd)
+        self.assertEqual(closed.exception.errno, errno.EBADF)
+        self.assertFalse(
+            os.path.lexists(destination_path),
+            "a source whose descriptor validation failed must never be staged",
+        )
+
     def test_copy_staging_file_rejects_source_path_replaced_after_open_during_read(self):
         if os.name != "posix":
             self.skipTest("Source-parent replacement while a file is pinned requires POSIX rename semantics")
