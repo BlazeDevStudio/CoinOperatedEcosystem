@@ -1235,5 +1235,28 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self._assert_writer_rejects_published_output_mutation(CHECKSUMS_FILENAME)
 
 
+    def test_rejects_group_or_world_writable_nested_directory(self):
+        nested = self.artifact_dir / "nested"
+        nested.mkdir()
+        (nested / "nested-firmware.bin").write_bytes(b"nested firmware payload")
+        os.chmod(nested, 0o777)
+
+        with self.assertRaisesRegex(ManifestError, "group- or world-writable"):
+            write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse((self.artifact_dir / MANIFEST_FILENAME).exists())
+        self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
+
+    def test_rejects_group_or_world_writable_payload_file(self):
+        payload = self.artifact_dir / "firmware.bin"
+        os.chmod(payload, 0o666)
+
+        with self.assertRaisesRegex(ManifestError, "group- or world-writable"):
+            write_artifact_manifest(**self.kwargs())
+
+        self.assertFalse((self.artifact_dir / MANIFEST_FILENAME).exists())
+        self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
+
+
 if __name__ == "__main__":
     unittest.main()
