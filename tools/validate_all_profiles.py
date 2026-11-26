@@ -25,19 +25,10 @@ VALIDATION_SCOPE = "HOST-CI STAGED ROOTFS ONLY; NOT HARDWARE ACCEPTANCE"
 # Import packaging primitives
 sys.path.insert(0, os.path.join(BASE_DIR, "tools"))
 from package_appliance_firmware import load_profile, stage_overlay, generate_build_script
-from run_imagebuilder_sandbox import _terminate_process_groups
-
-
-PROCESS_GROUP_CLEANUP_ERROR_MARKERS = (
-    "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
-    "RELEASE-BLOCKED: could not signal sandbox process group",
-    "could not kill bubblewrap process:",
-    "bubblewrap process did not exit after SIGKILL",
+from run_imagebuilder_sandbox import (
+    _terminate_process_groups,
+    process_group_cleanup_failed as _process_group_cleanup_failed,
 )
-
-
-def _process_group_cleanup_failed(stderr: str) -> bool:
-    return any(marker in stderr for marker in PROCESS_GROUP_CLEANUP_ERROR_MARKERS)
 
 
 def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.CompletedProcess:

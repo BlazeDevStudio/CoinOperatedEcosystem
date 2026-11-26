@@ -6,7 +6,10 @@ import subprocess
 import sys
 
 import imagebuilder_bwrap_trust
-from run_imagebuilder_sandbox import _terminate_process_groups
+from run_imagebuilder_sandbox import (
+    _terminate_process_groups,
+    process_group_cleanup_failed,
+)
 from imagebuilder_bwrap_trust import PRIVATE_HOST_PATHS, private_host_mount_args as _private_host_mount_args
 
 PROBE_TIMEOUT_SECONDS = 10
@@ -124,13 +127,7 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
         )
         stdout = stdout or cleanup_stdout
         stderr = stderr or cleanup_stderr
-        cleanup_error_markers = (
-            "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
-            "RELEASE-BLOCKED: could not signal sandbox process group",
-            "could not kill bubblewrap process:",
-            "bubblewrap process did not exit after SIGKILL",
-        )
-        if any(marker in cleanup_stderr for marker in cleanup_error_markers):
+        if process_group_cleanup_failed(cleanup_stderr):
             detail = cleanup_stderr.strip()
             return False, f"bubblewrap namespace probe cleanup failed: {detail}"
 

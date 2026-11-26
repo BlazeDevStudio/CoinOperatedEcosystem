@@ -39,6 +39,20 @@ def _as_text(value: object) -> str:
     return str(value)
 
 
+PROCESS_GROUP_CLEANUP_ERROR_MARKERS = (
+    "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
+    "RELEASE-BLOCKED: could not signal sandbox process group",
+    "could not kill bubblewrap process:",
+    "bubblewrap process did not exit after SIGKILL",
+)
+
+
+def process_group_cleanup_failed(stderr: object) -> bool:
+    """Classify only the runner's explicit process-group cleanup failures."""
+    output = _as_text(stderr)
+    return any(marker in output for marker in PROCESS_GROUP_CLEANUP_ERROR_MARKERS)
+
+
 def _recover_available_namespace_child_pgid(info_fd: int) -> tuple[int | None, str]:
     """Best-effort nonblocking recovery of Bubblewrap's detached child PGID."""
     if info_fd < 0:
@@ -197,13 +211,7 @@ def _communicate_with_timeout(
     # A wrapped build may intentionally print RELEASE-BLOCKED for an ordinary
     # nonzero result. Only diagnostics emitted by process-group cleanup make
     # this a sandbox timeout/cleanup failure.
-    cleanup_error_markers = (
-        "RELEASE-BLOCKED: sandbox process group(s) did not exit after SIGKILL:",
-        "RELEASE-BLOCKED: could not signal sandbox process group",
-        "could not kill bubblewrap process:",
-        "bubblewrap process did not exit after SIGKILL",
-    )
-    cleanup_failed = any(marker in cleanup_stderr for marker in cleanup_error_markers)
+    cleanup_failed = process_group_cleanup_failed(cleanup_stderr)
     return (stdout, stderr), cleanup_failed
 
 
