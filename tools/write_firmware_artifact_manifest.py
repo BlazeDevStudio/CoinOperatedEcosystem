@@ -797,6 +797,12 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
                 created_paths=created,
             )
 
+            # The file contents were synced by _write_new_file. Make both new
+            # directory entries durable before the final artifact/output readback.
+            # A directory fsync may block; doing it after verification would leave
+            # an unchecked mutation window while the directory sync is in progress.
+            os.fsync(directory_descriptor)
+
             # Revalidate every original artifact after the manifest pair has
             # been written. A same-UID build helper can otherwise mutate a
             # payload after the first scan but before publication completes,
@@ -829,7 +835,6 @@ def write_artifact_manifest(**kwargs) -> tuple[str, str]:
                     expected_content=expected_content,
                 )
 
-            os.fsync(directory_descriptor)
             _require_artifact_directory_identity(artifact_dir, directory_descriptor)
         except BaseException as publication_error:
             rollback_errors: list[str] = []
