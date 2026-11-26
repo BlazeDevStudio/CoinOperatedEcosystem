@@ -59,14 +59,40 @@ def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.Complete
     try:
         process.wait(timeout=DIAGNOSTICS_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as exc:
-        cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
-        detail = cleanup_stderr.strip()
+        cleanup_stdout = ""
+        cleanup_stderr = ""
+        cleanup_errors = []
+        cleanup_attempts = 0
+        cleanup_confirmed = False
+        for attempt in range(2):
+            cleanup_attempts += 1
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
+                cleanup_confirmed = not _process_group_cleanup_failed(cleanup_stderr)
+                break
+            except Exception as cleanup_error:
+                attempt_label = "first" if attempt == 0 else "second"
+                cleanup_errors.append(
+                    f"{attempt_label} cleanup attempt raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+
         message = (
             f"blaze-appliance-diag timed out for {profile_id} "
             f"after {DIAGNOSTICS_TIMEOUT_SECONDS} seconds"
         )
+        if cleanup_errors:
+            if cleanup_confirmed:
+                message += "; process-group cleanup retry succeeded"
+            else:
+                message += (
+                    "; process-group cleanup not confirmed after "
+                    f"{cleanup_attempts} attempts"
+                )
         if _process_group_cleanup_failed(cleanup_stderr):
-            message += f"; process-group cleanup failed: {detail}"
+            message += f"; process-group cleanup failed: {cleanup_stderr.strip()}"
+        if cleanup_errors:
+            message += ": " + "; ".join(cleanup_errors)
         raise RuntimeError(message) from exc
 
 
