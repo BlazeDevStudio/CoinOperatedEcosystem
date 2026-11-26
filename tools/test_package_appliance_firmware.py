@@ -3609,6 +3609,77 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             self.assertEqual(fp.read(), "SOURCE-PRESERVED")
 
 
+    def test_rootfs_copy_rejects_source_root_replaced_with_symlink_during_copy(self):
+        if os.name != "posix":
+            self.skipTest("Pinned rootfs source-directory descriptors require POSIX semantics")
+
+        source_rootfs = os.path.join(self.temp_dir, "source-rootfs-race")
+        displaced_source_rootfs = os.path.join(self.temp_dir, "source-rootfs-original")
+        replacement_rootfs = os.path.join(self.temp_dir, "replacement-rootfs")
+        staging_dest = os.path.join(self.temp_dir, "source-rootfs-race-staging")
+        os.makedirs(source_rootfs)
+        os.makedirs(replacement_rootfs)
+
+        with open(os.path.join(source_rootfs, "source-marker.txt"), "wb") as fp:
+            fp.write(b"ORIGINAL-SOURCE")
+        with open(os.path.join(replacement_rootfs, "source-marker.txt"), "wb") as fp:
+            fp.write(b"REPLACEMENT-SOURCE")
+        with open(os.path.join(replacement_rootfs, "external-sentinel.txt"), "wb") as fp:
+            fp.write(b"KEEP-EXTERNAL")
+
+        original_copytree = shutil.copytree
+        swapped = {"value": False}
+        copied = {}
+
+        def replace_source_before_copy(source, destination, *args, **kwargs):
+            if not swapped["value"]:
+                # Replace the operator-visible rootfs pathname after the
+                # packager has had an opportunity to pin the source directory.
+                os.rename(source_rootfs, displaced_source_rootfs)
+                os.symlink(replacement_rootfs, source_rootfs, target_is_directory=True)
+                swapped["value"] = True
+
+            result = original_copytree(source, destination, *args, **kwargs)
+            with open(os.path.join(destination, "source-marker.txt"), "rb") as fp:
+                copied["source_marker"] = fp.read()
+            copied["names"] = sorted(os.listdir(destination))
+            return result
+
+        with mock.patch.object(
+            packager.shutil,
+            "copytree",
+            side_effect=replace_source_before_copy,
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "Source rootfs path changed during rootfs copy",
+            ):
+                packager._copy_rootfs_to_new_staging_directory(
+                    source_rootfs,
+                    staging_dest,
+                )
+
+        self.assertTrue(swapped["value"])
+        self.assertEqual(
+            copied.get("source_marker"),
+            b"ORIGINAL-SOURCE",
+            "copytree must read from the pinned original rootfs, not the replacement path",
+        )
+        self.assertNotIn(
+            "external-sentinel.txt",
+            copied.get("names", []),
+            "external replacement contents must never enter release staging",
+        )
+        self.assertTrue(os.path.islink(source_rootfs))
+        self.assertFalse(
+            os.path.lexists(staging_dest),
+            "staging must be rolled back when the source pathname no longer names the pinned rootfs",
+        )
+        with open(os.path.join(replacement_rootfs, "external-sentinel.txt"), "rb") as fp:
+            self.assertEqual(fp.read(), b"KEEP-EXTERNAL")
+        with open(os.path.join(displaced_source_rootfs, "source-marker.txt"), "rb") as fp:
+            self.assertEqual(fp.read(), b"ORIGINAL-SOURCE")
+
     def test_rootfs_copy_rolls_back_partial_staging_on_process_interruption(self):
         source_rootfs = os.path.join(self.temp_dir, "interrupted-copy-source")
         os.makedirs(source_rootfs)
