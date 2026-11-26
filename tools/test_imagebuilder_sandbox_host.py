@@ -213,6 +213,7 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             malformed_paths = (
                 f"//{real_directory.lstrip(os.sep)}",
                 f"{real_directory}{os.sep}",
+                real_directory + chr(0),
             )
 
             for path in malformed_paths:
