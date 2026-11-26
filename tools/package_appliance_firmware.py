@@ -211,6 +211,10 @@ def generate_network_uci(profile: dict) -> str:
     """Generate OpenWrt /etc/config/network with DSA/bridge VLAN isolation."""
     ula_prefix = _validate_site_ula_prefix(APPROVED_SITE_ULA_PREFIX)
     net = profile["networking"]
+    vlan_supported = net.get("vlan_supported", False)
+    if not isinstance(vlan_supported, bool):
+        raise ValueError("Invalid VLAN support flag")
+
     vlan_ids = net.get("default_vlan_ids")
     if not isinstance(vlan_ids, dict):
         raise ValueError("Invalid default VLAN ID mapping")
@@ -254,7 +258,7 @@ def generate_network_uci(profile: dict) -> str:
     if ports:
         out.append(f"\tlist ports '{' '.join(ports)}'")
 
-    if net.get("vlan_supported", False):
+    if vlan_supported:
         out.append("\toption vlan_filtering '1'")
 
     out.extend([
