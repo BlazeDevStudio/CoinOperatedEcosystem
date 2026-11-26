@@ -1,3 +1,70 @@
+## PHX-RELEASE UTC12 — mask host SSH and TLS private-key stores (2026-11-26T12:20Z)
+
+**Disposition:** one RELEASE-owned ImageBuilder sandbox host-data exposure was closed test-first on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The policy now masks the host system SSH and TLS private-key directories in addition to existing user/cache/service/external-mount paths. The real Bubblewrap namespace remains unverified because the hosted runner has no `bwrap`. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Exact branch and bounded source scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent/base PR #31 HEAD: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting child HEAD: `5ee8e6b2154c394476c7222ae7f65ce6be72df71`.
+- Test-first regression: [`7ab23c7e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7ab23c7eb2036d54cc925693c79a8236f3cb0e0c).
+- Canonical mask-policy correction and host-directory test: [`17b53e7e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/17b53e7e03073a88fa001ff92d357dbe6d6b4766).
+- Shared package-test fixture alignment: [`42436a34`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/42436a3478599b10264c07a5adadccdaeb4aa5a4).
+- Source/test head before this handover: `42436a3478599b10264c07a5adadccdaeb4aa5a4`.
+- Source/test changes are limited to `tools/imagebuilder_bwrap_trust.py`, `tools/test_imagebuilder_sandbox_host.py`, and `tools/test_package_appliance_firmware.py`. This handover is the only additional path. No shared Hardware workflow, firmware, router profile, network authority, CORE, RENTAL, PISONET, QA or MASTER source was changed.
+
+### Finding and correction
+
+The sandbox starts from a read-only bind of host `/`, but the canonical private-host mask list did not include `/etc/ssh` or `/etc/ssl/private`. Those paths can contain host SSH host keys and TLS private keys. Host UID/GID permissions remain an additional boundary; the release sandbox now also masks both stores explicitly with tmpfs.
+
+- `PRIVATE_HOST_PATHS` remains the single canonical list consumed by host preflight and runtime.
+- `verify_sandbox_context()` requires each listed path to be a tmpfs mount.
+- The host preflight command and runtime command inherit the same two new masks.
+- A Linux-host regression confirms `/etc/ssh` and `/etc/ssl/private` exist as real directories on the Ubuntu runner, so the required mount targets are present rather than assumed.
+- Existing package-test mountinfo and expected-argument fixtures were updated to include both paths.
+
+This is a host-data exposure reduction and synthetic/host-CI contract verification. It does not establish a functioning Bubblewrap namespace or prove that every possible host secret path is masked.
+
+### Test-first and intermediate evidence
+
+- Test-first expected RED [#45818193851](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45818193851), exact test-only head `7ab23c7e`: **42 host tests; one expected failure**. The existing policy omitted `/etc/ssh` and `/etc/ssl/private`; the workflow stopped before Bubblewrap availability.
+- Initial policy-source sandbox [#45818348348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45818348348), exact head `17b53e7e`: **43/43 host tests PASS**, then Bubblewrap unavailable / exit 125.
+- Initial policy-source shared CI [#45818348384](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45818348384), exact head `17b53e7e`: **249 tests, three failures** from two stale expected mount lists and one mountinfo fixture in `test_package_appliance_firmware.py`. This was an incomplete test-fixture update, not accepted source behavior evidence. Those three policy fixtures were aligned in `42436a34`.
+
+### Final exact-head PR Actions
+
+All three PR-triggered runs below identify exact head `42436a3478599b10264c07a5adadccdaeb4aa5a4`.
+
+- Sandbox [#45818495981](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45818495981), job `139904307317`: **43/43 host preflight tests PASS**; Bubblewrap unavailable / exit 125; identity, namespace and mandatory sandbox packaging steps SKIPPED. Overall workflow: FAILURE.
+- Shared validation [#45818495803](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45818495803), job `139904307035`: **249 tests PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`; one synthetic staged-rootfs profile PASS; subsequent appliance admission rejected **10/10** profiles because approved site-scoped RFC 4193 ULA /48 authority is missing; ESP32/ESP8266 compile jobs SKIPPED. Overall workflow: FAILURE.
+- Case-collision [#45818495901](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45818495901): PASS.
+
+These are exact-source hosted CI and synthetic staged-rootfs results only. They do not establish ImageBuilder namespace execution, approved production binaries or physical hardware acceptance.
+
+### Live ownership and cross-repository gates
+
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at `1b0b6890acac63a05f4bb7bd377c2d6cb5e4d064`. Its live ownership manifest remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's route is `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`. MASTER retains migration, shared-interface and inherited-stack reconciliation authority.
+- Cleanup-first #266 remains OPEN / **0-of-7**.
+- Experiments #242 remains OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`; zero exact-head Actions runs/statuses. Its accumulated diff includes PISONET-owned installer/signing-test paths and inherited CORE handover paths; RELEASE made no #242 edits.
+- Experiments #291 remains OPEN / DRAFT at `bf339a76964a1abe2412fac45392fe06a8e66418`, based on stale #242 snapshot `734b89d9e7792247e8376335c3f3685500ab3f89`; zero exact-head Actions runs/statuses. Its accumulated diff includes inherited CORE/PISONET paths; MASTER and subsystem owners must reconcile the stack. RELEASE made no #291 edits.
+- COE #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows queued / zero completed jobs.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Its prior shared validation and case-collision runs passed; its sandbox run failed at unprivileged namespace UID/GID mapping. Parent evidence is not child acceptance.
+- COE child #35 retains the accumulated shared `.github/workflows/hardware-ci.yml` path. PHX-HARDWARE/MASTER review is still required before integration; this activation did not modify that path.
+- The actual private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json` remains NOT RECOVERED through authorized Library retrieval. Search surfaced older v6/v7 registry snapshots only; none was substituted and no private contents or identifiers were copied to GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the new private-key mask policy and host-directory assertions.
+2. PHX-INFRA / COE owner supplies an authorized unprivileged Bubblewrap-capable runner; do not install Bubblewrap or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER reconciles #291's stale parent and inherited CORE/PISONET ownership paths, and PHX-HARDWARE/MASTER reviews the shared Hardware workflow overlap in #35.
+5. Registry custodian restores authorized provenance-only v11 access.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC11 — scope sandbox checkout assertions to the named step (2026-11-26T11:20Z)
 
 **Disposition:** one RELEASE-owned regression-guard false-positive corrected test-first on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The production sandbox workflow was not changed; it already uses the reviewed immutable checkout SHA, disables persisted checkout credentials, checks out the exact PR/push SHA, and grants only `contents: read`. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
