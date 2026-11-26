@@ -33,7 +33,7 @@ These are exact-source hosted CI and synthetic command/mount-policy tests. They 
 
 ### Current candidate implementation
 
-- Current candidate implementation: single-ID user namespace; host root read-only; tmpfs masks for `/tmp`, `/home`, `/root`, `/run`, `/var/tmp`, `/mnt`, `/media`, `/srv`, `/opt`, and `/var/lib`; `--share-net` is deliberate; it does not invoke `sudo`, `newuidmap`, or `newgidmap`.
+- Current candidate implementation: single-ID user namespace; host root read-only; tmpfs masks for `/tmp`, `/home`, `/root`, `/run`, `/var/tmp`, `/mnt`, `/media`, `/srv`, `/opt`, and `/var/lib`; `--share-net` is deliberate and network isolation is not claimed; it does not invoke `sudo`, `newuidmap`, or `newgidmap`.
 - Current exact-head Actions: final handover-head runs are recorded by the UTC09 checkpoint after this documentation commit. Bubblewrap remains unavailable on the hosted runner; no unsandboxed fallback is permitted.
 
 ### Next owner actions
