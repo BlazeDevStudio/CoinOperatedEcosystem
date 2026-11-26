@@ -706,7 +706,7 @@ def _verify_published_output(
     try:
         descriptor = os.open(
             filename,
-            os.O_RDONLY | os.O_NOFOLLOW,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
             dir_fd=directory_descriptor,
         )
         opened = os.fstat(descriptor)
