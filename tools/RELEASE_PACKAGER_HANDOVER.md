@@ -1,3 +1,58 @@
+## PHX-RELEASE UTC10 — guard release ImageBuilder sandbox action provenance (2026-11-26)
+
+**Disposition:** one RELEASE-owned supply-chain test-coverage gap closed on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The dedicated `.github/workflows/release-imagebuilder-sandbox.yml` was already using the reviewed immutable checkout action and read-only checkout settings, but `tools/test_release_toolchain_pins.py` only inspected the shared `hardware-ci.yml`. The new test now guards the RELEASE-owned sandbox workflow independently. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Exact branch and bounded source scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting child HEAD: `7776302ce3b0b3e162f21e146014e9ff88312202`.
+- Parent/base PR #31 HEAD: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- First test commit: [`13b6043c`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/13b6043c51e04585c7783012d14bca179e3d7224). Its initial regex/newline escaping was incorrect; this is a superseded test-authoring attempt, **not** accepted expected-RED evidence.
+- Corrected source/test commit: [`1e5bddd5`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1e5bddd504ef11eb791ce0b718a5899f39896fd7).
+- The source/test increment changes exactly one RELEASE-owned path: `tools/test_release_toolchain_pins.py`. The workflow, shared Hardware workflow, firmware, board profiles, network authority and COE #26 destination were not changed.
+
+### New guard
+
+The regression now reads `.github/workflows/release-imagebuilder-sandbox.yml` and requires:
+- exactly one external action reference, `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`;
+- `persist-credentials: false`;
+- checkout of `github.event.pull_request.head.sha || github.sha`, so PR validation is tied to the exact head and push validation to the pushed commit;
+- workflow-level repository permission `contents: read`.
+
+The test fails if a mutable action tag, another unreviewed action, persisted checkout credentials, a non-exact checkout ref or broader repository permissions are introduced. This is a test-coverage improvement; the current sandbox workflow already satisfies the asserted contract.
+
+### Exact-source CI
+
+- Superseded test-authoring run [#45799854971](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45799854971), job `139839936667`: **247 tests ran; 1 failure and 2 intentional skips**. The new test's over-escaped regex matched no `uses:` line. This was a test-authoring error, not a source defect or an accepted expected RED. The first sandbox attempt [#45799855043](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45799855043) failed at Bubblewrap availability; case-collision [#45799855143](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45799855143) passed.
+- Corrected source/test shared PR [#45799955206](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45799955206), job `139840281686`: **247 tests ran; 245 passed and 2 intentional skips**. The new immutable-action/credential/exact-head guard passed; firmware hardening, shared contracts and packaging/tool validation passed. The later all-profile admission rejected **10/10** profiles because approved site-scoped RFC 4193 ULA /48 authority remains undefined; ESP32 and ESP8266 compile jobs were skipped. Overall shared workflow: FAILURE, not release-ready.
+- Corrected source/test sandbox PR [#45799955136](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45799955136): host preflight **42/42 PASS**, then Bubblewrap was unavailable / exit 125. Unprivileged identity, namespace and mandatory sandbox packaging were skipped; no fallback was attempted.
+- Corrected source/test case-collision PR [#45799955197](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45799955197): PASS.
+
+These are hosted CI and static workflow-contract tests. They do not establish a working Bubblewrap namespace, ImageBuilder package acceptance, approved production binaries or physical hardware acceptance.
+
+### Live ownership, integration and provenance
+
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at `57b7dc10c95579edf56be6470166e3cb9293a29c`; `coordination/phoenix/OWNERSHIP_ROUTES.json` remains 11 routes / `DRAFT_REVIEW_ONLY`. PHX-RELEASE's route remains `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`. MASTER retains cross-repository migration, shared-interface and inherited-stack reconciliation authority.
+- Cleanup-first #266 remains OPEN / **0-of-7**.
+- Experiments #242 remains OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`; exact-head PR-triggered Actions runs/statuses are zero.
+- Experiments #291 remains OPEN / DRAFT at `bf339a76964a1abe2412fac45392fe06a8e66418`, based on stale #242 snapshot `734b89d9e7792247e8376335c3f3685500ab3f89`; exact-head PR-triggered Actions runs/statuses are zero. Its latest commit touches CORE-owned `experiment/openwrt/BlazePwifi/docs/handover/CHANGE_LEDGER.md`, and its accumulated diff contains inherited CORE/PISONET paths. RELEASE made no #291 edits; MASTER and the respective owners must reconcile the stack.
+- COE #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`, five workflows queued / zero jobs. COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- COE child #35 remains OPEN / DRAFT / UNMERGED. The accumulated diff still includes shared `.github/workflows/hardware-ci.yml`; this activation did not modify it. MASTER/HARDWARE review remains required before integration.
+- The actual private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json` was not recovered through authorized Library retrieval. Older snapshots were not substituted; no private contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the new release-sandbox action-pin, exact-head and credential-boundary guard.
+2. PHX-INFRA / COE owner supplies an authorized disposable unprivileged Bubblewrap-capable runner; do not install Bubblewrap or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER reconciles #291's stale parent and inherited CORE/PISONET ownership paths, and reviews the shared Hardware workflow overlap in #35.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC09 — mask host tool-cache and service-state roots (2026-11-26)
 
 **Disposition:** one bounded RELEASE-owned ImageBuilder sandbox isolation correction was reproduced test-first and committed on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signer, tag, publication, hardware flash, payment migration or customer deployment.
