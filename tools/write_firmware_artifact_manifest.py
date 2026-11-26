@@ -189,7 +189,6 @@ def _scan_artifact_directory_fd(
                     f"published manifest output changed during artifact revalidation: {name}: {exc}"
                 ) from exc
             expected_identity = excluded_root_outputs[name]
-            _require_entry_not_group_or_world_writable(current_output, name)
             if (
                 not stat.S_ISREG(current_output.st_mode)
                 or (current_output.st_dev, current_output.st_ino) != expected_identity
@@ -197,6 +196,7 @@ def _scan_artifact_directory_fd(
                 raise ManifestError(
                     f"published manifest output changed during artifact revalidation: {name}"
                 )
+            _require_entry_not_group_or_world_writable(current_output, name)
             continue
 
         if name in (MANIFEST_FILENAME, CHECKSUMS_FILENAME):
@@ -209,8 +209,6 @@ def _scan_artifact_directory_fd(
                 f"artifact entry changed during scan: {relative}: {exc}"
             ) from exc
 
-        _require_entry_not_group_or_world_writable(before, relative)
-
         if stat.S_ISLNK(before.st_mode):
             raise ManifestError(
                 "refusing symlink or non-regular artifact file; "
@@ -218,6 +216,7 @@ def _scan_artifact_directory_fd(
             )
 
         if stat.S_ISDIR(before.st_mode):
+            _require_entry_not_group_or_world_writable(before, relative)
             try:
                 child_descriptor = os.open(
                     name,
@@ -231,7 +230,6 @@ def _scan_artifact_directory_fd(
 
             try:
                 opened = os.fstat(child_descriptor)
-                _require_entry_not_group_or_world_writable(opened, relative)
                 if (
                     not stat.S_ISDIR(opened.st_mode)
                     or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)
@@ -239,6 +237,7 @@ def _scan_artifact_directory_fd(
                     raise ManifestError(
                         f"artifact directory changed while opening: {relative}"
                     )
+                _require_entry_not_group_or_world_writable(opened, relative)
 
                 _scan_artifact_directory_fd(
                     child_descriptor,
@@ -257,7 +256,6 @@ def _scan_artifact_directory_fd(
                     raise ManifestError(
                         f"artifact directory changed during scan: {relative}: {exc}"
                     ) from exc
-                _require_entry_not_group_or_world_writable(current, relative)
                 if (
                     not stat.S_ISDIR(current.st_mode)
                     or _directory_scan_snapshot(opened) != _directory_scan_snapshot(current)
@@ -265,6 +263,7 @@ def _scan_artifact_directory_fd(
                     raise ManifestError(
                         f"artifact directory changed during scan: {relative}"
                     )
+                _require_entry_not_group_or_world_writable(current, relative)
             finally:
                 _close_descriptor_preserving_primary(
                     child_descriptor, f"artifact child directory {relative}"
@@ -275,6 +274,7 @@ def _scan_artifact_directory_fd(
             raise ManifestError(
                 f"refusing symlink or non-regular artifact file: {relative}"
             )
+        _require_entry_not_group_or_world_writable(before, relative)
         if before.st_nlink != 1:
             raise ManifestError(f"refusing hard-linked artifact file: {relative}")
 
@@ -286,13 +286,13 @@ def _scan_artifact_directory_fd(
                 dir_fd=directory_descriptor,
             )
             after = os.fstat(descriptor)
-            _require_entry_not_group_or_world_writable(after, relative)
             if (
                 not stat.S_ISREG(after.st_mode)
                 or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
                 or after.st_nlink != 1
             ):
                 raise ManifestError(f"artifact identity changed while opening: {relative}")
+            _require_entry_not_group_or_world_writable(after, relative)
 
             digest = hashlib.sha256()
             total = 0
@@ -309,7 +309,6 @@ def _scan_artifact_directory_fd(
             # rewrites bytes in place. Compare a second descriptor snapshot
             # after the final read so a mixed/stale digest is never admitted.
             finished = os.fstat(descriptor)
-            _require_entry_not_group_or_world_writable(finished, relative)
             if (
                 not stat.S_ISREG(finished.st_mode)
                 or (after.st_dev, after.st_ino) != (finished.st_dev, finished.st_ino)
@@ -320,6 +319,7 @@ def _scan_artifact_directory_fd(
                 or after.st_ctime_ns != finished.st_ctime_ns
             ):
                 raise ManifestError(f"artifact file changed while hashing: {relative}")
+            _require_entry_not_group_or_world_writable(finished, relative)
 
             try:
                 current = os.stat(
@@ -331,7 +331,6 @@ def _scan_artifact_directory_fd(
                 raise ManifestError(
                     f"artifact file changed while hashing: {relative}: {exc}"
                 ) from exc
-            _require_entry_not_group_or_world_writable(current, relative)
             if (
                 not stat.S_ISREG(current.st_mode)
                 or (finished.st_dev, finished.st_ino) != (current.st_dev, current.st_ino)
@@ -342,6 +341,7 @@ def _scan_artifact_directory_fd(
                 or finished.st_ctime_ns != current.st_ctime_ns
             ):
                 raise ManifestError(f"artifact file changed while hashing: {relative}")
+            _require_entry_not_group_or_world_writable(current, relative)
         except (OSError, TypeError, NotImplementedError) as exc:
             raise ManifestError(f"could not safely hash artifact {relative}: {exc}") from exc
         finally:
