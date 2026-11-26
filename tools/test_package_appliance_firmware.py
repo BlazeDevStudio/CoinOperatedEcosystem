@@ -1259,7 +1259,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "cleanup was interrupted" in note.lower()
+                "cleanup encountered close errors" in note.lower()
                 for note in getattr(raised.exception, "__notes__", ())
             ),
             "the interrupted close must remain visible as a note",
