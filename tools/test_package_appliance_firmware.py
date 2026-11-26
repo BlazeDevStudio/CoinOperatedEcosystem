@@ -694,6 +694,26 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 ):
                     generate_network_uci(profile)
 
+    def test_generate_network_uci_rejects_non_boolean_vlan_supported(self):
+        invalid_values = ("false", "true", 0, 1, None, [], {})
+        for value in invalid_values:
+            with self.subTest(value=value):
+                profile = load_profile("ew1200g-pro")
+                profile["networking"]["vlan_supported"] = value
+                with self.assertRaisesRegex(ValueError, "Invalid VLAN support flag"):
+                    generate_network_uci(profile)
+
+    def test_generate_network_uci_treats_missing_or_false_vlan_support_as_disabled(self):
+        profile = load_profile("ew1200g-pro")
+        profile["networking"].pop("vlan_supported")
+        uci = generate_network_uci(profile)
+        self.assertNotIn("option vlan_filtering '1'", uci)
+
+        profile = load_profile("ew1200g-pro")
+        profile["networking"]["vlan_supported"] = False
+        uci = generate_network_uci(profile)
+        self.assertNotIn("option vlan_filtering '1'", uci)
+
     def test_generate_network_uci_orangepi(self):
         p = load_profile("orangepi-r1-plus-lts")
         uci = generate_network_uci(p)
