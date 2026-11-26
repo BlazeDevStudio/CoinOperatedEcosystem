@@ -6181,3 +6181,58 @@ These are hosted CI and synthetic mountinfo/command-construction tests. They do 
 5. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
+## PHX-RELEASE UTC05 — nonblocking published-manifest output verification (2026-11-26)
+
+**Disposition:** One RELEASE-owned artifact-verification availability defect was reproduced test-first and corrected on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch and bounded source scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting PR #35 HEAD: `b6ec4ba78dda03a19d3d55d9be26b0a808eb4e26`.
+- Parent/base PR #31 HEAD: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-only regression commit: [`cb663e20`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/cb663e205f276a1f5a6eb379969ae6acf8a3e3b0).
+- Source correction / source-test HEAD: [`829662af`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/829662af6e454b1d53de6f732f5d475ecd6ed502).
+- This increment changes only `tools/test_firmware_artifact_manifest.py`, `tools/write_firmware_artifact_manifest.py`, and this RELEASE handover.
+
+### Defect and correction
+
+`_verify_published_output()` reopened each newly published `artifact-manifest.json` / `SHA256SUMS` entry relative to the pinned artifact-directory descriptor with `O_RDONLY | O_NOFOLLOW`, then checked that the opened inode was a regular file. A same-UID concurrent build helper could replace a just-published output with a FIFO between publication and verification. `O_NOFOLLOW` rejects symlinks but does not prevent a blocking read-only FIFO open, so verification could hang before reaching the regular-file check.
+
+The correction adds `O_NONBLOCK` to that descriptor-relative no-follow open. Regular files retain their normal read behavior; a FIFO replacement opens without waiting and is rejected by the existing regular-file / inode / content checks. The descriptor is closed through the existing primary-error-preserving cleanup helper. No output format, checksum algorithm, artifact provenance field, publication order, rollback policy or permission boundary changed.
+
+### Test-first and exact-source CI
+
+- Expected RED, shared PR [#45760650056](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760650056), job `139709565779`: **243 tests ran; 1 failure and 2 intentional skips**. The new FIFO regression failed specifically because `O_NONBLOCK` was absent; the other 240 tests passed. Firmware hardening and shared-contract validation passed. Appliance profile admission then failed closed and both board compiles were skipped. This is the accepted expected RED.
+- Expected RED sandbox PR [#45760649992](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760649992): sandbox host test step passed; Bubblewrap was unavailable, exit 125; namespace and mandatory sandbox packaging were skipped. This is an infrastructure blocker, not the manifest regression.
+- Expected RED case-collision [#45760649994](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760649994): PASS.
+- Corrected source push [#45760797475](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760797475), job `139710049256`: **243 tests ran; 241 passed and 2 intentional skips**. The FIFO regression and all existing packaging/tool tests passed; `PHX-MANIFEST-DURABILITY-PASS` emitted. One synthetic staged profile passed. The subsequent ten-profile admission failed closed **10/10** because approved site-scoped RFC 4193 ULA /48 authority remains undefined; ESP32 and ESP8266 compile jobs were skipped. Overall shared workflow: FAILURE, not release-ready.
+- Corrected source PR [#45760803647](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760803647), job `139710069715`: same exact source/test HEAD `829662af`; **243 tests ran; 241 passed and 2 intentional skips**. Same 10/10 ULA admission failure; both board compile jobs skipped; overall workflow: FAILURE.
+- Corrected source sandbox PR [#45760803730](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760803730), job `139710069858`: **42/42 host preflight tests PASS**; Bubblewrap unavailable, exit 125; unprivileged identity, namespace and mandatory sandbox packaging steps skipped.
+- Corrected source case-collision PR [#45760803811](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45760803811): PASS.
+
+These are hosted CI and synthetic FIFO/filesystem tests. They do not establish ImageBuilder sandbox execution, production artifacts, physical hardware acceptance or storage-controller durability.
+
+### Live ownership, integration and provenance
+
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at `0d4dc02e3262d35bea6125dbfde97d3d0f03d6ec`; the ownership manifest remains 11 routes / `DRAFT_REVIEW_ONLY`. PHX-RELEASE's explicit route is `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, `reimplementation-review`; MASTER retains migration and shared-interface authority.
+- Cleanup-first #266 remains OPEN / **0-of-7**. This bounded artifact-verification correction does not complete the global cleanup gate.
+- Experiments #242 remains OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`; its SoftTimer publisher-admission change has no exact-head Actions runs/statuses and no PowerShell execution evidence.
+- Experiments #291 remains OPEN / DRAFT at `0441a8e5ead737a1a160b6e7eea0b4ec836f457f`, based on former #242 head `734b89d9e7792247e8376335c3f3685500ab3f89`; it is 873 ahead / 9 behind current #242. Its current exact head has zero PR-triggered Actions runs/statuses. The accumulated diff includes inherited non-RELEASE paths; MASTER owns stack reconciliation.
+- COE #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero jobs and no destination writes occurred.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 remains OPEN / DRAFT / UNMERGED. Current child comparison is 439 ahead / 0 behind the parent, with 14 changed paths all under `.github/workflows/` and `tools/`. No rebase, force-push or merge was performed.
+- Private Drive project registry v11 was not recovered through an authorized connector. Older Library snapshots were not substituted; no private registry contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the FIFO replacement regression and the `O_NONBLOCK | O_NOFOLLOW` source change at `829662af`.
+2. PHX-INFRA / COE owner supplies an authorized disposable unprivileged Bubblewrap runner; do not install Bubblewrap or bypass the sandbox gate.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before the ten-profile admission gate can pass.
+4. PHX-CORE publishes the canonical handover freshness SHA for Experiments #291; RELEASE reruns Full/Windows only against that exact refreshed source.
+5. PHX-MASTER reconciles #291's stale parent base and accumulated ownership stack before integration.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
