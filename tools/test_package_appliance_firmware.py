@@ -4085,6 +4085,66 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         self.assertNotIn('rm -f "$SORTED_MANIFEST" "$TMP_MANIFEST"', content)
         return content[begin:end]
 
+    def test_generated_wrapper_manifest_finalizer_does_not_block_on_fifo_output(self):
+        if os.name != "posix" or not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("The manifest finalizer FIFO guard requires POSIX FIFO/O_NONBLOCK support")
+
+        profile = load_profile("gl-mt1300")
+        staging = os.path.join(self.temp_dir, "manifest-fifo-staging")
+        manifest = stage_overlay(profile, DEFAULT_ROOTFS, staging)
+        wrapper = os.path.join(self.temp_dir, "manifest-fifo-build.sh")
+        generate_build_script(manifest, wrapper)
+        sync_script = self._manifest_sync_script(wrapper)
+
+        builder = os.path.join(self.temp_dir, "manifest-fifo-builder")
+        os.makedirs(builder)
+        final_name = "RELEASE_MANIFEST.sha256"
+        sorted_name = "RELEASE_MANIFEST.sha256.sorted.tmp"
+        temporary_name = "RELEASE_MANIFEST.sha256.tmp"
+        final_path = os.path.join(builder, final_name)
+        sorted_path = os.path.join(builder, sorted_name)
+        temporary_path = os.path.join(builder, temporary_name)
+        os.mkfifo(final_path)
+        with open(sorted_path, "w", encoding="utf-8") as fp:
+            fp.write("0123456789abcdef  image.bin\\n")
+        with open(temporary_path, "w", encoding="utf-8") as fp:
+            fp.write("temporary checksum input\\n")
+
+        command = [
+            sys.executable,
+            "-c",
+            sync_script,
+            builder,
+            final_name,
+            sorted_name,
+            temporary_name,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail(
+                "manifest finalizer blocked while opening a FIFO at the published output path"
+            )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            "RELEASE-BLOCKED: checksum manifest durability finalization failed",
+            result.stderr,
+        )
+        self.assertTrue(
+            stat.S_ISFIFO(os.lstat(final_path).st_mode),
+            "the operator-replaced FIFO must remain untouched",
+        )
+        self.assertTrue(os.path.isfile(sorted_path))
+        self.assertTrue(os.path.isfile(temporary_path))
+
+
     def test_generated_wrapper_fsyncs_manifest_before_temporary_cleanup(self):
         profile = load_profile("gl-mt1300")
         staging = os.path.join(self.temp_dir, "manifest-durability-staging")
