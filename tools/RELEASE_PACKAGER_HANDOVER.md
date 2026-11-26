@@ -6807,3 +6807,63 @@ These are hosted CI and synthetic filesystem mutation evidence. They do not esta
 6. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
+## PHX-RELEASE UTC18 — preserve the primary Rental-source descriptor validation failure (2026-11-26T18:15Z)
+
+**Disposition:** one RELEASE-owned packaging cleanup was reproduced test-first and corrected on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The branch remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Bounded correction
+
+The function _copy_staging_file() previously closed a still-owned source descriptor with raw os.close() in its finally block. If the earlier descriptor validation raised and the close operation also raised, the cleanup error could replace the primary integrity failure.
+
+The function now routes that final owned-descriptor close through the existing _close_overlay_descriptors_preserving_primary() helper. The original validation error remains primary; a close error is retained as a diagnostic note. Successful copy/staging behavior and all source-path identity checks remain unchanged.
+
+The regression injects a primary fstat validation error and a close interruption that occurs after the descriptor is actually closed. It asserts primary-exception identity, the helper's close-error diagnostic note, an EBADF readback proving the descriptor is closed, and absence of a staged destination.
+
+Only these RELEASE-owned paths changed in this increment:
+- tools/package_appliance_firmware.py
+- tools/test_package_appliance_firmware.py
+- tools/RELEASE_PACKAGER_HANDOVER.md
+
+No Rental application implementation, CORE, PISONET, HARDWARE, QA, MASTER, shared interface, workflow, board profile, signer or COE #26 destination source was changed.
+
+### Test-first history and exact-source Actions
+
+- Test-only regression [7aac2e18](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/7aac2e1829a6b52d1344e36e86b067374013d230).
+- Accepted expected RED, exact PR-head shared CI [#45875300733](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875300733): **256 tests ran; one expected failure and two intentional skips**. The new regression showed that InterruptedError from the injected source-descriptor close replaced the primary OSError from descriptor validation.
+- Source correction [45313f2b](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/45313f2b6f06eb583d420d36d9248ce4ca03188b) uses the existing exception-preserving descriptor helper.
+- Intermediate exact-source run [#45875562321](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875562321) ran **256 tests with one failure / two skips**. The primary-exception identity assertion passed; the new test's diagnostic-note assertion expected the phrase "cleanup was interrupted," while the existing helper classifies an InterruptedError (an OSError) as "cleanup encountered close errors." This was a test-expectation mismatch, not a remaining source defect.
+- Fixture/diagnostic assertion correction [d76a271c](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d76a271c7d1bfd0c9c73a40d368a872d1da47181).
+
+**Exact source/test HEAD d76a271c7d1bfd0c9c73a40d368a872d1da47181:**
+- PR shared CI [#45875695343](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875695343): **256 tests PASS / 2 intentional skips**; PHX-MANIFEST-DURABILITY-PASS; one synthetic staged-rootfs profile PASS. The workflow then correctly failed closed at appliance admission: **10/10 profiles rejected** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32 and ESP8266 compile jobs SKIPPED. Overall workflow: FAILURE.
+- PR sandbox [#45875695307](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875695307): **48/48 host preflight tests PASS**; Bubblewrap is unavailable on the runner, exit 125; unprivileged identity, namespace and mandatory sandbox packaging steps SKIPPED. Overall workflow: FAILURE.
+- PR case-collision guard [#45875695422](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875695422): PASS.
+- Push rechecks of the same exact source/test SHA: shared [#45875688362](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875688362) produced the same 256 PASS / 2 skips followed by the 10/10 ULA admission failure; sandbox [#45875688415](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45875688415) produced 48/48 host-preflight PASS followed by missing Bubblewrap / exit 125.
+
+These are hosted software CI and synthetic filesystem tests. They do not establish a successful ImageBuilder namespace, approved site networking, real target binaries, physical hardware acceptance or production storage durability.
+
+### Live control plane, ownership and integration
+
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at 0730fff529d62ae2b6c436e14cfd520025291f6c. Its ownership manifest has 11 routes and remains DRAFT_REVIEW_ONLY; the PHX-RELEASE route is .github/workflows/blazepwifi-build.yml → .github/workflows/pisowifi-ci.yml, kind reimplementation-review. MASTER retains cross-repository migration and shared-interface authority.
+- MASTER's current ROLE_ASSIGNMENTS.md still points COE #35 at old head e1ad4fad1c234976ba76a34758d1ca993a897776; this UTC18 source/test head supersedes that pointer. PHX-MASTER must refresh its child pointer. RELEASE did not edit MASTER-owned files.
+- Cleanup-first #266 remains OPEN / **0-of-7**. This is one bounded RELEASE cleanup contribution, not completion of the global gate.
+- Experiments #242 remains OPEN / DRAFT at d19fa750f55ed65dc06f77ab116ab33e046a34bf, base blazepwifi-v0.6.0-audit-foundation@6d4c9b487af4d768c4d7627654d119417fcc6e00; exact-head PR Actions runs/statuses: **0**; GitHub reports mergeable=false.
+- Experiments #291 remains OPEN / DRAFT at bf339a76964a1abe2412fac45392fe06a8e66418, based on old #242 snapshot 734b89d9e7792247e8376335c3f3685500ab3f89. Compare to current #242: **876 ahead / 16 behind**, diverged; exact-head PR Actions runs/statuses: **0**. Its accumulated diff includes inherited CORE and PISONET paths; MASTER and those owners must reconcile before integration. No #242/#291 files were changed.
+- COE integration #26 remains OPEN / DRAFT / FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12; five workflows remain queued with zero completed jobs. No destination writes.
+- COE parent #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b. Exact parent-head shared validation [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) passed validation plus ESP8266 and ESP32 compilation; case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed; mandatory sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed closed because the unprivileged Bubblewrap UID-map probe returned Permission denied. Parent results are not child acceptance.
+- COE child #35 is now source/test head d76a271c7d1bfd0c9c73a40d368a872d1da47181, **484 ahead / 0 behind** parent #31. Its 14-path accumulated diff still includes shared .github/workflows/hardware-ci.yml; PHX-HARDWARE/MASTER review remains required before integration. Independent PR reviews: 0. No rebase, merge or force-push.
+- Authorized Library retrieval surfaced older registry snapshots v3–v7 but not private Drive BLAZE_PROJECT_REGISTRY_v11_20261027.json. No older snapshot was substituted and no private contents or identifiers were copied to GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the source-descriptor close/error-preservation change and regression at source/test HEAD d76a271c.
+2. PHX-INFRA / COE owner supplies an approved disposable unprivileged Bubblewrap-capable runner; do not install privileged helpers or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped RFC 4193 ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER refreshes the #35 child pointer in #288 and reconciles #291's stale parent and inherited CORE/PISONET paths.
+5. PHX-HARDWARE / MASTER review the accumulated shared hardware-ci.yml path before integration.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
