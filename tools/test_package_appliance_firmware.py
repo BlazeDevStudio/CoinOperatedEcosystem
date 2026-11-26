@@ -1206,15 +1206,18 @@ class TestPackageApplianceFirmware(unittest.TestCase):
 
     def test_copy_staging_file_rejects_source_path_replaced_after_open_during_read(self):
         if os.name != "posix":
-            self.skipTest("Source-path replacement while an opened file is pinned requires POSIX rename semantics")
+            self.skipTest("Source-parent replacement while a file is pinned requires POSIX rename semantics")
 
         source_dir = os.path.join(self.temp_dir, "rental-source-path-replacement")
+        displaced_source_dir = os.path.join(self.temp_dir, "rental-source-original")
+        replacement_dir = os.path.join(self.temp_dir, "rental-source-replacement")
         destination_dir = os.path.join(self.temp_dir, "rental-destination-path-replacement")
         os.makedirs(source_dir)
+        os.makedirs(replacement_dir)
         os.makedirs(destination_dir)
 
         source_path = os.path.join(source_dir, "core.sh")
-        replacement_path = os.path.join(source_dir, "core.sh.replacement")
+        replacement_path = os.path.join(replacement_dir, "core.sh")
         destination_path = os.path.join(destination_dir, "core.sh")
         original_content = b"trusted rental source"
         replacement_content = b"replacement rental source"
@@ -1244,9 +1247,11 @@ class TestPackageApplianceFirmware(unittest.TestCase):
             def read(self, *args, **kwargs):
                 data = self.wrapped.read(*args, **kwargs)
                 if not replacement["performed"]:
-                    # Keep the original inode pinned by the open descriptor,
-                    # but replace the pathname with a different regular file.
-                    os.replace(replacement_path, source_path)
+                    # Move the original parent without touching the opened
+                    # file inode, then make the same pathname resolve to a
+                    # different regular file.
+                    os.rename(source_dir, displaced_source_dir)
+                    os.rename(replacement_dir, source_dir)
                     replacement["performed"] = True
                 return data
 
@@ -1259,8 +1264,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
                 return ReplacingReader(original_fdopen(descriptor, mode, *args, **kwargs))
             return original_fdopen(descriptor, mode, *args, **kwargs)
 
-        # The original file descriptor remains stable, so fstat-before/after
-        # alone cannot detect that the source pathname now names another file.
+        # The pinned file inode is not modified; only its parent pathname is
+        # swapped, so descriptor-only fstat checks cannot detect the new path.
         with mock.patch.object(
             packager.os, "fdopen", side_effect=fdopen_after_path_replacement
         ):
@@ -1274,6 +1279,8 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         with open(source_path, "rb") as fp:
             self.assertEqual(fp.read(), replacement_content)
+        with open(os.path.join(displaced_source_dir, "core.sh"), "rb") as fp:
+            self.assertEqual(fp.read(), original_content)
 
     def test_copy_staging_file_rejects_source_replaced_with_symlink_after_lstat(self):
         source_dir = os.path.join(self.temp_dir, "rental-source-race")
