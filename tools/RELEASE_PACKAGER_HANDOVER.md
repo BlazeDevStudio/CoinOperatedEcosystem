@@ -1,3 +1,52 @@
+## PHX-RELEASE UTC15 — revalidate rental source pathname after descriptor read (2026-11-26T15:21Z)
+
+**Disposition:** one RELEASE-owned packaging provenance race was reproduced test-first and corrected on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The packager previously verified the opened Rental source descriptor before and after reading, but did not verify that the current source-tree pathname still resolved to that same unchanged inode after the read. A parent-directory swap could therefore leave the descriptor stable while the path named a different regular file; the old implementation accepted and staged the bytes from the displaced inode.
+
+### Bounded correction
+
+After reading, `_copy_staging_file()` now re-opens the source path through the existing no-symlink parent-directory walk, compares the full device/inode/mode/link-count/size/mtime/ctime identity with the post-read descriptor snapshot, and fails closed if the path is missing, redirected, symlinked, or no longer names the same unchanged file. The recheck descriptor is closed through the existing exception-preserving cleanup helper.
+
+The regression swaps the source parent directory while the original file descriptor remains open. The original file inode and metadata remain stable, while the same pathname resolves to a different regular file. The previous implementation staged the displaced file without noticing; the corrected implementation refuses to create the staging destination.
+
+No Rental application source was modified. Only the RELEASE-owned appliance packaging tool and its packaging regression file changed, plus this handover. No shared Hardware workflow, firmware, board profile, ULA authority, CORE, RENTAL, PISONET, QA, MASTER or COE #26 destination source was changed.
+
+### Commits and test-first record
+
+- Initial fixture attempt [`bda39b96`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bda39b96f10fdb4bc244b78843ffa9d0dd74cba4) used file replacement; the filesystem updated the displaced inode's ctime, so the pre-existing descriptor check failed with a different diagnostic than the test expected. This is a **test-fixture error, not accepted RED evidence**.
+- Corrected test-only regression [`732fb1ad`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/732fb1ad0b2365586be0b8b554d8f3b8dd13b00e) swaps parent directories without modifying the pinned file inode. Exact-source shared run [#45848012301](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45848012301) recorded **255 tests, one expected regression failure, two intentional skips**. The new test failed because the old implementation did not detect the source-path replacement. This is the accepted RED.
+- Source correction [`b1709530`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/b1709530d4e89e86c682f37cf8518c988cd4710d).
+
+### Exact-source Actions at source/test HEAD `b1709530`
+
+- Shared CI [#45848162561](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45848162561): **255 tests PASS / 2 intentional skips**; manifest durability marker PASS; one synthetic staged-rootfs profile PASS. The workflow then failed closed at the independent appliance admission stage: **10/10 profiles rejected** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32 and ESP8266 compilation jobs SKIPPED. Overall workflow FAILURE.
+- Sandbox [#45848162428](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45848162428): **48/48 host preflight tests PASS**; required Bubblewrap unavailable, exit 125; identity validation, namespace validation and mandatory sandbox packaging SKIPPED. Overall workflow FAILURE.
+- Case-collision [#45848162705](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45848162705): PASS.
+
+These are exact-source hosted CI and synthetic host-preflight results. They do not establish a successful Bubblewrap namespace, actual ImageBuilder package, approved production binary or physical hardware acceptance.
+
+### Live ownership and blockers observed for UTC15
+
+- MASTER PR #288: OPEN / DRAFT / UNMERGED at `8287045b861f019e011745fc054478747630bc5f`; ownership routes remain `DRAFT_REVIEW_ONLY`. Its `ROLE_ASSIGNMENTS.md` still points COE #35 at stale `f66ac305`; PHX-MASTER must refresh the child pointer to the final UTC15 handover head.
+- Cleanup-first #266 remains OPEN / 0-of-7.
+- Experiments #242: OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`; zero exact-head PR Actions runs/statuses. Its release-admission handover still reports no PowerShell execution or hosted exact-head verification.
+- Experiments #291: OPEN / DRAFT at `bf339a76964a1abe2412fac45392fe06a8e66418`, based on stale #242 snapshot `734b89d9e7792247e8376335c3f3685500ab3f89`; zero exact-head PR Actions runs/statuses; accumulated inherited CORE/PISONET paths require MASTER/subsystem-owner reconciliation. Its main release handover still cites stale `0441a8e5`.
+- COE #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows queued / zero jobs.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; parent shared validation and ESP8266/ESP32 compile jobs passed, case-collision passed, but parent sandbox failed at unprivileged namespace UID/GID mapping. Parent evidence is not child acceptance.
+- Child #35 retains an accumulated shared `.github/workflows/hardware-ci.yml` path; PHX-HARDWARE/MASTER review is required before integration. This UTC15 increment did not touch it.
+- Private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json` was not recovered through authorized Library search; older logbook/checkpoint files are not substitutes and no private content or identifiers were copied to GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the source-path identity re-open and regression at source/test SHA `b1709530`.
+2. PHX-INFRA / COE owner provides an authorized disposable unprivileged Bubblewrap-capable runner; do not install privileged helpers or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner supplies approved site-scoped RFC 4193 ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER refreshes the stale #35 pointer in #288, reconciles #291 ancestry/inherited CORE/PISONET paths, and coordinates the accumulated Hardware workflow review with PHX-HARDWARE.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC14 — reject noncanonical private-host mask paths (2026-11-26T14:16:32.905Z)
 
 **Disposition:** one RELEASE-owned validation defect corrected test-first on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). `check_private_host_mask_targets()` previously stripped leading/trailing separators before component validation. That allowed a trailing slash and a double-leading slash to be checked as a normalized path while the original string remained in the Bubblewrap mount arguments. A NUL-containing path also escaped the intended canonical-path guard and raised `ValueError` from `lstat` instead of returning a fail-closed diagnostic.
