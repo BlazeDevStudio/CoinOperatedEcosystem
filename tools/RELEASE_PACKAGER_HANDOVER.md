@@ -1,3 +1,60 @@
+## PHX-RELEASE UTC07 — reject FIFO at generated manifest finalizer (2026-11-26T07:28Z)
+
+**Disposition:** one RELEASE-owned generated-build-script defect was reproduced test-first and corrected on existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch and bounded scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting child HEAD: `5f5700a0684d5ca43e051dc8af46e5b90f3fa383`.
+- Test-only regression: [`8310ac0e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/8310ac0e83188aad3edaa1669a973306c09db4f1).
+- Source correction / source-test HEAD: [`d17153a3`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/d17153a3b64f7f6e064e7700d65084bb280c5c87).
+- This activation changes only `tools/test_package_appliance_firmware.py`, `tools/package_appliance_firmware.py`, and this RELEASE handover. No CORE, RENTAL, PISONET, HARDWARE, QA, MASTER, shared-interface or COE #26 destination path changed.
+
+### Defect and correction
+
+The generated ImageBuilder wrapper's `PHX_MANIFEST_SYNC` finalizer opened `RELEASE_MANIFEST.sha256` with `O_WRONLY | O_NOFOLLOW`, then checked whether the descriptor referred to a regular file. `O_NOFOLLOW` rejects symlinks but does not prevent opening a FIFO. If the published output path were replaced with a FIFO after the shell hard-link publication and before this open, the writer could block indefinitely before reaching the regular-file check.
+
+The new regression creates a FIFO at the final-manifest path, executes the extracted finalizer in a child Python process with a three-second timeout, and requires a prompt fail-closed error while leaving the replacement FIFO and temporary inputs untouched.
+
+The source correction explicitly requires `os.O_NONBLOCK` support and opens the final manifest with `O_WRONLY | O_NOFOLLOW | O_NONBLOCK`. A regular file is unaffected; a FIFO with no reader fails promptly rather than hanging, and the existing finalizer error path denies completion. No unsandboxed fallback or output replacement was added.
+
+### Test-first and exact-source CI
+
+- Expected RED, shared PR [#45775351391](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45775351391), job `139757567335`: **245 tests ran; 242 passed, 1 expected failure, 2 intentional skips**. The new `test_generated_wrapper_manifest_finalizer_does_not_block_on_fifo_output` failed with `subprocess.TimeoutExpired` after three seconds, reproducing the blocking FIFO open. The packaging/tool step failed as expected; all-profile staging and board compiles were skipped.
+- Expected-RED sandbox PR [#45775351339](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45775351339), job `139757566827`: **42/42 host preflight tests PASS**, then Bubblewrap unavailable / exit 125; namespace and mandatory sandbox packaging skipped.
+- Expected-RED case-collision [#45775351312](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45775351312): PASS.
+- Corrected source/test shared PR [#45775538212](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45775538212), job `139758186631`: **245 tests ran; 243 passed / 2 intentional skips**. The FIFO regression passed; firmware hardening, shared contracts and packaging/tool validation passed; `PHX-MANIFEST-DURABILITY-PASS` emitted; one synthetic staged profile passed. The later all-profile gate failed closed **10/10** because approved site-scoped RFC 4193 ULA /48 authority is missing; ESP32 and ESP8266 compilation jobs were skipped. Overall shared workflow: FAILURE, not release-ready.
+- Corrected source/test sandbox PR [#45775538141](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45775538141), job `139758186229`: **42/42 host preflight tests PASS**, then Bubblewrap unavailable / exit 125; unprivileged identity, namespace and mandatory sandbox packaging skipped.
+- Corrected source/test case-collision [#45775538122](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45775538122): PASS.
+
+These are hosted CI and synthetic FIFO/filesystem results. They do not establish actual Bubblewrap namespace execution, ImageBuilder firmware packaging, approved production binaries, physical appliance acceptance or production release.
+
+### Live ownership, integration and provenance
+
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at `b944e702094f36dbbb8e5b82e69d9ddd51f228c1`; the ownership manifest remains 11 routes / `DRAFT_REVIEW_ONLY`. PHX-RELEASE's explicit route remains `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`. MASTER retains cross-repository migration and shared-interface authority.
+- Cleanup-first #266 remains OPEN / **0-of-7**. This bounded RELEASE correction does not complete the global cleanup gate.
+- Experiments PR #242 remains OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`; its publisher-admission change still has no exact-head Actions runs/statuses and no PowerShell execution evidence.
+- Experiments PR #291 remains OPEN / DRAFT at `0441a8e5ead737a1a160b6e7eea0b4ec836f457f`, based on former #242 head `734b89d9e7792247e8376335c3f3685500ab3f89`; it remains 873 ahead / 9 behind current #242. Its exact head has no PR-triggered Actions runs/statuses; accumulated non-RELEASE paths remain under MASTER and respective owner reconciliation.
+- COE integration PR #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero jobs and no destination writes occurred.
+- COE parent PR #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Child PR #35 is 446 commits ahead / 0 behind parent at source/test head; its accumulated 14 changed paths remain under `.github/workflows/` and `tools/`. No rebase, force-push, retarget or merge occurred.
+- Independent PR #35 reviews: zero recorded at this checkpoint.
+- The actual private Drive project registry v11 remains **NOT RECOVERED** through authorized Library access. Older v3–v7 snapshots were not substituted; no private contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the FIFO regression and `O_NONBLOCK | O_NOFOLLOW` finalizer correction at `d17153a3`.
+2. PHX-INFRA / COE owner supplies an authorized disposable no-secret Bubblewrap runner; do not install Bubblewrap or bypass the sandbox gate.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before the ten-profile admission gate can pass.
+4. PHX-MASTER reconciles the inherited child stacks and refreshes its own #35 pointer after the final handover commit; RELEASE does not rebase or rewrite other roles.
+5. PHX-CORE publishes canonical freshness for #291; RELEASE reruns Windows/Full only against that exact refreshed source.
+6. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+**PRODUCTION NO-GO.** Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED.
+
+---
+
 ## PHX-RELEASE UTC23 — revalidate published manifest and checksum bytes (2026-11-25T23:20Z)
 
 **Disposition:** one RELEASE-owned artifact-integrity defect was reproduced test-first and corrected on existing child draft PR #35. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
