@@ -1,3 +1,53 @@
+## PHX-RELEASE UTC09 — mask host tool-cache and service-state roots (2026-11-26)
+
+**Disposition:** one bounded RELEASE-owned ImageBuilder sandbox isolation correction was reproduced test-first and committed on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signer, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch and changed paths
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting child HEAD: `f5ebd5b0bbd9982a0a4e06fa8f128e1f821168b0`.
+- Test-first regression: [`921e30b1`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/921e30b133368779584c9e5da7274c5bdd3a4a92).
+- Shared trust-policy correction: [`4290a8a9`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4290a8a9de7d528001abe87b66208aadb04a442f).
+- Packaging-test expectation alignment: [`bf98721b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bf98721bbe7e2b1945ce40fc4949bb030e0af451).
+- This increment changes four RELEASE-owned paths: `tools/imagebuilder_bwrap_trust.py`, `tools/test_imagebuilder_sandbox_host.py`, `tools/test_package_appliance_firmware.py`, and this handover. No `.github/workflows/hardware-ci.yml`, firmware, board profile, network authority or COE #26 destination path changed.
+
+### Finding and correction
+
+The sandbox starts with a read-only bind of the host root and then masks user, runtime and external-mount data roots. The canonical `PRIVATE_HOST_PATHS` omitted `/opt` and `/var/lib`, leaving host tool-cache and service/container state visible inside the namespace.
+
+The shared policy now adds tmpfs masks for `/opt` and `/var/lib`. The same immutable path tuple and mount-argument helper are consumed by both host preflight and runtime. The host preflight command regression and runtime mount-context tests now require the two additional masks.
+
+This narrows the host-data exposure surface; it does **not** claim that every host path is hidden or that the sandbox is runtime-accepted. No specific secret file was asserted to exist in either directory.
+
+### Test-first and exact-source CI
+
+- Expected RED, sandbox PR [#45790802573](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45790802573), job `139809036265`: **42 tests ran; one expected failure**. The new mask assertion identified exactly the missing `/opt` and `/var/lib` tmpfs entries. Case-collision [#45790802609](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45790802609): PASS.
+- First source/test head [`4290a8a9`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4290a8a9de7d528001abe87b66208aadb04a442f): sandbox host preflight **42/42 PASS**, then Bubblewrap unavailable / exit 125. The first shared CI [#45791013114](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45791013114) exposed two stale expected-path lists in the packaging test file; those test expectations were corrected in `bf98721b`. Case-collision [#45791012953](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45791012953): PASS.
+- Corrected source/test head [`bf98721b`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/bf98721bbe7e2b1945ce40fc4949bb030e0af451): shared CI [#45791242317](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45791242317) — **246 tests, OK, two intentional skips**; manifest durability marker emitted; one synthetic staged profile passed. The subsequent all-profile admission rejected **10/10** profiles because approved site-scoped RFC 4193 ULA /48 authority is missing; ESP32/ESP8266 compile jobs skipped; overall shared workflow FAILURE.
+- Corrected source/test sandbox [#45791242424](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45791242424): host preflight **42/42 PASS**, then Bubblewrap unavailable / exit 125; unprivileged identity, namespace and mandatory sandbox packaging skipped.
+- Corrected source/test case-collision [#45791242534](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45791242534): PASS.
+
+These are exact-source hosted CI and synthetic command/mount-policy tests. They do not establish a real Bubblewrap namespace, ImageBuilder package, approved firmware binary, physical hardware acceptance or production release.
+
+### Current candidate implementation
+
+- Current candidate implementation: single-ID user namespace; host root read-only; tmpfs masks for `/tmp`, `/home`, `/root`, `/run`, `/var/tmp`, `/mnt`, `/media`, `/srv`, `/opt`, and `/var/lib`; it does not invoke `sudo`, `newuidmap`, or `newgidmap`.
+- Current exact-head Actions: final handover-head runs are recorded by the UTC09 checkpoint after this documentation commit. Bubblewrap remains unavailable on the hosted runner; no unsandboxed fallback is permitted.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the additional `/opt` and `/var/lib` masks, mount verification and any ImageBuilder runtime dependency implications.
+2. PHX-INFRA / COE owner provides an authorized disposable unprivileged Bubblewrap-capable runner; do not install Bubblewrap or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER reviews the existing shared `.github/workflows/hardware-ci.yml` path in the accumulated PR #35 diff before any integration; this UTC09 increment did not touch it.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred.
+
+---
+
 ## PHX-RELEASE UTC08 — consolidate sandbox process-group cleanup classification (2026-11-26)
 
 **Disposition:** one RELEASE-owned maintainability cleanup was reproduced test-first and corrected on existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signer, tag, publication, hardware flash, payment migration or customer deployment.
