@@ -1,3 +1,58 @@
+## PHX-RELEASE UTC08 — consolidate sandbox process-group cleanup classification (2026-11-26)
+
+**Disposition:** one RELEASE-owned maintainability cleanup was reproduced test-first and corrected on existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signer, tag, publication, hardware flash, payment migration or customer deployment.
+
+### Exact branch and bounded scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Parent/base PR #31: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Starting child HEAD: `1ccba2e9ab46aef8d30d0758d15f25e8d7879615`.
+- Test-first regression commit: [`9176c624`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/9176c624e3212069b8732a9d4eb04b8fc3908410).
+- Source correction / source-test HEAD: [`c82bfa3e`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c82bfa3e3488947aeeec3a3f961bc7843902866c).
+- This increment changes exactly five RELEASE-owned paths: `tools/test_validate_all_profiles.py`, `tools/run_imagebuilder_sandbox.py`, `tools/check_imagebuilder_sandbox_host.py`, `tools/validate_all_profiles.py`, and this handover. No subsystem source, `.github/workflows/hardware-ci.yml`, COE #26 destination, shared network contract or hardware behavior changed.
+
+### Finding and correction
+
+The same four process-group cleanup failure markers were independently duplicated in the ImageBuilder runner, the host preflight and the staged-profile validator. A future marker change could make the three tools classify the same cleanup failure differently.
+
+The regression requires the validator and host preflight to use the exact same classifier object as the canonical ImageBuilder runner and checks all four markers plus an ordinary `RELEASE-BLOCKED` build failure.
+
+The runner now owns `PROCESS_GROUP_CLEANUP_ERROR_MARKERS` and `process_group_cleanup_failed()`. Its own timeout result, the host preflight and the staged-profile validator all use that helper. The same case-sensitive marker set and stderr-only classification are preserved; no cleanup policy, signal behavior, timeout, sandbox boundary, package, manifest or output changed.
+
+### Test-first and exact-source CI
+
+- Expected RED, shared PR [#45783435718](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45783435718), job `139784221468`: **246 tests ran; 243 passed, 1 expected error, 2 intentional skips**. The new shared-classifier test failed because `run_imagebuilder_sandbox` did not yet export `process_group_cleanup_failed`. The packaging/tool step failed on that expected regression; profile admission and both board compile jobs were skipped.
+- Expected-RED case-collision [#45783436074](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45783436074): PASS.
+- Expected-RED sandbox [#45783435790](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45783435790): host preflight unit tests PASS; Bubblewrap unavailable; unprivileged identity, namespace and mandatory sandbox packaging skipped. This is an independent infrastructure blocker, not the regression.
+- Corrected source/test shared PR [#45783614832](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45783614832), job `139784821854`: **246 tests ran; 244 passed, 2 intentional skips**; the new shared-classifier test passed and `PHX-MANIFEST-DURABILITY-PASS` was emitted. The subsequent appliance admission failed closed **10/10** because approved site-scoped RFC 4193 ULA /48 authority is missing; ESP32 and ESP8266 compile jobs were skipped. Overall shared workflow: FAILURE, not release-ready.
+- Corrected source/test sandbox PR [#45783614896](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45783614896): host preflight unit tests PASS; Bubblewrap unavailable / exit 125; identity, namespace and mandatory sandbox packaging skipped.
+- Corrected source/test case-collision [#45783614897](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45783614897): PASS.
+
+These are exact-source hosted CI and synthetic test results. They do not establish real ImageBuilder sandbox execution, approved firmware binaries, physical hardware acceptance or production release.
+
+### Live ownership, integration and provenance
+
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at `802c11c8517fc497fc34c1ebd1588432be1bf351`. The ownership manifest remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE's explicit route remains `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, `reimplementation-review`. MASTER retains cross-repository migration and shared-interface authority.
+- Cleanup-first #266 remains OPEN / **0-of-7**. This internal tooling cleanup does not complete the global cleanup gate.
+- Experiments #242 remains OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`; its SoftTimer publisher-admission change still has no exact-head Actions evidence or PowerShell execution evidence.
+- Experiments #291 remains OPEN / DRAFT at `bf339a76964a1abe2412fac45392fe06a8e66418`, based on former #242 head `734b89d9e7792247e8376335c3f3685500ab3f89`; current comparison is 876 ahead / 9 behind #242. Its exact head has no PR-triggered Actions runs/statuses; inherited non-RELEASE paths and parent-stack reconciliation remain with MASTER.
+- COE #26 remains OPEN / DRAFT / FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero jobs and no destination writes occurred.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`; child #35 remains OPEN / DRAFT / UNMERGED. Before this increment #35 was 450 commits ahead / 0 behind #31; this increment is test-first + source correction + one handover update. No rebase, force-push or merge was performed.
+- The private Drive project registry v11 was not recovered through authorized Library access. Older v3–v7 snapshots and checkpoint references are not substitutes; no private registry contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the canonical classifier and the test-first/source commits `9176c624` / `c82bfa3e`.
+2. PHX-INFRA / COE owner supplies an authorized disposable unprivileged Bubblewrap runner; do not install Bubblewrap or bypass the sandbox gate.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before the ten-profile admission gate can pass.
+4. PHX-MASTER reconciles #291's stale parent and inherited ownership stack, and reviews the existing shared `.github/workflows/hardware-ci.yml` path before any integration.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC07 — reject FIFO at generated manifest finalizer (2026-11-26T07:28Z)
 
 **Disposition:** one RELEASE-owned generated-build-script defect was reproduced test-first and corrected on existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.** No merge, signing, tag, publication, hardware flash, payment migration or customer deployment.
