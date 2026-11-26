@@ -6867,3 +6867,59 @@ These are hosted software CI and synthetic filesystem tests. They do not establi
 6. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC19 — pin the rootfs source during recursive overlay copy (2026-11-26T19:15Z)
+
+**Disposition:** one RELEASE-owned rootfs provenance race was reproduced test-first and corrected on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The branch remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Defect and bounded correction
+
+The rootfs staging helper previously passed the operator-visible source_rootfs pathname directly to shutil.copytree(). The destination root was pinned, but the recursive source root was not. If that source pathname was renamed and replaced with a symlink after copy began, copytree() could resolve the replacement root and stage files from a different tree while the destination identity checks still passed.
+
+The correction now:
+
+1. Opens the source parent through the existing descriptor-relative no-symlink walk.
+2. Opens and pins the source root with O_DIRECTORY | O_NOFOLLOW, then compares the no-follow entry snapshot with fstat().
+3. Passes /proc/self/fd/<source-fd> to copytree() so recursive traversal remains anchored to the opened source directory.
+4. Reopens the operator-visible source parent after copy and verifies parent identity plus the pinned root's device/inode/mode/mtime/ctime snapshot. A changed, redirected, missing or symlinked source path fails closed and invokes the existing pinned-destination rollback.
+5. Closes the new source descriptors through the existing exception-preserving cleanup helper.
+
+This is a distinct rootfs-tree copy boundary; it does not duplicate the earlier UTC15 single-file Rental source-path recheck in _copy_staging_file(). The guard verifies root-path identity and root-directory metadata; it is not claimed to be a recursive immutable snapshot of every nested source file. No Rental application source or shared interface changed.
+
+### Test-first commits
+
+- Test-only regression [c71085d6](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/c71085d68dcdd54b1601f10eaa378188c32f552c) swaps the rootfs pathname to a symlink immediately before the recursive copy. The old implementation followed the replacement and returned success. Exact PR shared run [#45882125728](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45882125728) ran **257 tests: one expected regression failure, two intentional skips**. The new test failed because no source-path change was detected. This is the accepted RED.
+- The same test-only head's sandbox host preflight [#45882125700](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45882125700) passed **48/48 host tests**, then failed at missing Bubblewrap / exit 125; namespace and mandatory packaging regressions were skipped. Case-collision [#45882125744](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45882125744) passed.
+- Source correction [4db07de7](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/4db07de74a780a9550d85e0fd4c199037dcf1470).
+
+### Exact-source Actions at source/test HEAD 4db07de74a780a9550d85e0fd4c199037dcf1470
+
+- PR shared validation [#45882321464](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45882321464): **257 tests PASS / 2 intentional skips**; manifest durability marker PASS; one synthetic staged-rootfs profile PASS. The workflow then failed closed at independent appliance admission: **10/10 profiles rejected** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32 and ESP8266 compile jobs SKIPPED. Overall workflow FAILURE.
+- PR sandbox [#45882321469](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45882321469): **48/48 host preflight tests PASS**; Bubblewrap is not installed, exit 125; unprivileged identity, namespace and mandatory sandbox packaging steps SKIPPED. Overall workflow FAILURE.
+- PR case-collision [#45882321476](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45882321476): PASS.
+
+These are exact-source hosted CI and synthetic host-preflight results. They do not establish a successful Bubblewrap namespace, actual OpenWrt ImageBuilder package, approved production binary or physical hardware acceptance.
+
+### Current cross-repository state and owner actions
+
+- MASTER PR #288 remains OPEN / DRAFT / UNMERGED at ed6bb786c08d360a611e0e6c5c0505fa90d9b477. Its 11-route manifest remains DRAFT_REVIEW_ONLY; the PHX-RELEASE route is reimplementation-review, not direct-copy authorization. MASTER's ROLE_ASSIGNMENTS.md still points COE #35 to the previous e1ad4fad child head; PHX-MASTER must refresh it to the current child after this handover commit. No MASTER-owned file was changed.
+- Cleanup-first issue #266 remains OPEN / 0-of-7; its release track is still the broader #242 build/version/manifest/signing configuration cleanup. This #35 task does not complete that track.
+- Experiments #242 remains OPEN / DRAFT at d19fa750f55ed65dc06f77ab116ab33e046a34bf, mergeable=false, with zero exact-head PR Actions runs/statuses. Its UTC16 action-pin/checkout-credential guard has focused local RED/GREEN evidence only; Windows/PowerShell hosted verification is absent.
+- Experiments #291 remains OPEN / DRAFT at bf339a76964a1abe2412fac45392fe06a8e66418, mergeable=false, based on stale #242 snapshot 734b89d9. Exact-head PR Actions runs/statuses remain zero. Its inherited CORE/PISONET path overlap still requires MASTER and subsystem-owner reconciliation; no rebase, retarget or merge was performed.
+- COE integration #26 remains FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12. Five workflows are queued and return zero jobs; no destination write occurred.
+- COE parent #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b. Exact parent shared validation and ESP8266/ESP32 compile jobs pass; case-collision passes; mandatory sandbox fails at unprivileged UID/GID namespace mapping (Permission denied) after host preflight and identity checks. Parent evidence is not child acceptance.
+- The accumulated child #35 diff still includes shared .github/workflows/hardware-ci.yml, which requires PHX-HARDWARE/MASTER review before integration. This UTC19 increment changed only RELEASE-owned packager, test and handover files.
+- Authorized Library retrieval did not surface private Drive BLAZE_PROJECT_REGISTRY_v11_20261027.json. Older v3-v7 snapshots are not substitutes. No private registry contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the rootfs source-FD pin/revalidation and regression at source/test SHA 4db07de7.
+2. PHX-INFRA / COE owner provides an approved disposable Bubblewrap-capable runner; do not install privileged helpers or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner supplies approved site-scoped RFC 4193 ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER refreshes the COE #35 child pointer and reconciles #291 ancestry/inherited CORE/PISONET paths plus the shared Hardware workflow review.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
