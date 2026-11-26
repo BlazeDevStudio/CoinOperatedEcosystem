@@ -2836,7 +2836,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(os.path.join(proc_self, "gid_map"), "w", encoding="ascii") as fp:
             fp.write("0 1000 1\n")
 
-        private_paths = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+        private_paths = ("/home", "/root", "/run", "/var/tmp", "/mnt", "/media", "/srv")
 
         def write_mountinfo(root_mode, hidden_paths=private_paths):
             rows = [
@@ -2886,7 +2886,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
     def test_runner_private_host_mount_arguments_hide_credential_paths(self):
         expected = [
             argument
-            for path in ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+            for path in ("/home", "/root", "/run", "/var/tmp", "/mnt", "/media", "/srv")
             for argument in ("--tmpfs", path)
         ]
         self.assertEqual(run_imagebuilder_sandbox._private_host_mount_args(), expected)
@@ -2904,7 +2904,7 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         )
         expected = [
             argument
-            for path in ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+            for path in ("/home", "/root", "/run", "/var/tmp", "/mnt", "/media", "/srv")
             for argument in ("--tmpfs", path)
         ]
         probe = check_imagebuilder_sandbox_host.build_probe_command("/usr/bin/bwrap")
