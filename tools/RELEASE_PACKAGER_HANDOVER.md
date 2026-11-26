@@ -6923,3 +6923,71 @@ These are exact-source hosted CI and synthetic host-preflight results. They do n
 5. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+
+---
+
+## PHX-RELEASE UTC21 — reject non-boolean VLAN capability values (2026-11-26T21:18Z)
+
+**Disposition:** one RELEASE-owned profile-to-UCI type-validation defect was reproduced test-first and corrected on existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The PR remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Finding and bounded correction
+
+`generate_network_uci()` previously used the raw JSON value in:
+
+```python
+if net.get("vlan_supported", False):
+```
+
+The profile loader parses JSON but does not enforce a schema before this consumer. A custom profile with `"vlan_supported": "false"` (or an integer, null, list or object) was therefore accepted through Python truthiness instead of being rejected as a malformed capability declaration. In particular, the non-empty string `"false"` enabled `option vlan_filtering '1'`; other falsey invalid types were silently treated as disabled.
+
+The generator now reads the optional field with the existing missing-field default of `False`, requires a real JSON boolean, and raises `ValueError("Invalid VLAN support flag")` for every present non-boolean value. The validated boolean is then used for the existing VLAN-filtering branch. Explicit `True` and `False` retain their prior semantics; an omitted field remains backward-compatible as disabled. All ten current COE profiles were independently fetched at the starting PR head and contain JSON boolean `true`; no profile values or networking interface definitions were changed.
+
+### Test-first commits
+
+- Regression-only commit [21a55c6a](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/21a55c6a643e6d1a5e73eb97878e74a3db467ed8) adds:
+  - rejection cases for `"false"`, `"true"`, `0`, `1`, `null`, list and object values;
+  - compatibility checks for explicit boolean `False` and an omitted field.
+- Accepted expected RED, exact PR shared run [#45896757025](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45896757025), job `140172446622`: **259 tests ran, 7 expected subtest failures, 2 intentional skips**. All seven failures were the new malformed-value cases; the old implementation raised no `ValueError`. Firmware-hardening and shared-contract checks passed before the packaging test step failed; downstream all-profile validation and board compiles were skipped.
+- Test-only case-collision [#45896756982](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45896756982): PASS.
+- Test-only sandbox [#45896757013](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45896757013): **48/48 host preflight tests PASS**; Bubblewrap unavailable, exit 125; identity, namespace and mandatory sandbox packaging skipped.
+
+### Source correction and exact-source Actions
+
+- Source correction [ffb7c206](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/ffb7c2068b2c085af997b1d895a5b684709846d0) changes only `tools/package_appliance_firmware.py`.
+- Exact source/test HEAD `ffb7c2068b2c085af997b1d895a5b684709846d0), PR Actions:
+  - Shared/firmware [#45896894012](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45896894012), validation job `140172890653`: **259 tests PASS / 2 intentional skips**; `PHX-MANIFEST-DURABILITY-PASS`; one synthetic staged-rootfs profile PASS. The subsequent appliance admission gate correctly failed closed for **10/10 profiles** because approved site-scoped RFC 4193 ULA /48 authority is missing. ESP32 and ESP8266 compile jobs were SKIPPED. Overall workflow: FAILURE.
+  - Sandbox [#45896893961](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45896893961): **48/48 host preflight tests PASS**; Bubblewrap is not installed, exit 125; namespace and mandatory sandbox packaging SKIPPED. Overall workflow: FAILURE.
+  - Case-collision [#45896894004](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45896894004): PASS.
+
+These are exact-source hosted software CI and synthetic host-side profile tests. They do not establish a successful Bubblewrap namespace, actual OpenWrt ImageBuilder package, target firmware compilation, physical networking behavior or hardware acceptance.
+
+### Changed paths and ownership
+
+This UTC21 increment changes only:
+- `tools/test_package_appliance_firmware.py`
+- `tools/package_appliance_firmware.py`
+- `tools/RELEASE_PACKAGER_HANDOVER.md`
+
+No router profile, ULA value, VLAN ID, interface/bridge topology, Hardware firmware, shared interface, CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was changed. The accumulated #35 diff still contains the previously inherited shared `.github/workflows/hardware-ci.yml` path; PHX-HARDWARE/MASTER review remains required before integration.
+
+### Live cross-repository reconciliation
+
+- MASTER [PR #288](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/288) remains OPEN / DRAFT / UNMERGED at `0e8a59a0463d522ddff95371a60cf271d4c752bc`. The 11-route manifest remains `DRAFT_REVIEW_ONLY`; PHX-RELEASE's route is `reimplementation-review`, not direct-copy or migration authority. MASTER's ROLE_ASSIGNMENTS still pins COE #35 to old head `e1ad4fad1c234976ba76a34758d1ca993a897776`; PHX-MASTER must refresh the child pointer after the final handover commit. MASTER exact-head Actions runs/statuses: 0.
+- Cleanup-first [issue #266](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/issues/266) remains OPEN / **0-of-7**. This is one bounded RELEASE contribution, not completion of the global cleanup gate.
+- Experiments [PR #242](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/242) remains OPEN / DRAFT at `44708e127d6f03bc8458a190bfef98067a355255`, base `6d4c9b487af4d768c4d7627654d119417fcc6e00`; exact-head PR Actions runs/statuses: 0; mergeable=false.
+- Experiments [PR #291](https://github.com/BlazeDevStudio/BlazingSystems-Experiments/pull/291) remains OPEN / DRAFT at `bf339a76964a1abe2412fac45392fe06a8e66418`, based on former #242 snapshot `734b89d9e7792247e8376335c3f3685500ab3f89`; exact-head PR Actions runs/statuses: 0; mergeable=false. The accumulated diff retains inherited CORE/PISONET paths and the stale parent relationship. MASTER owns stack/ownership reconciliation; no rebase, retarget, force-push or merge was performed.
+- COE integration [PR #26](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/26) remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows are queued and their queried job lists return zero jobs. No destination writes.
+- COE parent [PR #31](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/31) remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Its exact-head shared validation and ESP8266/ESP32 compile run [#44222517238](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517238) and case-collision [#44222517258](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517258) passed; mandatory sandbox [#44222517263](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44222517263) failed at unprivileged Bubblewrap UID-map setup (exit 125). Parent evidence is not child acceptance.
+- COE child [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35) is on the existing RELEASE-owned branch `phoenix/release-build-script-publication-safety-20261117`, based on #31 `59ed44d0...`. The source/test head is `ffb7c206`; final PR head will be the handover commit below. Independent PR reviews remain absent.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the strict JSON-boolean validation and malformed-value regression at source/test SHA `ffb7c206`.
+2. PHX-CORE / PHX-MASTER / COE integration owner defines and approves site-scoped RFC 4193 ULA /48 authority; RELEASE must not invent a prefix or relax the fail-closed admission gate.
+3. PHX-INFRA / COE owner provides an authorized disposable Bubblewrap-capable runner; do not install privileged helpers or bypass the sandbox.
+4. PHX-MASTER refreshes the #35 child pointer to the final handover head and reconciles #291's stale parent/inherited ownership paths.
+5. PHX-HARDWARE / MASTER review the accumulated shared `hardware-ci.yml` path before integration.
+6. Registry custodian restores authorized provenance-only access to private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json`. Older v3-v7 snapshots are not substitutes.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
