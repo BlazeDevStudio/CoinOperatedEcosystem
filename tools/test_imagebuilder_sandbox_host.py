@@ -204,6 +204,23 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             self.assertFalse(ready)
             self.assertIn("real directory", detail.lower())
 
+    def test_private_host_mask_validator_rejects_noncanonical_paths(self):
+        import imagebuilder_bwrap_trust as trust
+
+        with tempfile.TemporaryDirectory() as directory:
+            real_directory = os.path.join(directory, "real")
+            os.mkdir(real_directory)
+            malformed_paths = (
+                f"/{real_directory.lstrip(os.sep)}",
+                f"{real_directory}{os.sep}",
+            )
+
+            for path in malformed_paths:
+                with self.subTest(path=path):
+                    ready, detail = trust.check_private_host_mask_targets((path,))
+                    self.assertFalse(ready)
+                    self.assertIn("canonical", detail.lower())
+
     def test_host_preflight_rejects_unsafe_mask_target_before_spawning_bubblewrap(self):
         helper = self.helper_or_skip()
         import imagebuilder_bwrap_trust as trust
