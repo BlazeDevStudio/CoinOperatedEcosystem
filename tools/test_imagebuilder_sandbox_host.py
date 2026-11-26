@@ -211,7 +211,7 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             real_directory = os.path.join(directory, "real")
             os.mkdir(real_directory)
             malformed_paths = (
-                f"/{real_directory.lstrip(os.sep)}",
+                f"//{real_directory.lstrip(os.sep)}",
                 f"{real_directory}{os.sep}",
             )
 
