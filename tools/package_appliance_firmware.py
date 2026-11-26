@@ -1971,9 +1971,11 @@ try:
         build_dir,
         os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
     )
+    if not hasattr(os, "O_NONBLOCK"):
+        raise RuntimeError("nonblocking manifest output verification is unavailable")
     final_fd = os.open(
         final_name,
-        os.O_WRONLY | os.O_NOFOLLOW,
+        os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
         dir_fd=directory_fd,
     )
     try:
