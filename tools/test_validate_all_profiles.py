@@ -11,9 +11,29 @@ from types import SimpleNamespace
 from unittest import mock
 
 import validate_all_profiles as validator
+import run_imagebuilder_sandbox as sandbox_runner
+import check_imagebuilder_sandbox_host as sandbox_host
 
 
 class TestValidateProfileDiagnostics(unittest.TestCase):
+    def test_process_group_cleanup_classifier_is_shared_by_release_sandbox_tools(self):
+        self.assertIs(
+            validator._process_group_cleanup_failed,
+            sandbox_runner.process_group_cleanup_failed,
+        )
+        self.assertIs(
+            sandbox_host.process_group_cleanup_failed,
+            sandbox_runner.process_group_cleanup_failed,
+        )
+        for marker in sandbox_runner.PROCESS_GROUP_CLEANUP_ERROR_MARKERS:
+            with self.subTest(marker=marker):
+                self.assertTrue(sandbox_runner.process_group_cleanup_failed(marker))
+        self.assertFalse(
+            sandbox_runner.process_group_cleanup_failed(
+                "RELEASE-BLOCKED: ordinary ImageBuilder failure"
+            )
+        )
+
     def setUp(self):
         self.profile = {
             "profile_id": "test-router",
