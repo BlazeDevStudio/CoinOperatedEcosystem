@@ -238,6 +238,61 @@ class TestValidateProfileDiagnostics(unittest.TestCase):
             )
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_diagnostic_timeout_preserves_timeout_when_cleanup_raises_and_retries_once(self):
+        process = mock.Mock()
+        process.pid = 321
+        timeout = validator.subprocess.TimeoutExpired("sh", 30)
+        process.wait.side_effect = timeout
+
+        with (
+            mock.patch.object(
+                validator.subprocess, "Popen", return_value=process
+            ),
+            mock.patch.object(
+                validator,
+                "_terminate_process_groups",
+                side_effect=[OSError("first cleanup attempt failed"), ("", "")],
+            ) as terminate,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "timed out") as raised:
+                validator.run_appliance_diagnostics("test-router", {})
+
+        self.assertIs(raised.exception.__cause__, timeout)
+        self.assertIn("first cleanup attempt raised OSError", str(raised.exception))
+        self.assertIn("cleanup retry succeeded", str(raised.exception))
+        self.assertEqual(terminate.call_count, 2)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
+    def test_diagnostic_timeout_remains_primary_when_both_cleanup_attempts_raise(self):
+        process = mock.Mock()
+        process.pid = 322
+        timeout = validator.subprocess.TimeoutExpired("sh", 30)
+        process.wait.side_effect = timeout
+
+        with (
+            mock.patch.object(
+                validator.subprocess, "Popen", return_value=process
+            ),
+            mock.patch.object(
+                validator,
+                "_terminate_process_groups",
+                side_effect=[
+                    OSError("first cleanup attempt failed"),
+                    OSError("second cleanup attempt failed"),
+                ],
+            ) as terminate,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "timed out") as raised:
+                validator.run_appliance_diagnostics("test-router", {})
+
+        self.assertIs(raised.exception.__cause__, timeout)
+        self.assertIn("cleanup not confirmed after 2 attempts", str(raised.exception))
+        self.assertIn("first cleanup attempt raised OSError", str(raised.exception))
+        self.assertIn("second cleanup attempt raised OSError", str(raised.exception))
+        self.assertEqual(terminate.call_count, 2)
+
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
     def test_successful_diagnostic_exit_terminates_background_processes(self):
         with tempfile.TemporaryDirectory() as root:
             marker = os.path.join(root, "diagnostic-child-survived")
