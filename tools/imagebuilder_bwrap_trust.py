@@ -45,7 +45,7 @@ def check_private_host_mask_targets(
             or path == os.sep
             or path.startswith(os.sep * 2)
             or path.endswith(os.sep)
-            or "\\0" in path
+            or chr(0) in path
             or os.path.normpath(path) != path
         ):
             return False, f"private host mask target is not a canonical absolute non-root path: {path!r}"
