@@ -1124,6 +1124,49 @@ def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
                 raise ValueError(
                     f"Rental source file changed while reading: {source_path}"
                 )
+
+            # The descriptor proves the opened inode stayed stable, but the
+            # source tree entry could have been renamed or replaced while it
+            # was open. Re-open through the no-symlink parent walk and require
+            # the current pathname to identify the same unchanged inode.
+            current_source_fd = -1
+            try:
+                try:
+                    current_source_fd = _open_file_without_symlink_parents(
+                        source_path,
+                        flags,
+                        0,
+                        "Rental source file",
+                        "Safe rental source copying requires POSIX dir_fd, O_DIRECTORY and O_NOFOLLOW support",
+                        "Invalid rental source file filename",
+                    )
+                    current_source_stat = os.fstat(current_source_fd)
+                except (OSError, ValueError) as exc:
+                    raise ValueError(
+                        f"Rental source path changed while reading: {source_path}"
+                    ) from exc
+            finally:
+                if current_source_fd >= 0:
+                    _close_overlay_descriptors_preserving_primary(
+                        [("rental source identity recheck", current_source_fd)]
+                    )
+
+            current_source_identity = (
+                current_source_stat.st_dev,
+                current_source_stat.st_ino,
+                current_source_stat.st_mode,
+                current_source_stat.st_nlink,
+                current_source_stat.st_size,
+                current_source_stat.st_mtime_ns,
+                current_source_stat.st_ctime_ns,
+            )
+            if (
+                not stat.S_ISREG(current_source_stat.st_mode)
+                or current_source_identity != after_read_identity
+            ):
+                raise ValueError(
+                    f"Rental source path changed while reading: {source_path}"
+                )
     finally:
         if source_fd >= 0:
             os.close(source_fd)
