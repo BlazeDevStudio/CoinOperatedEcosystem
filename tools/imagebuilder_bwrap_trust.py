@@ -4,9 +4,11 @@ import os
 import stat
 
 
-# The sandbox starts from a read-only bind of the host root. Mask host-owned
-# tool-cache and service/container state as well as user and external-mount data.
+# The sandbox starts from a read-only bind of the host root. Mask system SSH/TLS
+# private-key stores plus host-owned tool-cache, service/container and user data.
 PRIVATE_HOST_PATHS = (
+    "/etc/ssh",
+    "/etc/ssl/private",
     "/home",
     "/root",
     "/run",

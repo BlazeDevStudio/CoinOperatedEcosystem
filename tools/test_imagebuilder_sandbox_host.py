@@ -166,6 +166,16 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
             workflow[preflight_position:regressions_position],
         )
 
+    @unittest.skipUnless(os.name == "posix", "requires the Linux sandbox host")
+    def test_system_private_key_mask_targets_exist_as_real_directories(self):
+        for path in ("/etc/ssh", "/etc/ssl/private"):
+            with self.subTest(path=path):
+                metadata = os.lstat(path)
+                self.assertTrue(
+                    stat.S_ISDIR(metadata.st_mode),
+                    f"private host mask target must be an existing real directory: {path}",
+                )
+
     def test_probe_command_uses_approved_single_id_namespace_without_fallback(self):
         helper = self.helper_or_skip()
         command = helper.build_probe_command("/usr/bin/bwrap")
