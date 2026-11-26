@@ -176,6 +176,95 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
                     f"private host mask target must be an existing real directory: {path}",
                 )
 
+    @unittest.skipUnless(os.name == "posix", "requires the Linux sandbox host")
+    def test_every_private_host_mask_target_is_a_real_directory(self):
+        import imagebuilder_bwrap_trust as trust
+
+        ready, detail = trust.check_private_host_mask_targets()
+        self.assertTrue(ready, detail)
+
+    def test_private_host_mask_validator_rejects_missing_and_symlink_targets(self):
+        import imagebuilder_bwrap_trust as trust
+
+        with tempfile.TemporaryDirectory() as directory:
+            real_directory = os.path.join(directory, "real")
+            os.mkdir(real_directory)
+            missing_directory = os.path.join(directory, "missing")
+            linked_directory = os.path.join(directory, "linked")
+            os.symlink(real_directory, linked_directory)
+
+            self.assertEqual(
+                trust.check_private_host_mask_targets((real_directory,)),
+                (True, "all private host mask targets are real directories"),
+            )
+            ready, detail = trust.check_private_host_mask_targets((missing_directory,))
+            self.assertFalse(ready)
+            self.assertIn("missing", detail.lower())
+            ready, detail = trust.check_private_host_mask_targets((linked_directory,))
+            self.assertFalse(ready)
+            self.assertIn("real directory", detail.lower())
+
+    def test_host_preflight_rejects_unsafe_mask_target_before_spawning_bubblewrap(self):
+        helper = self.helper_or_skip()
+        import imagebuilder_bwrap_trust as trust
+
+        with mock.patch.object(helper, "_find_trusted_bwrap", return_value="/usr/bin/bwrap"):
+            with mock.patch.object(
+                trust,
+                "check_private_host_mask_targets",
+                return_value=(False, "private host mask target is missing"),
+                create=True,
+            ):
+                with mock.patch.object(helper.subprocess, "Popen") as popen:
+                    ready, detail = helper.check_host(timeout_seconds=1)
+
+        self.assertFalse(ready)
+        self.assertIn("private host mask target", detail.lower())
+        popen.assert_not_called()
+
+    def test_runner_rejects_unsafe_mask_target_before_spawning_bubblewrap(self):
+        runner_path = os.path.join(TOOLS_DIR, "run_imagebuilder_sandbox.py")
+        spec = importlib.util.spec_from_file_location(
+            "phx_release_runner_mask_target_test", runner_path
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        import imagebuilder_bwrap_trust as trust
+
+        with tempfile.TemporaryDirectory() as directory:
+            builder = os.path.join(directory, "builder")
+            os.mkdir(builder)
+            wrapper = os.path.join(directory, "build.sh")
+            with open(wrapper, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\\nexit 0\\n")
+            argv = [
+                "run_imagebuilder_sandbox.py",
+                "--cwd", directory,
+                "--builder", builder,
+                "--wrapper", wrapper,
+            ]
+            with mock.patch.object(
+                runner, "_invoking_unprivileged_identity", return_value=(1000, 1000)
+            ):
+                with mock.patch.object(runner.shutil, "which", return_value="/usr/bin/bwrap"):
+                    with mock.patch.object(
+                        runner, "_is_within_trusted_system_directories", return_value=True
+                    ):
+                        with mock.patch.object(
+                            trust,
+                            "check_private_host_mask_targets",
+                            return_value=(False, "private host mask target is missing"),
+                            create=True,
+                        ):
+                            with mock.patch.object(runner.subprocess, "Popen") as popen:
+                                with mock.patch.object(sys, "argv", argv):
+                                    result = runner.main()
+
+        self.assertEqual(result, 125)
+        popen.assert_not_called()
+
     def test_probe_command_uses_approved_single_id_namespace_without_fallback(self):
         helper = self.helper_or_skip()
         command = helper.build_probe_command("/usr/bin/bwrap")
