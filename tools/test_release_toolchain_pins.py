@@ -120,5 +120,39 @@ class TestReleaseToolchainPins(unittest.TestCase):
         )
 
 
+    def test_release_imagebuilder_sandbox_uses_immutable_checkout_and_read_only_credentials(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "release-imagebuilder-sandbox.yml"
+        ).read_text(encoding="utf-8")
+        action_refs = re.findall(
+            r"(?m)^\\s*uses:\\s*([^@\\s#]+)@([^\\s#]+)",
+            workflow,
+        )
+        self.assertEqual(
+            action_refs,
+            [
+                (
+                    "actions/checkout",
+                    EXPECTED_ACTIONS["actions/checkout"][0],
+                )
+            ],
+            "the release sandbox must use only the reviewed immutable checkout action",
+        )
+        self.assertIn(
+            "persist-credentials: false",
+            workflow,
+            "the release sandbox checkout must not retain a write-capable Git credential",
+        )
+        self.assertIn(
+            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+            workflow,
+            "the release sandbox must validate the exact PR head or pushed commit",
+        )
+        self.assertIn(
+            "permissions:\\n  contents: read",
+            workflow,
+            "the release sandbox workflow must retain read-only repository permissions",
+        )
+
 if __name__ == "__main__":
     unittest.main()
