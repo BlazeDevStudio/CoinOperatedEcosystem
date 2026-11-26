@@ -1258,5 +1258,49 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
 
 
+    def test_verify_published_output_opens_nonblocking_before_rejecting_fifo(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fifo_path = Path(temporary_directory) / MANIFEST_FILENAME
+            os.mkfifo(fifo_path)
+            fifo_stat = os.lstat(fifo_path)
+            directory_descriptor = os.open(
+                temporary_directory,
+                os.O_RDONLY | os.O_DIRECTORY,
+            )
+            self.addCleanup(os.close, directory_descriptor)
+
+            original_open = manifest_writer.os.open
+            opened_descriptors = []
+
+            def require_nonblocking(path, flags, *args, **kwargs):
+                if path == MANIFEST_FILENAME:
+                    self.assertTrue(
+                        flags & os.O_NONBLOCK,
+                        "published-output verification must not block on a FIFO replacement",
+                    )
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if path == MANIFEST_FILENAME:
+                    opened_descriptors.append(descriptor)
+                return descriptor
+
+            with mock.patch.object(
+                manifest_writer.os, "open", side_effect=require_nonblocking
+            ):
+                with self.assertRaisesRegex(
+                    ManifestError,
+                    "published manifest output changed during publication",
+                ):
+                    manifest_writer._verify_published_output(
+                        directory_descriptor=directory_descriptor,
+                        filename=MANIFEST_FILENAME,
+                        expected_identity=(fifo_stat.st_dev, fifo_stat.st_ino),
+                        expected_content=b"",
+                    )
+
+            self.assertEqual(len(opened_descriptors), 1)
+            with self.assertRaises(OSError):
+                os.fstat(opened_descriptors[0])
+
+
 if __name__ == "__main__":
     unittest.main()
