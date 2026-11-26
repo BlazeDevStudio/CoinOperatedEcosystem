@@ -4,7 +4,7 @@ import os
 import stat
 
 
-PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/mnt", "/media", "/srv")
+PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/var/tmp", "/mnt", "/media", "/srv")
 
 
 def private_host_mount_args() -> list[str]:
