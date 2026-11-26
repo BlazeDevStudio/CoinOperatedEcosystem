@@ -1433,8 +1433,13 @@ def _open_or_create_directory_without_symlink_parents(
 
 
 def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) -> None:
-    """Copy the rootfs into a pinned new staging directory, never a replaced parent path."""
+    """Copy a pinned rootfs directory into a pinned new staging directory."""
+    absolute_source = os.path.abspath(source_rootfs)
     absolute_staging = os.path.abspath(staging_dir)
+    source_parent_path, source_name = os.path.split(absolute_source)
+    if source_name in ("", ".", ".."):
+        raise ValueError(f"Invalid source rootfs directory name: {absolute_source}")
+
     parent_path, staging_name = os.path.split(absolute_staging)
     if staging_name in ("", ".", ".."):
         raise ValueError(f"Invalid staging destination filename: {absolute_staging}")
@@ -1443,15 +1448,78 @@ def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) 
         "Safe rootfs staging requires POSIX dir_fd, O_DIRECTORY, O_NOFOLLOW "
         "and /proc/self/fd support"
     )
-    parent_fd = _open_or_create_directory_without_symlink_parents(
-        parent_path,
-        "Staging destination parent",
-        unsupported,
-    )
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    source_parent_fd = -1
+    source_fd = -1
+    parent_fd = -1
     staging_fd = -1
     staging_created = False
-    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    def directory_snapshot(metadata):
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_mode,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+        )
+
     try:
+        # Pin the source root before copying. copytree otherwise resolves the
+        # operator-visible source pathname again for every traversal step.
+        source_parent_fd, source_name = _open_parent_directory_without_symlink_parents(
+            absolute_source,
+            "Source rootfs",
+            unsupported,
+            "Invalid source rootfs directory name",
+        )
+        try:
+            source_entry = os.stat(
+                source_name,
+                dir_fd=source_parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Source rootfs directory not found: {absolute_source}"
+            ) from exc
+        if not stat.S_ISDIR(source_entry.st_mode):
+            raise ValueError(
+                f"Source rootfs is not a real directory: {absolute_source}"
+            )
+
+        try:
+            source_fd = os.open(
+                source_name,
+                directory_flags,
+                dir_fd=source_parent_fd,
+            )
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOENT, errno.ENOTDIR):
+                raise ValueError(
+                    f"Source rootfs changed or became a symlink while opening: {absolute_source}"
+                ) from exc
+            raise
+
+        opened_source = os.fstat(source_fd)
+        source_snapshot = directory_snapshot(opened_source)
+        if (
+            not stat.S_ISDIR(opened_source.st_mode)
+            or directory_snapshot(source_entry) != source_snapshot
+        ):
+            raise ValueError(
+                f"Source rootfs changed while opening: {absolute_source}"
+            )
+
+        pinned_source_path = f"/proc/self/fd/{source_fd}"
+        if not os.path.isdir(pinned_source_path):
+            raise OSError(unsupported)
+
+        parent_fd = _open_or_create_directory_without_symlink_parents(
+            parent_path,
+            "Staging destination parent",
+            unsupported,
+        )
         try:
             os.mkdir(staging_name, 0o755, dir_fd=parent_fd)
         except FileExistsError:
@@ -1483,14 +1551,67 @@ def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) 
         if not os.path.isdir(pinned_staging_path):
             raise OSError(unsupported)
 
-        # copytree follows only the pinned descriptor path. Replacing the
-        # operator-visible parent with a symlink cannot redirect these writes.
+        # Both source and destination roots are pinned by descriptors. Replacing
+        # either operator-visible pathname cannot redirect the recursive copy.
         shutil.copytree(
-            source_rootfs,
+            pinned_source_path,
             pinned_staging_path,
             symlinks=True,
             dirs_exist_ok=True,
         )
+
+        # Verify the source pathname still identifies the exact directory that
+        # copytree traversed. A stable descriptor alone is insufficient when
+        # the source path is renamed or replaced during the copy.
+        try:
+            current_source_parent_fd, current_source_name = _open_parent_directory_without_symlink_parents(
+                absolute_source,
+                "Source rootfs",
+                unsupported,
+                "Invalid source rootfs directory name",
+            )
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"Source rootfs path changed during rootfs copy: {absolute_source}"
+            ) from exc
+        try:
+            original_parent_stat = os.fstat(source_parent_fd)
+            current_parent_stat = os.fstat(current_source_parent_fd)
+            if current_source_name != source_name or (
+                original_parent_stat.st_dev,
+                original_parent_stat.st_ino,
+            ) != (
+                current_parent_stat.st_dev,
+                current_parent_stat.st_ino,
+            ):
+                raise ValueError(
+                    f"Source rootfs path changed during rootfs copy: {absolute_source}"
+                )
+
+            try:
+                current_source_entry = os.stat(
+                    current_source_name,
+                    dir_fd=current_source_parent_fd,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise ValueError(
+                    f"Source rootfs path changed during rootfs copy: {absolute_source}"
+                ) from exc
+
+            current_opened_source = os.fstat(source_fd)
+            if (
+                not stat.S_ISDIR(current_source_entry.st_mode)
+                or directory_snapshot(current_source_entry) != source_snapshot
+                or directory_snapshot(current_opened_source) != source_snapshot
+            ):
+                raise ValueError(
+                    f"Source rootfs path changed during rootfs copy: {absolute_source}"
+                )
+        finally:
+            _close_overlay_descriptors_preserving_primary(
+                [("reopened source rootfs parent", current_source_parent_fd)]
+            )
 
         try:
             current_parent_fd, current_name = _open_parent_directory_without_symlink_parents(
@@ -1514,7 +1635,9 @@ def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) 
                     f"Staging destination parent path changed during rootfs copy: {parent_path}"
                 )
         finally:
-            os.close(current_parent_fd)
+            _close_overlay_descriptors_preserving_primary(
+                [("reopened staging parent directory", current_parent_fd)]
+            )
 
         final_entry = os.stat(staging_name, dir_fd=parent_fd, follow_symlinks=False)
         final_opened = os.fstat(staging_fd)
@@ -1568,9 +1691,13 @@ def _copy_rootfs_to_new_staging_directory(source_rootfs: str, staging_dir: str) 
         owned_descriptors = []
         if staging_fd >= 0:
             owned_descriptors.append(("staging directory", staging_fd))
-        owned_descriptors.append(("staging parent directory", parent_fd))
+        if parent_fd >= 0:
+            owned_descriptors.append(("staging parent directory", parent_fd))
+        if source_fd >= 0:
+            owned_descriptors.append(("source rootfs directory", source_fd))
+        if source_parent_fd >= 0:
+            owned_descriptors.append(("source rootfs parent directory", source_parent_fd))
         _close_overlay_descriptors_preserving_primary(owned_descriptors)
-
 
 def _open_file_without_symlink_parents(
     path: str,
