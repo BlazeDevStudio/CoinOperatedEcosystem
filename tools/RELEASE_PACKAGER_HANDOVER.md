@@ -541,7 +541,7 @@ No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER source was modified. No merge, 
   - [#44103764407](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44103764407): unprivileged bwrap failed mount propagation (`Failed to make / slave: Permission denied`).
 - Current candidate implementation:
   - `tools/run_imagebuilder_sandbox.py` requires a non-root caller whose effective UID/GID match the real UID/GID, finds Bubblewrap only through the trusted `/usr/bin:/bin` path, and starts it directly in an **unprivileged single-ID user namespace**. Bubblewrap maps only the invoking host UID/GID to namespace root (`--uid 0`, `--gid 0`); the runner receives the namespace child PID through `--info-fd` and verifies the host owner of its probe file before accepting a build. It does **not** invoke `sudo`, `newuidmap`, or `newgidmap`.
-  - The host root is mounted read-only. The disposable ImageBuilder directory is the only writable host bind; `/tmp`, `/home`, `/root`, `/run`, `/mnt`, `/media`, and `/srv` are overlaid with ephemeral tmpfs mounts. The child environment is cleared and rebuilt with a minimal PATH/HOME/TMPDIR and no runner credentials.
+  - The host root is mounted read-only. The disposable ImageBuilder directory is the only writable host bind; `/tmp`, `/home`, `/root`, `/run`, `/var/tmp`, `/mnt`, `/media`, and `/srv` are overlaid with ephemeral tmpfs mounts. The inner build environment sets `TMPDIR=/tmp`, so it does not depend on the host's persistent `/var/tmp`. The child environment is cleared and rebuilt with a minimal PATH/HOME/TMPDIR and no runner credentials.
   - `--share-net` is deliberate because this hosted runner cannot configure loopback. **Network isolation is not claimed**; MASTER/QA must review this boundary.
   - The test harness routes all eight generated-wrapper executions through this helper when `PHX_REQUIRE_BWRAP=1`.
 - Current exact-head Actions: [sandbox run #44104503489](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503489) is **PENDING with no jobs returned**. No sandbox pass or ownership-preservation result is claimed. Case-collision [#44104503379](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503379) passed; shared-contract/build run [#44104503348](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/44104503348) was still in progress at handover.
@@ -6129,3 +6129,55 @@ These are hosted CI and synthetic process-group tests. They do not establish Bub
 6. Registry custodian restores authorized provenance-only access to private Drive v11.
 
 No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+## PHX-RELEASE UTC02 — mask persistent host temporary data in ImageBuilder sandbox (2026-11-26)
+
+**Disposition:** One bounded RELEASE-owned sandbox privacy hardening is committed on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). PR #35 remains OPEN / DRAFT / UNMERGED; **PRODUCTION NO-GO**. Strict NO Codex. No CORE, RENTAL, PISONET, HARDWARE, QA or MASTER implementation was modified.
+
+### Finding and bounded change
+
+The sandbox mounts the host root read-only and masks /tmp, /home, /root, /run, /mnt, /media, and /srv, but /var/tmp remained visible inside the sandbox. Because /var/tmp is a shared persistent temporary directory, other host processes can leave readable scratch files there. A read-only root mount does not prevent the sandbox from reading files that the invoking UID is permitted to read.
+
+The sandbox already clears its environment and sets TMPDIR=/tmp for the inner build, so ImageBuilder does not require the host's persistent /var/tmp. The canonical RELEASE-owned PRIVATE_HOST_PATHS tuple now includes /var/tmp. Both host preflight and runtime use the same private_host_mount_args() helper; verify_sandbox_context() also requires the new tmpfs mount because it validates the same tuple.
+
+No network, UID/GID, root mount, builder bind, timeout, firmware, profile, manifest, or packaging-output behavior changed. --share-net remains deliberate; network isolation is not claimed.
+
+### Exact branch and commits
+
+- Repository: BlazeDevStudio/CoinOperatedEcosystem.
+- Branch: phoenix/release-build-script-publication-safety-20261117.
+- Starting PR #35 HEAD: 3cbc6580218c1575ae7fd49159d7e9bfd17960d8.
+- Test-only regression: [a32cde08](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/a32cde081b0f03e34c6565e1d0f141248bcf1032).
+- Source correction: [1f2a7446](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/1f2a744611bf5ddb7f14419fb88fceacab2568cb).
+- Dependent synthetic mountinfo / expected-argument fixture correction: [676149a4](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/676149a40d02dd9d7e474be5fcab030a9e2191e7).
+- This increment changes only tools/test_imagebuilder_sandbox_host.py, tools/imagebuilder_bwrap_trust.py, tools/test_package_appliance_firmware.py, and this RELEASE handover.
+
+### Test-first and exact-source CI
+
+- Expected RED, shared [#45741605014](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741605014), job 139647701395: 242 tests ran, the new mask regression failed because /var/tmp was absent, and 2 intentional skips. Sandbox [#45741604993](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741604993), job 139647701160: 42 host tests, the same expected failure. Case-collision [#45741604990](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741604990): PASS.
+- First source attempt, shared [#45741697095](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741697095), job 139648008615: 242 tests, 3 failures / 2 skips. The three failures were dependent release-owned fixtures still asserting the previous six-path mask (two expected-argument checks and one synthetic mountinfo fixture); this attempt was not accepted as green. Sandbox [#45741697049](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741697049): host tests passed, then Bubblewrap was unavailable / exit 125. Case-collision [#45741697122](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741697122): PASS.
+- Corrected source/test shared [#45741798697](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741798697), job 139648334896: 242 tests PASS / 2 intentional skips, PHX-MANIFEST-DURABILITY-PASS emitted, and one synthetic staged profile passed. The later ten-profile admission failed closed 10/10 because approved site-scoped RFC 4193 ULA /48 authority remains undefined. ESP32/ESP8266 compile jobs were skipped; overall shared workflow: FAILURE, not release-ready.
+- Corrected source/test sandbox [#45741798717](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741798717), job 139648334980: 42/42 host preflight tests PASS, then Bubblewrap unavailable / exit 125; namespace validation and mandatory sandbox packaging were skipped.
+- Corrected source/test case-collision [#45741798685](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45741798685): PASS.
+
+These are hosted CI and synthetic mountinfo/command-construction tests. They do not prove a real Bubblewrap mount, namespace execution, ImageBuilder output, target firmware acceptance, physical hardware acceptance or production readiness.
+
+### Live ownership and blockers
+
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at d48092c210b1371703d712e2f16a7ee0edb0fe7e; OWNERSHIP_ROUTES.json at e4db324315a1b3543fec17a148fbf960170fcb29 remains 11 routes / DRAFT_REVIEW_ONLY. PHX-RELEASE retains reimplementation-review; MASTER retains cross-repository migration and shared-interface authority.
+- Cleanup-first #266 remains OPEN / 0-of-7; this bounded cleanup does not complete the global cleanup gate.
+- Experiments #242 remains OPEN / DRAFT at 734b89d9e7792247e8376335c3f3685500ab3f89; its Windows build passed, while Authenticode signing and publication were skipped.
+- Experiments #291 remains OPEN / DRAFT at 9b928c9eaa72cb26fdcf3f0e50a0ec024f4e3c30; Windows and Full remain blocked at CORE-owned handover freshness; ESP32 compatibility passed. Signing and publication remain skipped.
+- COE #26 remains FROZEN at b382d233ff06c8791b1028bed3c617cc7b670d12; five workflows are queued with zero jobs and no destination writes occurred.
+- COE parent #31 remains OPEN / DRAFT at 59ed44d0b911e176f1a95b9cf5585ef811ffd31b; its shared/board validation and case-collision passed, while its sandbox failed at unprivileged namespace setup.
+- Private Drive registry v11 was not recovered through an authorized connector; no older snapshot was substituted and no private registry contents or identifiers were copied into GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the new mask and the three-file regression/fixture change at source/test HEAD 676149a40d02dd9d7e474be5fcab030a9e2191e7.
+2. PHX-INFRA / COE owner supplies an authorized disposable unprivileged Bubblewrap runner; do not install Bubblewrap or bypass the sandbox gate.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before the ten-profile admission gate can pass.
+4. PHX-CORE publishes the canonical handover freshness SHA for Experiments #291; RELEASE reruns Full/Windows only against that exact refreshed source.
+5. Registry custodian restores authorized provenance-only access to private Drive v11.
+
+No merge, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
