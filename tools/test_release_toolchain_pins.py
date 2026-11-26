@@ -31,10 +31,13 @@ BOARD_CORES = {
 
 
 def _release_sandbox_checkout_block(content: str) -> str:
-    """Return the checkout step whose credential/ref settings are under review."""
-    # Initial whole-workflow implementation is deliberately guarded by the
-    # regression below; the corrected implementation must return one step only.
-    return content
+    """Return exactly one named checkout step, excluding later workflow steps."""
+    blocks = _step_blocks(content, "Checkout exact PR head")
+    if len(blocks) != 1:
+        raise AssertionError(
+            "the release sandbox must contain exactly one Checkout exact PR head step"
+        )
+    return blocks[0]
 
 
 def _step_blocks(content: str, name: str) -> list[str]:
@@ -129,13 +132,13 @@ class TestReleaseToolchainPins(unittest.TestCase):
 
     def test_release_sandbox_checkout_guard_does_not_inherit_later_step_settings(self):
         malformed_workflow = (
-            "      - name: Checkout exact PR head\\n"
-            "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\\n"
-            "      - name: Unrelated later step\\n"
-            "        run: echo unrelated\\n"
-            "        env:\\n"
-            "          persist-credentials: false\\n"
-            "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\\n"
+            "      - name: Checkout exact PR head\n"
+            "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n"
+            "      - name: Unrelated later step\n"
+            "        run: echo unrelated\n"
+            "        env:\n"
+            "          persist-credentials: false\n"
+            "          ref: wrong-step-value\\n"
         )
         checkout_block = _release_sandbox_checkout_block(malformed_workflow)
         self.assertNotIn("persist-credentials: false", checkout_block)
@@ -148,6 +151,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
         workflow = (
             ROOT / ".github" / "workflows" / "release-imagebuilder-sandbox.yml"
         ).read_text(encoding="utf-8")
+        checkout_block = _release_sandbox_checkout_block(workflow)
         action_refs = re.findall(
             r"(?m)^\s*uses:\s*([^@\s#]+)@([^\s#]+)",
             workflow,
@@ -164,13 +168,13 @@ class TestReleaseToolchainPins(unittest.TestCase):
         )
         self.assertIn(
             "persist-credentials: false",
-            workflow,
-            "the release sandbox checkout must not retain a write-capable Git credential",
+            checkout_block,
+            "the named checkout step must not retain a write-capable Git credential",
         )
         self.assertIn(
             "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
-            workflow,
-            "the release sandbox must validate the exact PR head or pushed commit",
+            checkout_block,
+            "the named checkout step must validate the exact PR head or pushed commit",
         )
         self.assertIn(
             "permissions:\n  contents: read",
