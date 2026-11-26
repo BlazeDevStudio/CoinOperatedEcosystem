@@ -77,6 +77,12 @@ def check_host(bwrap_path: str | None = None, timeout_seconds: float = PROBE_TIM
     if timeout_seconds <= 0:
         return False, "bubblewrap preflight timeout must be positive"
 
+    mask_targets_ready, mask_targets_detail = (
+        imagebuilder_bwrap_trust.check_private_host_mask_targets()
+    )
+    if not mask_targets_ready:
+        return False, mask_targets_detail
+
     process = None
     try:
         process = subprocess.Popen(

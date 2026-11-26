@@ -369,6 +369,12 @@ def main() -> int:
     if not _is_within_trusted_system_directories(bwrap):
         return blocked("bubblewrap resolved outside trusted system directories")
 
+    mask_targets_ready, mask_targets_detail = (
+        imagebuilder_bwrap_trust.check_private_host_mask_targets()
+    )
+    if not mask_targets_ready:
+        return blocked("private host mask targets are unavailable or unsafe", mask_targets_detail)
+
     probe_name = f".phx-bwrap-owner-probe-{os.getpid()}"
     probe_path = os.path.join(builder, probe_name)
     if os.path.lexists(probe_path):

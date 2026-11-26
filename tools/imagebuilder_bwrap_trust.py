@@ -30,6 +30,33 @@ def private_host_mount_args() -> list[str]:
     ]
 
 
+def check_private_host_mask_targets(
+    paths: tuple[str, ...] | None = None,
+) -> tuple[bool, str]:
+    """Require every tmpfs mask destination and its parents to be real directories."""
+    candidates = PRIVATE_HOST_PATHS if paths is None else tuple(paths)
+    if not candidates:
+        return False, "private host mask target list is empty"
+
+    for path in candidates:
+        if not isinstance(path, str) or not path.startswith("/") or path == "/":
+            return False, f"private host mask target is not an absolute non-root path: {path!r}"
+
+        current = os.sep
+        for component in path.strip(os.sep).split(os.sep):
+            if component in ("", ".", ".."):
+                return False, f"private host mask target is not canonical: {path!r}"
+            current = os.path.join(current, component)
+            try:
+                entry = os.lstat(current)
+            except OSError as exc:
+                return False, f"private host mask target unavailable: {path}: {exc}"
+            if not stat.S_ISDIR(entry.st_mode):
+                return False, f"private host mask target is not a real directory: {current}"
+
+    return True, "all private host mask targets are real directories"
+
+
 def is_trusted_system_directory(path: str) -> bool:
     """Require every canonical directory component to be root-owned and non-writable."""
     if path not in ("/usr/bin", "/bin"):
