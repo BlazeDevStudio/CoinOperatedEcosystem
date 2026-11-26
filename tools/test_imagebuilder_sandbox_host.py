@@ -209,6 +209,8 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
                 "/srv",
                 "/opt",
                 "/var/lib",
+                "/etc/ssh",
+                "/etc/ssl/private",
             },
         )
 
