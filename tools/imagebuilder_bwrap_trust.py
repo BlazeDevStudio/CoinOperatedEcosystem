@@ -39,8 +39,16 @@ def check_private_host_mask_targets(
         return False, "private host mask target list is empty"
 
     for path in candidates:
-        if not isinstance(path, str) or not path.startswith("/") or path == "/":
-            return False, f"private host mask target is not an absolute non-root path: {path!r}"
+        if (
+            not isinstance(path, str)
+            or not path.startswith(os.sep)
+            or path == os.sep
+            or path.startswith(os.sep * 2)
+            or path.endswith(os.sep)
+            or "\\0" in path
+            or os.path.normpath(path) != path
+        ):
+            return False, f"private host mask target is not a canonical absolute non-root path: {path!r}"
 
         current = os.sep
         for component in path.strip(os.sep).split(os.sep):
