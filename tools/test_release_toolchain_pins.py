@@ -30,6 +30,13 @@ BOARD_CORES = {
 }
 
 
+def _release_sandbox_checkout_block(content: str) -> str:
+    """Return the checkout step whose credential/ref settings are under review."""
+    # Initial whole-workflow implementation is deliberately guarded by the
+    # regression below; the corrected implementation must return one step only.
+    return content
+
+
 def _step_blocks(content: str, name: str) -> list[str]:
     marker = f"      - name: {name}\n"
     starts = [match.start() for match in re.finditer(re.escape(marker), content)]
@@ -119,6 +126,23 @@ class TestReleaseToolchainPins(unittest.TestCase):
             "board core installs must include exact versions; floating latest is not reproducible",
         )
 
+
+    def test_release_sandbox_checkout_guard_does_not_inherit_later_step_settings(self):
+        malformed_workflow = (
+            "      - name: Checkout exact PR head\\n"
+            "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\\n"
+            "      - name: Unrelated later step\\n"
+            "        run: echo unrelated\\n"
+            "        env:\\n"
+            "          persist-credentials: false\\n"
+            "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\\n"
+        )
+        checkout_block = _release_sandbox_checkout_block(malformed_workflow)
+        self.assertNotIn("persist-credentials: false", checkout_block)
+        self.assertNotIn(
+            "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+            checkout_block,
+        )
 
     def test_release_imagebuilder_sandbox_uses_immutable_checkout_and_read_only_credentials(self):
         workflow = (
