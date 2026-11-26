@@ -198,7 +198,7 @@ class TestImageBuilderSandboxHostPreflight(unittest.TestCase):
         }
         self.assertEqual(
             tmpfs_paths,
-            {"/tmp", "/home", "/root", "/run", "/mnt", "/media", "/srv"},
+            {"/tmp", "/home", "/root", "/run", "/var/tmp", "/mnt", "/media", "/srv"},
         )
 
     def test_handover_describes_the_current_unprivileged_user_namespace(self):
