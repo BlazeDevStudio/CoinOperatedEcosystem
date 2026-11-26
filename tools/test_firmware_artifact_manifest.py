@@ -1235,6 +1235,38 @@ class FirmwareArtifactManifestTests(unittest.TestCase):
         self._assert_writer_rejects_published_output_mutation(CHECKSUMS_FILENAME)
 
 
+    def test_writer_rejects_published_output_mutated_during_final_directory_fsync(self):
+        target = self.artifact_dir / CHECKSUMS_FILENAME
+        original_fsync = manifest_writer.os.fsync
+        directory_syncs = 0
+        mutated = False
+
+        def mutate_during_directory_sync(descriptor):
+            nonlocal directory_syncs, mutated
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_syncs += 1
+                if not mutated:
+                    target.write_bytes(b"operator changed checksums during directory fsync")
+                    mutated = True
+            return original_fsync(descriptor)
+
+        with mock.patch.object(
+            manifest_writer.os,
+            "fsync",
+            side_effect=mutate_during_directory_sync,
+        ):
+            with self.assertRaisesRegex(
+                ManifestError,
+                f"published manifest output changed during publication: {CHECKSUMS_FILENAME}",
+            ):
+                write_artifact_manifest(**self.kwargs())
+
+        self.assertTrue(mutated, "the final directory fsync must exercise the mutation window")
+        self.assertGreaterEqual(directory_syncs, 2, "failed publication must sync the rollback")
+        self.assertFalse((self.artifact_dir / MANIFEST_FILENAME).exists())
+        self.assertFalse((self.artifact_dir / CHECKSUMS_FILENAME).exists())
+
+
     def test_rejects_group_or_world_writable_nested_directory(self):
         nested = self.artifact_dir / "nested"
         nested.mkdir()
