@@ -1204,6 +1204,77 @@ class TestPackageApplianceFirmware(unittest.TestCase):
         with open(source_path, "rb") as fp:
             self.assertEqual(fp.read(), replacement_content)
 
+    def test_copy_staging_file_rejects_source_path_replaced_after_open_during_read(self):
+        if os.name != "posix":
+            self.skipTest("Source-path replacement while an opened file is pinned requires POSIX rename semantics")
+
+        source_dir = os.path.join(self.temp_dir, "rental-source-path-replacement")
+        destination_dir = os.path.join(self.temp_dir, "rental-destination-path-replacement")
+        os.makedirs(source_dir)
+        os.makedirs(destination_dir)
+
+        source_path = os.path.join(source_dir, "core.sh")
+        replacement_path = os.path.join(source_dir, "core.sh.replacement")
+        destination_path = os.path.join(destination_dir, "core.sh")
+        original_content = b"trusted rental source"
+        replacement_content = b"replacement rental source"
+        with open(source_path, "wb") as fp:
+            fp.write(original_content)
+        with open(replacement_path, "wb") as fp:
+            fp.write(replacement_content)
+
+        source_stat = os.stat(source_path, follow_symlinks=False)
+        original_fdopen = os.fdopen
+        replacement = {"performed": False}
+
+        class ReplacingReader:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+
+            def __enter__(self):
+                self.wrapped.__enter__()
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return self.wrapped.__exit__(exc_type, exc, traceback)
+
+            def fileno(self):
+                return self.wrapped.fileno()
+
+            def read(self, *args, **kwargs):
+                data = self.wrapped.read(*args, **kwargs)
+                if not replacement["performed"]:
+                    # Keep the original inode pinned by the open descriptor,
+                    # but replace the pathname with a different regular file.
+                    os.replace(replacement_path, source_path)
+                    replacement["performed"] = True
+                return data
+
+        def fdopen_after_path_replacement(descriptor, mode="r", *args, **kwargs):
+            opened_stat = os.fstat(descriptor)
+            if (opened_stat.st_dev, opened_stat.st_ino) == (
+                source_stat.st_dev,
+                source_stat.st_ino,
+            ):
+                return ReplacingReader(original_fdopen(descriptor, mode, *args, **kwargs))
+            return original_fdopen(descriptor, mode, *args, **kwargs)
+
+        # The original file descriptor remains stable, so fstat-before/after
+        # alone cannot detect that the source pathname now names another file.
+        with mock.patch.object(
+            packager.os, "fdopen", side_effect=fdopen_after_path_replacement
+        ):
+            with self.assertRaisesRegex(ValueError, "source path changed while reading"):
+                packager._copy_staging_file(source_path, destination_dir, "core.sh")
+
+        self.assertTrue(replacement["performed"])
+        self.assertFalse(
+            os.path.lexists(destination_path),
+            "A source pathname replaced during the read must not be staged",
+        )
+        with open(source_path, "rb") as fp:
+            self.assertEqual(fp.read(), replacement_content)
+
     def test_copy_staging_file_rejects_source_replaced_with_symlink_after_lstat(self):
         source_dir = os.path.join(self.temp_dir, "rental-source-race")
         destination_dir = os.path.join(self.temp_dir, "rental-destination-race")
