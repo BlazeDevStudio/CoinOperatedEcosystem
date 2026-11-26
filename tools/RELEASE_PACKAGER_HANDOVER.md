@@ -1,3 +1,56 @@
+## PHX-RELEASE UTC11 — scope sandbox checkout assertions to the named step (2026-11-26T11:20Z)
+
+**Disposition:** one RELEASE-owned regression-guard false-positive corrected test-first on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The production sandbox workflow was not changed; it already uses the reviewed immutable checkout SHA, disables persisted checkout credentials, checks out the exact PR/push SHA, and grants only `contents: read`. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
+
+### Exact branch and bounded source scope
+
+- Repository: `BlazeDevStudio/CoinOperatedEcosystem`.
+- Branch: `phoenix/release-build-script-publication-safety-20261117`.
+- Starting child HEAD: `f66ac305dd5602e5a2b45acf12a9ca61c6d88213`.
+- Parent/base PR #31 HEAD: `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`.
+- Test-only regression commit: [`f123b892`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/f123b89275cb40be86f37ea28c7dd4a6d1c1872a).
+- Corrected guard/source-test commit: [`629c0fd4`](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/commit/629c0fd4ff010d09ced788ce9aff1154924fab40).
+- This increment changes only `tools/test_release_toolchain_pins.py` plus this handover. No workflow, firmware, board profile, network authority, shared Hardware workflow or COE #26 destination source was changed.
+
+### Finding and correction
+
+The UTC10 regression checked `persist-credentials: false` and the exact checkout ref using whole-workflow substring assertions. A later unrelated step could contain those strings and make the test pass even if the named checkout step lost the security settings.
+
+The UTC11 regression uses a synthetic workflow where the checkout step omits both settings and a later unrelated step contains them. The initial helper returned the entire workflow; the new test failed because the later step incorrectly satisfied the global assertion. The corrected helper extracts exactly one `Checkout exact PR head` step using the existing step-block parser. The real workflow assertions now require both `persist-credentials: false` and the exact `ref` inside that named checkout block. The immutable-action-count and workflow-level `contents: read` checks remain unchanged.
+
+This is a regression-guard correction, not a production workflow change and not a claim that the hosted sandbox has run successfully.
+
+### Exact-source Actions
+
+- Test-first shared PR run [#45809067922](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45809067922), job `139871857491`: **248 tests; 1 expected guard failure / 2 intentional skips**. The new synthetic case failed because the whole-workflow helper included the unrelated later step's `persist-credentials: false`. The failure demonstrates the guard false-positive. Shared validation stopped before profile admission; board compiles were skipped.
+- Test-first sandbox [#45809067909](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45809067909), job `139871858397`: **42 host tests passed**, then Bubblewrap unavailable / exit 125; identity, namespace and mandatory packaging steps skipped.
+- Test-first case-collision [#45809067926](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45809067926): PASS.
+- Corrected source/test shared PR [#45809522304](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45809522304), job `139873421125`: **248 tests PASS / 2 intentional skips**; the new misplacement regression and real named-checkout guard both PASS. One synthetic staged profile PASS. Subsequent appliance admission failed closed for **10/10** profiles because approved site-scoped RFC 4193 ULA /48 authority is missing; ESP32/ESP8266 compilation SKIPPED. Overall shared workflow: FAILURE, not release-ready.
+- Corrected source/test sandbox [#45809522330](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45809522330), job `139873421388`: **42 host tests PASS**, then Bubblewrap unavailable / exit 125; namespace and mandatory sandbox packaging SKIPPED.
+- Corrected source/test case-collision [#45809522311](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/actions/runs/45809522311): PASS.
+
+### Live ownership and cross-repository gates
+
+- MASTER PR #288 is OPEN / DRAFT / UNMERGED at `5c27267ab545802c10fda0e6f41a7a9c4a27f41d`. Its ownership manifest remains 11 routes / `DRAFT_REVIEW_ONLY`; PHX-RELEASE route remains `.github/workflows/blazepwifi-build.yml` → `.github/workflows/pisowifi-ci.yml`, kind `reimplementation-review`. MASTER retains migration, shared-interface and inherited-stack reconciliation authority.
+- Cleanup-first #266 remains OPEN / **0-of-7**.
+- Experiments #242 remains OPEN / DRAFT at `a7e27fe50e13326a7258bbaed1388594141ddda3`. Its UTC03 SoftTimer publisher-permission handover records zero exact-head Actions runs/statuses; the historical run is for the previous parent SHA and is not current evidence. PowerShell runtime and signing/publishing remain unverified.
+- Experiments #291 remains OPEN / DRAFT at `bf339a76964a1abe2412fac45392fe06a8e66418`, based on stale #242 snapshot `734b89d9e7792247e8376335c3f3685500ab3f89`. Its UTC10 artifact-assembly handover records prior synthetic collision coverage, but no current exact-head Actions runs/statuses. Its accumulated diff includes inherited CORE/PISONET paths and CORE-owned handover files; MASTER and subsystem owners must reconcile the stack. RELEASE made no #291 edits.
+- COE #26 remains FROZEN at `b382d233ff06c8791b1028bed3c617cc7b670d12`; five workflows remain queued with zero completed jobs.
+- COE parent #31 remains OPEN / DRAFT at `59ed44d0b911e176f1a95b9cf5585ef811ffd31b`. Child #35 still includes the accumulated shared `.github/workflows/hardware-ci.yml` path; PHX-HARDWARE/MASTER review remains required before integration.
+- The actual private Drive `BLAZE_PROJECT_REGISTRY_v11_20261027.json` remains NOT RECOVERED through authorized Library retrieval. Historical checkpoint metadata references the canonical name, but no v11 contents were retrieved; no older snapshot was substituted and no private identifiers/contents were copied to GitHub.
+
+### Next owner actions
+
+1. PHX-QA independently reviews the scoped checkout-step guard and synthetic misplacement regression.
+2. PHX-INFRA / COE owner supplies an authorized unprivileged Bubblewrap-capable runner; do not install Bubblewrap or bypass the sandbox.
+3. PHX-CORE / MASTER / COE integration owner defines approved site-scoped ULA /48 authority before appliance admission can pass.
+4. PHX-MASTER reconciles #291's stale parent and inherited CORE/PISONET ownership paths, and reviews the shared Hardware workflow overlap in #35.
+5. Registry custodian restores authorized provenance-only v11 access.
+
+No merge, rebase, signing, tag, publication, hardware flash, real payment migration or customer deployment occurred. Protected signer, independent freshness witness, durable financial accounting/migration, independent QA/MASTER approval, approved production binaries, 150 physical power cuts and 30-device/24-hour soak remain unestablished or NOT TESTED. **PRODUCTION NO-GO.**
+
+---
+
 ## PHX-RELEASE UTC10 — guard release ImageBuilder sandbox action provenance (2026-11-26)
 
 **Disposition:** one RELEASE-owned supply-chain test-coverage gap closed on the existing COE child draft [PR #35](https://github.com/BlazeDevStudio/CoinOperatedEcosystem/pull/35). The dedicated `.github/workflows/release-imagebuilder-sandbox.yml` was already using the reviewed immutable checkout action and read-only checkout settings, but `tools/test_release_toolchain_pins.py` only inspected the shared `hardware-ci.yml`. The new test now guards the RELEASE-owned sandbox workflow independently. PR #35 remains OPEN / DRAFT / UNMERGED. **PRODUCTION NO-GO.**
