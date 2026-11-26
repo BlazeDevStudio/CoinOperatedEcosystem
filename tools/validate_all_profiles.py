@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""End-to-End Appliance Profile and Firmware Staging Validator.
+"""Host-CI staged appliance profile and firmware packaging validator.
 
-Validates that all target hardware profiles in Shared/contracts/router-profile/profiles/
-can be successfully packaged with and without the BlazeRental module, produce valid
-network topologies, satisfy flash bounds, and emit executable ImageBuilder build scripts.
+Validates that target appliance profiles can be staged with and without the
+BlazeRental module, produce valid network topologies, satisfy flash bounds,
+and emit ImageBuilder build scripts. This is a host-side CI check, not hardware
+acceptance or evidence of a physical appliance test.
 """
 import json
 import os
@@ -18,10 +19,110 @@ PROFILES_DIR = os.path.join(BASE_DIR, "Shared", "contracts", "router-profile", "
 ROOTFS_DIR = os.path.join(BASE_DIR, "Pisowifi", "openwrt", "rootfs")
 RENTAL_DIR = os.path.join(BASE_DIR, "Rental", "openwrt")
 DIAG_SCRIPT = os.path.join(ROOTFS_DIR, "usr", "sbin", "blaze-appliance-diag")
+DIAGNOSTICS_TIMEOUT_SECONDS = 30
+VALIDATION_SCOPE = "HOST-CI STAGED ROOTFS ONLY; NOT HARDWARE ACCEPTANCE"
 
 # Import packaging primitives
 sys.path.insert(0, os.path.join(BASE_DIR, "tools"))
 from package_appliance_firmware import load_profile, stage_overlay, generate_build_script
+from run_imagebuilder_sandbox import (
+    _terminate_process_groups,
+    process_group_cleanup_failed as _process_group_cleanup_failed,
+)
+
+
+def run_appliance_diagnostics(profile_id: str, env: dict) -> subprocess.CompletedProcess:
+    """Run diagnostics in an isolated POSIX session and reap all descendants."""
+    if os.name != "posix":
+        raise RuntimeError(
+            "blaze-appliance-diag requires a POSIX host for process-group cleanup"
+        )
+
+    command = ["sh", DIAG_SCRIPT, "--json"]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        process.wait(timeout=DIAGNOSTICS_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        cleanup_stdout = ""
+        cleanup_stderr = ""
+        cleanup_errors = []
+        cleanup_attempts = 0
+        cleanup_confirmed = False
+        for attempt in range(2):
+            cleanup_attempts += 1
+            try:
+                cleanup_stdout, cleanup_stderr = _terminate_process_groups(process)
+                cleanup_confirmed = not _process_group_cleanup_failed(cleanup_stderr)
+                break
+            except Exception as cleanup_error:
+                attempt_label = "first" if attempt == 0 else "second"
+                cleanup_errors.append(
+                    f"{attempt_label} cleanup attempt raised "
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+
+        message = (
+            f"blaze-appliance-diag timed out for {profile_id} "
+            f"after {DIAGNOSTICS_TIMEOUT_SECONDS} seconds"
+        )
+        if cleanup_errors:
+            if cleanup_confirmed:
+                message += "; process-group cleanup retry succeeded"
+            else:
+                message += (
+                    "; process-group cleanup not confirmed after "
+                    f"{cleanup_attempts} attempts"
+                )
+        if _process_group_cleanup_failed(cleanup_stderr):
+            message += f"; process-group cleanup failed: {cleanup_stderr.strip()}"
+        if cleanup_errors:
+            message += ": " + "; ".join(cleanup_errors)
+        raise RuntimeError(message) from exc
+
+
+    except BaseException as primary_error:
+        # A failed/interrupted wait must not leave the diagnostics session running.
+        # Preserve the wait exception if process-group cleanup also fails.
+        try:
+            _, cleanup_stderr = _terminate_process_groups(process)
+        except BaseException as cleanup_error:
+            cleanup_detail = (
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            )
+        else:
+            cleanup_detail = (
+                cleanup_stderr.strip()
+                if _process_group_cleanup_failed(cleanup_stderr)
+                else ""
+            )
+
+        if cleanup_detail:
+            note = (
+                "diagnostic process-group cleanup after "
+                f"{type(primary_error).__name__} also failed: {cleanup_detail}"
+            )
+            add_note = getattr(primary_error, "add_note", None)
+            if callable(add_note):
+                add_note(note)
+        raise
+
+    # Wait for the leader, not communicate(): descendants may keep the pipes
+    # open after the shell exits. The shared helper kills/reaps that whole group.
+    stdout, stderr = _terminate_process_groups(process)
+    if _process_group_cleanup_failed(stderr):
+        raise RuntimeError(
+            f"blaze-appliance-diag process-group cleanup failed for {profile_id}: "
+            f"{stderr.strip()}"
+        )
+
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def validate_profile(profile_path: str, temp_base: str) -> dict:
@@ -86,12 +187,7 @@ def validate_profile(profile_path: str, temp_base: str) -> dict:
     env["BLAZE_ROOT"] = stage_rental
     env["SYSINFO_MODEL"] = profile["name"]
     env["SYSINFO_BOARD"] = pid
-    res = subprocess.run(
-        ["sh", DIAG_SCRIPT, "--json"],
-        capture_output=True,
-        text=True,
-        env=env
-    )
+    res = run_appliance_diagnostics(pid, env)
     if res.returncode != 0:
         raise RuntimeError(f"blaze-appliance-diag failed for {pid}: {res.stderr}\n{res.stdout}")
 
@@ -124,7 +220,9 @@ def main():
     results = []
     failed = False
 
-    print(f"=== Validating {len(profile_files)} Hardware Appliance Profiles ===")
+    print(
+        f"=== {VALIDATION_SCOPE}: validating {len(profile_files)} appliance profiles ==="
+    )
     try:
         for pf in profile_files:
             profile_path = os.path.join(PROFILES_DIR, pf)
@@ -137,16 +235,36 @@ def main():
                 failed = True
                 print(f"  [FAIL] {pf}: {e}", file=sys.stderr)
     finally:
-        shutil.rmtree(temp_base, ignore_errors=True)
+        primary_error = sys.exc_info()[1]
+        try:
+            shutil.rmtree(temp_base)
+        except FileNotFoundError:
+            pass
+        except BaseException as cleanup_error:
+            detail = (
+                f"validation workspace cleanup failed for {temp_base}: "
+                f"{type(cleanup_error).__name__}: {cleanup_error}"
+            )
+            if primary_error is not None:
+                print(
+                    f"WARNING: {detail}; preserving primary "
+                    f"{type(primary_error).__name__}",
+                    file=sys.stderr,
+                )
+            elif isinstance(cleanup_error, OSError):
+                failed = True
+                print(f"ERROR: {detail}", file=sys.stderr)
+            else:
+                raise
 
-    print("\n=== Appliance Packaging & Diagnostics Summary ===")
+    print(f"\n=== Appliance Packaging & Diagnostics Summary ({VALIDATION_SCOPE}) ===")
     print(f"Total Profiles Tested: {len(profile_files)}")
     print(f"Successful Validations: {len(results)}")
     print(f"Failures: {len(profile_files) - len(results)}")
 
     if failed:
         sys.exit(1)
-    print("ALL HARDWARE APPLIANCE PROFILES VALIDATED SUCCESSFULLY.")
+    print(f"ALL STAGED APPLIANCE PROFILE CHECKS PASSED ({VALIDATION_SCOPE}).")
 
 
 if __name__ == "__main__":
