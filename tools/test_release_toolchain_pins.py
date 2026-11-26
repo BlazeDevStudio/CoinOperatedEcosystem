@@ -125,7 +125,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
             ROOT / ".github" / "workflows" / "release-imagebuilder-sandbox.yml"
         ).read_text(encoding="utf-8")
         action_refs = re.findall(
-            r"(?m)^\\s*uses:\\s*([^@\\s#]+)@([^\\s#]+)",
+            r"(?m)^\s*uses:\s*([^@\s#]+)@([^\s#]+)",
             workflow,
         )
         self.assertEqual(
@@ -149,7 +149,7 @@ class TestReleaseToolchainPins(unittest.TestCase):
             "the release sandbox must validate the exact PR head or pushed commit",
         )
         self.assertIn(
-            "permissions:\\n  contents: read",
+            "permissions:\n  contents: read",
             workflow,
             "the release sandbox workflow must retain read-only repository permissions",
         )
