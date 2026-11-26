@@ -1169,7 +1169,9 @@ def _copy_staging_file(source_path: str, directory: str, filename: str) -> None:
                 )
     finally:
         if source_fd >= 0:
-            os.close(source_fd)
+            _close_overlay_descriptors_preserving_primary(
+                [("rental source file", source_fd)]
+            )
 
     _write_staging_bytes(directory, filename, content)
 
