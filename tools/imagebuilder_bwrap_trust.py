@@ -4,7 +4,19 @@ import os
 import stat
 
 
-PRIVATE_HOST_PATHS = ("/home", "/root", "/run", "/var/tmp", "/mnt", "/media", "/srv")
+# The sandbox starts from a read-only bind of the host root. Mask host-owned
+# tool-cache and service/container state as well as user and external-mount data.
+PRIVATE_HOST_PATHS = (
+    "/home",
+    "/root",
+    "/run",
+    "/var/tmp",
+    "/mnt",
+    "/media",
+    "/srv",
+    "/opt",
+    "/var/lib",
+)
 
 
 def private_host_mount_args() -> list[str]:
